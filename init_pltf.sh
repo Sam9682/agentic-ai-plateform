@@ -264,6 +264,20 @@ if [ ! -f "${CONFIG_FILE}" ]; then
     exit 1
 fi
 
+# Ensure /tmp exists and is world-writable. Create it (with the standard
+# sticky-bit mode 1777) if it is missing; otherwise, if it is not already
+# writable by everyone, fix its permissions. Both the mkdir and the chmod
+# need root, so run them under sudo.
+if [ ! -d /tmp ]; then
+    print_step "Creating /tmp..."
+    sudo mkdir -p -m 1777 /tmp
+    print_success "/tmp created"
+elif [ ! -w /tmp ] || [ "$(stat -c '%a' /tmp 2>/dev/null)" != "1777" ]; then
+    print_step "Fixing /tmp permissions (world-writable, sticky bit)..."
+    sudo chmod 1777 /tmp
+    print_success "/tmp permissions set to 1777"
+fi
+
 # Collect platform identity before any installation / clone step.
 prompt_platform_identity
 

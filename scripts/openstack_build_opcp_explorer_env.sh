@@ -1,14 +1,14 @@
 #!/bin/bash
 
 # Set variables
-NETWORK_NAME="partipolia-network"
-SUBNET_NAME="partipolia-subnet"
-INSTANCE_NAME="partipolia-instance-main"
-KEYPAIR_NAME="partipolia-key1"
+NETWORK_NAME="pltfuser-network"
+SUBNET_NAME="pltfuser-subnet"
+INSTANCE_NAME="pltfuser-instance-main"
+KEYPAIR_NAME="pltfuser-key1"
 FLAVOR_NAME="b3-8"
 IMAGE_NAME="Ubuntu 26.04"
 EXTERNAL_NETWORK_NAME="Ext-Net"
-GATEWAY_NAME="partipolia-gateway"
+GATEWAY_NAME="pltfuser-gateway"
 
 # Create keypair if it doesn't exist
 if ! openstack keypair show "$KEYPAIR_NAME" > /dev/null 2>&1; then
