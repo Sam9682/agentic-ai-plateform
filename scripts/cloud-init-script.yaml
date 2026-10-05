@@ -1,0 +1,7 @@
+#cloud-config
+users:
+  - name: partipolia
+    lock_passwd: false
+    plain_text_passwd: 'partipolia'
+    sudo: ['ALL=(ALL) NOPASSWD:ALL']
+ssh_pwauth: true

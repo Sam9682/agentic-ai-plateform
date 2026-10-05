@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Pytest
+.pytest_cache/
+
+# Logs
+logs/
+
+# Environment and secrets
+.env
+*.env
+
+# SSL certificates
+ssl/
+
+# Cookies
+cookies.txt
+
+# AWS credentials (should never be committed)
+.aws/
+
+# Docker
+*.pid
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Kiro
+.kiro/

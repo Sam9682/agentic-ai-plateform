@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+
+{% block title %}{{ get_text('register') }} - {{ PLTF_NAME }}{% endblock %}
+
+{% block content %}
+<div class="auth-container">
+    <div class="auth-form">
+        <h2>{{ get_text('register') }}</h2>
+        <div class="activation-notice">
+            <strong>{{ get_text('account_activation_message_title') }}</strong><br>
+            {{ get_text('account_activation_message_body') }}
+        </div>
+        <form id="registerForm" method="POST" action="/register">
+            <div class="form-group">
+                <label for="username">{{ get_text('username') }}:</label>
+                <input type="text" id="username" name="username" pattern="[a-zA-Z0-9]+" required>
+                <small class="form-hint">{{ get_text('username_hint') }}</small>
+            </div>
+            <div class="form-group">
+                <label for="email">{{ get_text('email') }}:</label>
+                <input type="email" id="email" name="email" required>
+            </div>
+            <div class="form-group">
+                <label for="first_name">{{ get_text('first_name') }}:</label>
+                <input type="text" id="first_name" name="first_name">
+            </div>
+            <div class="form-group">
+                <label for="last_name">{{ get_text('last_name') }}:</label>
+                <input type="text" id="last_name" name="last_name">
+            </div>
+            <div class="form-group">
+                <label for="password">{{ get_text('password') }}:</label>
+                <input type="password" id="password" name="password" required>
+            </div>
+            <div class="form-group">
+                <label for="confirm_password">{{ get_text('confirm_password') }}:</label>
+                <input type="password" id="confirm_password" name="confirm_password" required>
+                <small id="passwordMatchMessage" style="display: none; margin-top: 5px;"></small>
+            </div>
+            <button type="submit" class="btn btn-primary">{{ get_text('register') }}</button>
+        </form>
+        <script>
+            // Password confirmation validation
+            const registerForm = document.getElementById('registerForm');
+            const password = document.getElementById('password');
+            const confirmPassword = document.getElementById('confirm_password');
+            const matchMessage = document.getElementById('passwordMatchMessage');
+            
+            function checkPasswordMatch() {
+                if (confirmPassword.value === '') {
+                    matchMessage.style.display = 'none';
+                    confirmPassword.style.borderColor = '';
+                    return;
+                }
+                
+                if (password.value === confirmPassword.value) {
+                    matchMessage.textContent = "{{ get_text('password_match') }}";
+                    matchMessage.style.color = '#28a745';
+                    matchMessage.style.display = 'block';
+                    confirmPassword.style.borderColor = '#28a745';
+                } else {
+                    matchMessage.textContent = "{{ get_text('password_do_not_match') }}";
+                    matchMessage.style.color = '#dc3545';
+                    matchMessage.style.display = 'block';
+                    confirmPassword.style.borderColor = '#dc3545';
+                }
+            }
+            
+            password.addEventListener('input', checkPasswordMatch);
+            confirmPassword.addEventListener('input', checkPasswordMatch);
+            
+            registerForm.addEventListener('submit', function(e) {
+                if (password.value !== confirmPassword.value) {
+                    e.preventDefault();
+                    alert('Passwords do not match. Please make sure both password fields are identical.');
+                    confirmPassword.focus();
+                    return false;
+                }
+            });
+        </script>
+        <p class="auth-link">
+            {{ get_text('already_account') }} <a href="/">{{ get_text('login_here') }}</a>
+        </p>
+    </div>
+</div>
+{% endblock %}

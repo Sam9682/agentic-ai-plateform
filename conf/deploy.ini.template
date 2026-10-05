@@ -1,0 +1,34 @@
+# Primary domain used by nginx server_name and for generating application URLs.
+DOMAIN=agentic-ai-plateform.com
+
+# Platform display name shown in the installer banner and UI. Persisted from
+# init_pltf.sh (prompt or env) and read as a default via conf precedence.
+PLTF_NAME=agentic-ai-plateform
+
+# Platform folder slug (lowercase letters, digits and hyphens). Used as the
+# clone target directory and in installation paths. Persisted by init_pltf.sh.
+PLTF_FOLDER=agentic-ai-plateform
+
+# Platform version string.
+VERSION=0.0.1
+
+# Main repository clone URL. Default source for init_pltf.sh when REPO_URL is
+# not provided via environment variable.
+REPO_URL=https://github.com/Sam9682/agentic-ai-plateform.git
+
+# Shared submodule URL added as the 'shared' git submodule by init_pltf.sh.
+# Default source when SUBMODULE_URL is not provided via environment variable.
+SUBMODULE_URL=git@github.com:Sam9682/ai-swautomorph--shared.git
+
+# Number of consecutive ports allocated per application (6 HTTP + 6 HTTPS).
+# Must match calculate_ports() in deployControlPlan.sh and
+# calculate_app_ports() in src/database_postgres.py.
+RANGE_PORTS_PER_APPLICATION=12
+
+# Linux system user used for installation paths (e.g. /home/<user>)
+LINUX_USER_INSTALLATION=psmc
+
+# Secondary domains (comma-separated list)
+# Format: "domain1:server_names:proxy_pass,domain2:server_names:proxy_pass"
+# Example: "agentic-ai-plateform.com:agentic-ai-plateform.com www.agentic-ai-plateform.com:www.agentic-ai-plateformf.com"
+SECONDARY_DOMAINS=

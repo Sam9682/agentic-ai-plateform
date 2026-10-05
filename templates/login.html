@@ -1,0 +1,216 @@
+{% extends "base.html" %}
+
+{% block title %}{{ get_text('login') }} - {{ PLTF_NAME }}{% endblock %}
+
+{% block content %}
+<div class="auth-container">
+    <div class="platform-header">
+        <h1>{{ PLTF_NAME }}</h1>
+        <h3>🤖 {{ get_text('replace_it_team') }}</h3>
+        <p class="mission-statement">
+            {{ get_text('stop_waiting_message') }}
+        </p>
+    </div>
+    
+    <div class="auth-form">
+        <h2>{{ get_text('login') }}</h2>
+        <form id="loginForm" method="POST" action="{{ url_for('auth.login') }}">
+            <div class="form-group">
+                <label for="username">{{ get_text('username') }}:</label>
+                <input type="text" id="username" name="username" required>
+            </div>
+            <div class="form-group">
+                <label for="password">{{ get_text('password') }}:</label>
+                <input type="password" id="password" name="password" required>
+            </div>
+            <button type="submit" class="btn btn-primary">{{ get_text('login') }}</button>
+        </form>
+        
+        <!-- 2FA Verification Section (hidden by default) -->
+        <div id="twoFactorSection" style="display: none; margin-top: 20px; padding: 20px; background: #f8f9fa; border-radius: 5px; border: 1px solid #dee2e6;">
+            <h3>🔐 {{ get_text('two_factor_verification') }}</h3>
+            <p id="twoFactorMessage" style="color: #666; margin-bottom: 15px;"></p>
+            
+            <div id="twoFactorMethods" style="margin-bottom: 15px;">
+                <button id="btn2faTotp" class="btn btn-secondary" onclick="select2FAMethod('totp')" style="margin-right: 10px;">📱 Authenticator App</button>
+                <button id="btn2faEmail" class="btn btn-secondary" onclick="select2FAMethod('email')">📧 Email Code</button>
+            </div>
+            
+            <div class="form-group">
+                <label for="twoFactorCode">{{ get_text('verification_code') }}:</label>
+                <input type="text" id="twoFactorCode" placeholder="000000" maxlength="8" 
+                       style="font-size: 18px; text-align: center; letter-spacing: 4px; width: 200px;">
+            </div>
+            <button class="btn btn-primary" onclick="verify2FALogin()">{{ get_text('verify') }}</button>
+        </div>
+        
+        <p class="auth-link">
+            {{ get_text('no_account') }} <a href="{{ url_for('auth.register') }}">{{ get_text('register_here') }}</a>
+        </p>
+    </div>
+    
+    <script>
+    let pending2FAUserId = null;
+    let selected2FAMethod = 'totp';
+    
+    document.getElementById('loginForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        const formData = {
+            username: document.getElementById('username').value,
+            password: document.getElementById('password').value
+        };
+        
+        fetch('{{ url_for("auth.login") }}', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(formData)
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                alert(data.error);
+            } else if (data.requires_2fa) {
+                // Show 2FA section
+                pending2FAUserId = data.user_id;
+                document.getElementById('loginForm').style.display = 'none';
+                document.getElementById('twoFactorSection').style.display = 'block';
+                document.getElementById('twoFactorMessage').textContent = data.message;
+                
+                // Show available methods
+                const methods = data.methods || [];
+                document.getElementById('btn2faTotp').style.display = methods.includes('totp') ? 'inline-block' : 'none';
+                document.getElementById('btn2faEmail').style.display = methods.includes('email') ? 'inline-block' : 'none';
+                
+                // Auto-select first available method
+                if (methods.includes('totp')) {
+                    select2FAMethod('totp');
+                } else if (methods.includes('email')) {
+                    select2FAMethod('email');
+                }
+            } else if (data.message === 'Login successful') {
+                window.location.href = '/dashboard';
+            }
+        })
+        .catch(error => {
+            alert('Login error: ' + error.message);
+        });
+    });
+    
+    function select2FAMethod(method) {
+        selected2FAMethod = method;
+        document.getElementById('btn2faTotp').classList.remove('btn-primary');
+        document.getElementById('btn2faTotp').classList.add('btn-secondary');
+        document.getElementById('btn2faEmail').classList.remove('btn-primary');
+        document.getElementById('btn2faEmail').classList.add('btn-secondary');
+        
+        if (method === 'totp') {
+            document.getElementById('btn2faTotp').classList.remove('btn-secondary');
+            document.getElementById('btn2faTotp').classList.add('btn-primary');
+            document.getElementById('twoFactorMessage').textContent = 'Enter the 6-digit code from your authenticator app:';
+        } else if (method === 'email') {
+            document.getElementById('btn2faEmail').classList.remove('btn-secondary');
+            document.getElementById('btn2faEmail').classList.add('btn-primary');
+            document.getElementById('twoFactorMessage').textContent = 'A verification code has been sent to your email.';
+            // Send email code
+            fetch('/security/2fa/send-email-code', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({user_id: pending2FAUserId})
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    document.getElementById('twoFactorMessage').textContent = 'Error: ' + data.error;
+                } else {
+                    document.getElementById('twoFactorMessage').textContent = data.message;
+                }
+            });
+        }
+        
+        document.getElementById('twoFactorCode').focus();
+    }
+    
+    function verify2FALogin() {
+        const code = document.getElementById('twoFactorCode').value.trim();
+        if (!code) {
+            alert('Please enter the verification code');
+            return;
+        }
+        
+        fetch('/security/2fa/verify-login', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                code: code,
+                method: selected2FAMethod
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                alert(data.error);
+                document.getElementById('twoFactorCode').value = '';
+                document.getElementById('twoFactorCode').focus();
+            } else if (data.redirect) {
+                window.location.href = data.redirect;
+            }
+        })
+        .catch(error => {
+            alert('Verification error: ' + error.message);
+        });
+    }
+    
+    // Allow Enter key to submit 2FA code
+    document.getElementById('twoFactorCode').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            verify2FALogin();
+        }
+    });
+    </script>
+    
+    <div class="platform-description">
+        <div class="target-audience">
+            <h4>💡 {{ get_text('what_ai_agents_do') }}</h4>
+            <ul>
+                <li><strong>🔧 {{ get_text('virtual_developer') }}:</strong> {{ get_text('ai_developer_desc') }}</li>
+                <li><strong>🚀 {{ get_text('virtual_operations') }}:</strong> {{ get_text('ai_operations_desc') }}</li>
+                <li><strong>⚡ {{ get_text('instant_results') }}:</strong> {{ get_text('instant_results_desc') }}</li>
+            </ul>
+        </div>
+        <div class="platform-features">
+            <h4>🎯 {{ get_text('why_choose_ai') }}</h4>
+            <ul>
+                <li>💰 <strong>{{ get_text('cost_savings') }}:</strong> {{ get_text('cost_savings_desc') }}</li>
+                <li>⏰ <strong>{{ get_text('availability_247') }}:</strong> {{ get_text('availability_247_desc') }}</li>
+                <li>🚀 <strong>{{ get_text('instant_response') }}:</strong> {{ get_text('instant_response_desc') }}</li>
+                <li>🎯 <strong>{{ get_text('perfect_execution') }}:</strong> {{ get_text('perfect_execution_desc') }}</li>
+                <li>📈 <strong>{{ get_text('unlimited_scalability') }}:</strong> {{ get_text('unlimited_scalability_desc') }}</li>
+                <li>🧠 <strong>{{ get_text('always_learning') }}:</strong> {{ get_text('always_learning_desc') }}</li>
+            </ul>
+        </div>
+        <div class="revolution-message">
+            <p class="warning-text">
+                🚨 <em><strong>{{ get_text('disruption_warning') }}</strong></em>
+            </p>
+        </div>
+    </div>
+</div>
+
+<footer class="legal-footer">
+    <div class="legal-content">
+        <p class="copyright">
+            © 2026 {{ pltf_name }}. {{ get_text('all_rights_reserved') }}
+        </p>
+        <p class="team-credits">
+            {{ get_text('developed_by') }}: <strong>Samuel LEPETRE</strong>, {{ get_text('with_help_of') }} <strong>Team PSMC</strong>
+        </p>
+        <p class="platform-info">
+            🌐 {{ get_text('multi_server_short') }} | 🔐 {{ get_text('sso_short') }} | 🤖 {{ get_text('virtual_agents_short') }} | 💰 {{ get_text('billing_short') }} | 🛡️ {{ get_text('waf_protected') }}
+        </p>
+        <p class="version-info" style="font-size: 11px; color: #999; margin-top: 5px;">
+            v{{ APP_VERSION }}
+        </p>
+    </div>
+</footer>
+{% endblock %}

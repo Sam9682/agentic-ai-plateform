@@ -1,0 +1,309 @@
+{% extends "base.html" %}
+
+{% block title %}{{ filename }} - {{ PLTF_NAME }}{% endblock %}
+
+{% block content %}
+<div class="doc-viewer">
+    <div class="doc-content" id="docContent">
+        <div class="lang-content active" id="content-en">
+            <div id="english-content"></div>
+        </div>
+        <div class="lang-content" id="content-fr">
+            <div id="french-content"></div>
+        </div>
+    </div>
+</div>
+
+<style>
+.doc-viewer {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+    min-height: 100vh;
+}
+
+.lang-content {
+    display: none;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+    padding: 2rem;
+    margin: 1rem 0;
+}
+
+.lang-content.active {
+    display: block;
+}
+
+.doc-content h1 {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 1.5rem;
+    border-radius: 8px;
+    text-align: center;
+    margin: 0 0 2rem 0;
+    font-size: 2.2rem;
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+}
+
+.doc-content h2 {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 1rem 1.5rem;
+    border-radius: 8px;
+    margin: 2rem 0 1rem 0;
+    font-size: 1.5rem;
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.2);
+}
+
+.doc-content h3 {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    color: white;
+    padding: 0.75rem 1rem;
+    border-radius: 6px;
+    margin: 1.5rem 0 1rem 0;
+    font-size: 1.2rem;
+    box-shadow: 0 3px 10px rgba(245, 87, 108, 0.2);
+}
+
+.doc-content h4 {
+    background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+    color: white;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    margin: 1rem 0 0.5rem 0;
+    font-size: 1.1rem;
+    box-shadow: 0 3px 10px rgba(79, 172, 254, 0.2);
+}
+
+.doc-content h5 {
+    background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+    color: white;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    margin: 1rem 0 0.5rem 0;
+    font-size: 1rem;
+    box-shadow: 0 3px 10px rgba(250, 112, 154, 0.2);
+}
+
+.doc-content p {
+    line-height: 1.7;
+    margin-bottom: 1rem;
+    color: #2c3e50;
+    font-size: 1rem;
+}
+
+.doc-content ul, .doc-content ol {
+    margin: 1rem 0;
+    padding-left: 2rem;
+}
+
+.doc-content li {
+    margin-bottom: 0.5rem;
+    line-height: 1.6;
+    color: #2c3e50;
+}
+
+.doc-content strong {
+    color: #667eea;
+    font-weight: 600;
+}
+
+.doc-content em {
+    color: #764ba2;
+    font-style: italic;
+}
+
+.doc-content pre {
+    background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+    color: #ecf0f1;
+    padding: 1.5rem;
+    border-radius: 8px;
+    overflow-x: auto;
+    margin: 1.5rem 0;
+    box-shadow: 0 4px 15px rgba(44, 62, 80, 0.3);
+    border-left: 4px solid #f1c40f;
+}
+
+.doc-content code {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.9rem;
+    box-shadow: 0 2px 5px rgba(102, 126, 234, 0.2);
+}
+
+.doc-content pre code {
+    background: none;
+    color: #ecf0f1;
+    padding: 0;
+    box-shadow: none;
+}
+
+.doc-content table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 2rem 0;
+    background: white;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+}
+
+.doc-content th {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 1rem;
+    text-align: left;
+    font-weight: 600;
+}
+
+.doc-content td {
+    padding: 1rem;
+    border-bottom: 1px solid #f0f0f0;
+    color: #2c3e50;
+}
+
+.doc-content tr:hover {
+    background-color: #f8f9fa;
+}
+
+.doc-content blockquote {
+    background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%);
+    border-left: 4px solid #f1c40f;
+    padding: 1rem 1.5rem;
+    margin: 1.5rem 0;
+    border-radius: 0 8px 8px 0;
+    color: #856404;
+    font-style: italic;
+    box-shadow: 0 3px 10px rgba(241, 196, 15, 0.2);
+}
+
+.doc-content hr {
+    border: none;
+    height: 3px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    margin: 3rem 0;
+    border-radius: 2px;
+}
+
+.doc-content img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 8px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    margin: 1.5rem 0;
+    display: block;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+/* Special styling for centered text */
+.doc-content .center {
+    text-align: center;
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    color: white;
+    padding: 1rem;
+    border-radius: 8px;
+    margin: 1.5rem 0;
+    box-shadow: 0 4px 15px rgba(245, 87, 108, 0.2);
+}
+
+/* Emoji styling */
+.doc-content h1::before,
+.doc-content h2::before,
+.doc-content h3::before {
+    margin-right: 0.5rem;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+    .doc-viewer {
+        padding: 10px;
+    }
+    
+    .lang-content {
+        padding: 1rem;
+    }
+    
+    .doc-content h1 {
+        font-size: 1.8rem;
+        padding: 1rem;
+    }
+    
+    .doc-content h2 {
+        font-size: 1.3rem;
+        padding: 0.75rem 1rem;
+    }
+    
+    .doc-content h3 {
+        font-size: 1.1rem;
+        padding: 0.5rem 0.75rem;
+    }
+    
+    .doc-content pre {
+        padding: 1rem;
+        font-size: 0.9rem;
+    }
+    
+    .doc-content table {
+        font-size: 0.9rem;
+    }
+    
+    .doc-content th,
+    .doc-content td {
+        padding: 0.75rem;
+    }
+}
+</style>
+
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script>
+const markdownContent = {{ content|tojson }};
+
+function parseMarkdownSections(content) {
+    const sections = { en: '', fr: '' };
+    
+    // Split by language sections
+    const englishMatch = content.match(/## English\s*([\s\S]*?)(?=\n## Français|$)/);
+    const frenchMatch = content.match(/## Français\s*([\s\S]*?)$/);
+    
+    if (englishMatch) {
+        sections.en = englishMatch[1].trim();
+    } else {
+        // If no language sections, show all content in current language
+        sections.en = content;
+        sections.fr = content;
+    }
+    
+    if (frenchMatch) {
+        sections.fr = frenchMatch[1].trim();
+    }
+    
+    return sections;
+}
+
+function updateContent() {
+    // Get current language from session or default to 'en'
+    const currentLang = '{{ session.language or "en" }}';
+    const sections = parseMarkdownSections(markdownContent);
+    
+    // Convert markdown to HTML
+    document.getElementById('english-content').innerHTML = marked.parse(sections.en);
+    document.getElementById('french-content').innerHTML = marked.parse(sections.fr);
+    
+    // Show appropriate language content
+    document.querySelectorAll('.lang-content').forEach(el => el.classList.remove('active'));
+    document.getElementById(`content-${currentLang}`).classList.add('active');
+    
+    // Update document language
+    document.documentElement.lang = currentLang;
+}
+
+// Update content when page loads
+document.addEventListener('DOMContentLoaded', updateContent);
+</script>
+{% endblock %}

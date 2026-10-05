@@ -1,0 +1,17 @@
+[Unit]
+Description=SWAutomorph Control Plan
+After=network.target
+
+[Service]
+Type=forking
+# GENERATED ARTIFACT - regenerate with 'python3 scripts/controlplan_service.py'
+# or at install time via 'controller_cli.py install-as-systemctl-service'.
+# User= and the /home/<user>/<folder> paths are derived from
+# LINUX_USER_INSTALLATION and PLTF_FOLDER in conf/deploy.ini.
+ExecStart=/home/psmc/agentic-ai-plateform/scripts/start_swautomorph_controlplan.sh
+ExecStop=/home/psmc/agentic-ai-plateform/scripts/stop_swautomorph_controlplan.sh
+WorkingDirectory=/home/psmc/agentic-ai-plateform
+User=psmc
+
+[Install]
+WantedBy=multi-user.target

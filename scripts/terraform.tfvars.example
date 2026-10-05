@@ -1,0 +1,3 @@
+ovh_project_id = "your_ovh_project_id_here"
+ovh_username   = "your_ovh_username_here"
+ovh_password   = "your_ovh_password_here"

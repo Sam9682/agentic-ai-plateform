@@ -1,0 +1,145 @@
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: ${PLTF_FOLDER:-agentic-ai-plateform}-postgres
+    environment:
+      POSTGRES_DB: ai_swautomorph
+      POSTGRES_USER: swautomorph
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-swautomorph_password}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/postgresql_schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U swautomorph -d ai_swautomorph"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - swautomorph-network
+
+  # SwAutoMorph Application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ${PLTF_FOLDER:-agentic-ai-plateform}-app
+    ports:
+      - "${HTTP_PORT:-6000}:80"
+      - "${HTTP_PORT2:-6002}:80"
+      - "${HTTP_PORT3:-6004}:80"
+      - "${HTTP_PORT4:-6006}:80"
+      - "${HTTP_PORT5:-6008}:80"
+      - "${HTTP_PORT6:-6010}:80"
+    environment:
+      - FLASK_ENV=production
+      - SECRET_KEY=${SECRET_KEY:-change-this-in-production}
+      - USE_POSTGRES=${USE_POSTGRES:-false}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=ai_swautomorph
+      - POSTGRES_USER=swautomorph
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-swautomorph_password}
+    volumes:
+      - app_data:/app/data
+      - ~/.ssh:/home/ubuntu/.ssh:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${HTTP_PORT:-6000}/api/auth/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - swautomorph-network
+
+  nginx:
+    image: nginx:alpine
+    container_name: ${PLTF_FOLDER:-agentic-ai-plateform}-nginx
+    ports:
+      - "${HTTPS_PORT:-6001}:443"
+      - "${HTTPS_PORT2:-6003}:443"
+      - "${HTTPS_PORT3:-6005}:443"
+      - "${HTTPS_PORT4:-6007}:443"
+      - "${HTTPS_PORT5:-6009}:443"
+      - "${HTTPS_PORT6:-6011}:443"
+    volumes:
+      - ./conf/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - app
+    restart: unless-stopped
+    environment:
+      - HTTP_PORT=${HTTP_PORT:-6000}
+      - HTTPS_PORT=${HTTPS_PORT:-6001}
+      - HTTP_PORT2=${HTTP_PORT2:-6002}
+      - HTTPS_PORT2=${HTTPS_PORT2:-6003}
+      - HTTP_PORT3=${HTTP_PORT3:-6004}
+      - HTTPS_PORT3=${HTTPS_PORT3:-6005}
+      - HTTP_PORT4=${HTTP_PORT4:-6006}
+      - HTTPS_PORT4=${HTTPS_PORT4:-6007}
+      - HTTP_PORT5=${HTTP_PORT5:-6008}
+      - HTTPS_PORT5=${HTTPS_PORT5:-6009}
+      - HTTP_PORT6=${HTTP_PORT6:-6010}
+      - HTTPS_PORT6=${HTTPS_PORT6:-6011}
+    networks:
+      - swautomorph-network
+
+  gitea:
+    image: gitea/gitea:1.21.3
+    container_name: ${PLTF_FOLDER:-agentic-ai-plateform}-gitea
+    ports:
+      - "3000:3000"
+    volumes:
+      - gitea_data:/data
+      - gitea_repos:/home/ubuntu/admin/data/gitea-repositories
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - USER_UID=1000
+      - USER_GID=1000
+      - GITEA__database__DB_TYPE=${GITEA_DB_TYPE:-sqlite3}
+      - GITEA__database__PATH=/data/gitea/gitea.db
+      - GITEA__database__HOST=postgres:5432
+      - GITEA__database__NAME=gitea
+      - GITEA__database__USER=swautomorph
+      - GITEA__database__PASSWD=${POSTGRES_PASSWORD:-swautomorph_password}
+      - GITEA__repository__ROOT=/home/ubuntu/admin/data/gitea-repositories
+      - GITEA__server__DOMAIN=localhost
+      - GITEA__server__HTTP_PORT=3000
+      - GITEA__server__ROOT_URL=http://localhost:3000/
+      - GITEA__mailer__ENABLED=false
+      - GITEA__service__DISABLE_REGISTRATION=false
+      - GITEA__service__REQUIRE_SIGNIN_VIEW=false
+      - GITEA__log__MODE=file
+      - GITEA__log__LEVEL=Info
+      - GITEA__log__ROOT_PATH=/data/gitea/log
+      - GITEA__security__INSTALL_LOCK=true
+      - GITEA__security__DISABLE_QUERY_AUTH_TOKEN=true
+      - GITEA__git.lfs__START_SERVER=true
+      - GITEA__git.lfs__CONTENT_PATH=/home/ubuntu/admin
+      - GITEA__REPOSITORY__ENABLE_PUSH_CREATE_USER=true
+      - GITEA__WEBHOOK__SKIP_TLS_VERIFY=true
+      - GITEA__MAILER__SKIP_VERIFY=true
+      - INSTALL_LOCK=true
+      - GITEA_ADMIN_USERNAME=admin
+      - GITEA_ADMIN_PASSWORD=password
+      - GITEA_ADMIN_EMAIL=admin@${DOMAIN:-softfluid.fr}
+    restart: unless-stopped
+    networks:
+      - swautomorph-network
+
+volumes:
+  postgres_data:
+  app_data:
+  gitea_data:
+  gitea_repos:
+
+networks:
+  swautomorph-network:
+    driver: bridge

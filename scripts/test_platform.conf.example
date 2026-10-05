@@ -1,0 +1,29 @@
+# AI-SwAutoMorph Platform Testing Tool Configuration
+# Copy this file to test_platform.conf and customize for your environment
+
+# Platform Connection Settings
+TEST_HOST=localhost
+TEST_PORT=443
+TEST_PROTOCOL=https
+
+# Database Connection Settings
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+POSTGRES_DB=ai_swautomorph
+POSTGRES_USER=swautomorph
+POSTGRES_PASSWORD=swautomorph_password
+
+# Test User Credentials
+# These will be created during testing
+TEST_USERNAME=test_user_auto
+TEST_EMAIL=test_auto@example.com
+TEST_PASSWORD=test_password_123
+
+# Test Behavior
+TEST_TIMEOUT=30
+
+# Usage:
+# 1. Copy this file: cp test_platform.conf.example test_platform.conf
+# 2. Edit test_platform.conf with your settings
+# 3. Source the file: source test_platform.conf
+# 4. Run tests: python scripts/test_platform.py --all

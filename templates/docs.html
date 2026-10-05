@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+
+{% block title %}Documentation - {{ PLTF_NAME }}{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h1>📖 Documentation</h1>
+    
+    <div class="docs-list">
+        {% if md_files %}
+            {% for file in md_files %}
+            <div class="doc-item">
+                <h3><a href="{{ url_for('main.view_doc', filename=file) }}">{{ file.replace('.md', '').replace('_', ' ').title() }}</a></h3>
+                <p class="doc-description">
+                    {% if file == 'ARCHITECTURE_GUIDE.md' %}
+                        Complete system architecture and design documentation
+                    {% elif file == 'DEPLOYMENT_GUIDE.md' %}
+                        Step-by-step deployment and usage guide
+                    {% elif file == 'DATABASE_IMPROVEMENTS.md' %}
+                        Database schema and performance improvements
+                    {% elif file == 'SERVERLESS.md' %}
+                        Serverless orchestration: on-demand Docker container execution, API reference, and security model
+                    {% else %}
+                        {{ file.replace('.md', '').replace('_', ' ') }} documentation
+                    {% endif %}
+                </p>
+            </div>
+            {% endfor %}
+        {% else %}
+            <p>No documentation files found.</p>
+        {% endif %}
+    </div>
+</div>
+
+<style>
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+.docs-list {
+    display: grid;
+    gap: 20px;
+    margin-top: 30px;
+}
+
+.doc-item {
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 20px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    transition: transform 0.2s;
+}
+
+.doc-item:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+}
+
+.doc-item h3 {
+    margin: 0 0 10px 0;
+    color: #333;
+}
+
+.doc-item h3 a {
+    text-decoration: none;
+    color: #007bff;
+}
+
+.doc-item h3 a:hover {
+    text-decoration: underline;
+}
+
+.doc-description {
+    color: #666;
+    margin: 0;
+    line-height: 1.5;
+}
+</style>
+{% endblock %}

@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}{{ PLTF_NAME }}{% endblock %}</title>
+    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="https://www.{{ DOMAIN|default('softfluid.fr') }}" class="nav-title">{{ PLTF_NAME }} <span style="font-size: 10px; color: #aaa;">v{{ APP_VERSION }}</span></a>
+            <div class="nav-center">
+                <div class="nav-links">
+                    {% if session.user_id %}
+                        {% if username %}<span class="nav-user">{{ get_text('welcome') }}, {{ username }}</span>{% endif %}
+                        <a href="javascript:void(0)" onclick="showTab('apps')" id="navApps" class="nav-active">{{ get_text('applications') }}</a>
+                        <a href="javascript:void(0)" onclick="showTab('orchestratorServerless')" id="navOrchestratorServerless">🚀 Serverless</a>
+                        <a href="javascript:void(0)" onclick="showTab('marketplace')" id="navMarketplace">🛒 {{ get_text('marketplace') }}</a>
+                        <a href="javascript:void(0)" onclick="showTab('sandbox')" id="navSandbox">🧪 {{ get_text('sandbox') }}</a>
+                        <a href="javascript:void(0)" onclick="showTab('billing')" id="navBilling">{{ get_text('billing') }}</a>
+                        <a href="javascript:void(0)" onclick="showTab('security')" id="navSecurity">🔐</a>
+                        {% if username == 'admin' %}
+                        <div class="nav-dropdown">
+                            <a href="javascript:void(0)" class="nav-dropdown-btn" onclick="toggleNavDropdown('config')">{{ get_text('configuration') }} ▼</a>
+                            <div class="nav-dropdown-content" id="navConfigDropdown">
+                                <a href="javascript:void(0)" onclick="showTab('users')">👥 {{ get_text('user_management') }}</a>
+                                <a href="javascript:void(0)" onclick="showTab('servers')">🖥️ {{ get_text('server_management') }}</a>
+                                <a href="javascript:void(0)" onclick="showTab('appManagement')">📱 {{ get_text('applications_management') }}</a>
+                                <a href="javascript:void(0)" onclick="showTab('deployments')">🚀 {{ get_text('deployments_management') }}</a>
+                                <a href="javascript:void(0)" onclick="showTab('orchestrator')">🎯 {{ get_text('orchestrator') }}</a>
+                                <a href="javascript:void(0)" onclick="showTab('database')">🗄️ {{ get_text('database_management') }}</a>
+                                <a href="javascript:void(0)" onclick="showTab('settings')">⚙️ Settings</a>
+                            </div>
+                        </div>
+                        {% endif %}
+                        <div class="nav-dropdown">
+                            <a href="javascript:void(0)" class="nav-dropdown-btn" onclick="toggleNavDropdown('help')">Help ▼</a>
+                            <div class="nav-dropdown-content" id="navHelpDropdown">
+                                <a href="{{ url_for('main.view_doc', filename='ARCHITECTURE_GUIDE.md') }}">Architecture Guide</a>
+                                <a href="{{ url_for('main.view_doc', filename='DEPLOYMENT_GUIDE.md') }}">Deployment Guide</a>
+                                <a href="{{ url_for('main.userguide') }}">User Guide</a>
+                                <a href="{{ url_for('main.view_doc', filename='LIST_OF_APP_AVAILABLE.md') }}">Available Applications</a>
+                                <a href="{{ url_for('main.view_doc', filename='SERVERLESS.md') }}">Serverless</a>
+                                <a href="{{ url_for('main.view_doc', filename='SHARE_GPU_DOCKER.md') }}">Share GPU Docker</a>
+                                <a href="{{ url_for('main.view_doc', filename='PLATFORM_OVERVIEW.md') }}">Platform Overview</a>
+                            </div>
+                        </div>
+                        <a href="{{ url_for('auth.logout') }}" class="nav-logout">{{ get_text('logout') }}</a>
+                    {% else %}
+                        <div class="nav-dropdown">
+                            <a href="javascript:void(0)" class="nav-dropdown-btn" onclick="toggleNavDropdown('help')">Help ▼</a>
+                            <div class="nav-dropdown-content" id="navHelpDropdown">
+                                <a href="{{ url_for('main.view_doc', filename='ARCHITECTURE_GUIDE.md') }}">Architecture Guide</a>
+                                <a href="{{ url_for('main.view_doc', filename='DEPLOYMENT_GUIDE.md') }}">Deployment Guide</a>
+                                <a href="{{ url_for('main.userguide') }}">User Guide</a>
+                                <a href="{{ url_for('main.view_doc', filename='LIST_OF_APP_AVAILABLE.md') }}">Available Applications</a>
+                                <a href="{{ url_for('main.view_doc', filename='SERVERLESS.md') }}">Serverless</a>
+                                <a href="{{ url_for('main.view_doc', filename='SHARE_GPU_DOCKER.md') }}">Share GPU Docker</a>
+                                <a href="{{ url_for('main.view_doc', filename='PLATFORM_OVERVIEW.md') }}">Platform Overview</a>
+                            </div>
+                        </div>
+                        <a href="{{ url_for('main.index') }}">{{ get_text('login') }}</a>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="lang-toggle">
+                <button id="layoutToggle" class="btn-icon" onclick="toggleLayout()" title="Switch to Horizontal Layout">
+                    🖥️
+                </button>
+                <a href="{{ url_for('main.set_language', language='en') }}" class="lang-btn {% if current_lang == 'en' %}active{% endif %}">EN</a>
+                <a href="{{ url_for('main.set_language', language='fr') }}" class="lang-btn {% if current_lang == 'fr' %}active{% endif %}">FR</a>
+            </div>
+            <button class="mobile-menu-btn" onclick="toggleMobileMenu()">☰</button>
+        </div>
+        <div class="mobile-nav" id="mobileNav">
+            <div class="mobile-nav-content">
+                {% if session.user_id %}
+                    {% if username %}<span class="nav-user">{{ get_text('welcome') }}, {{ username }}</span>{% endif %}
+                    <a href="javascript:void(0)" onclick="showTab('apps')">{{ get_text('applications') }}</a>
+                    <a href="javascript:void(0)" onclick="showTab('orchestratorServerless')">🚀 Serverless</a>
+                    <a href="javascript:void(0)" onclick="showTab('marketplace')">🛒 {{ get_text('marketplace') }}</a>
+                    <a href="javascript:void(0)" onclick="showTab('sandbox')">🧪 {{ get_text('sandbox') }}</a>
+                    <a href="javascript:void(0)" onclick="showTab('billing')">{{ get_text('billing') }}</a>
+                    <a href="javascript:void(0)" onclick="showTab('security')">🔐 {{ get_text('account_security') }}</a>
+                    {% if username == 'admin' %}
+                    <a href="javascript:void(0)" onclick="showTab('users')">👥 {{ get_text('user_management') }}</a>
+                    <a href="javascript:void(0)" onclick="showTab('servers')">🖥️ {{ get_text('server_management') }}</a>
+                    <a href="javascript:void(0)" onclick="showTab('appManagement')">📱 {{ get_text('applications_management') }}</a>
+                    <a href="javascript:void(0)" onclick="showTab('deployments')">🚀 {{ get_text('deployments_management') }}</a>
+                    <a href="javascript:void(0)" onclick="showTab('orchestrator')">🎯 {{ get_text('orchestrator') }}</a>
+                    <a href="javascript:void(0)" onclick="showTab('database')">🗄️ {{ get_text('database_management') }}</a>
+                    <a href="javascript:void(0)" onclick="showTab('settings')">⚙️ Settings</a>
+                    {% endif %}
+                    <a href="{{ url_for('main.view_doc', filename='ARCHITECTURE_GUIDE.md') }}">Architecture Guide</a>
+                    <a href="{{ url_for('main.view_doc', filename='DEPLOYMENT_GUIDE.md') }}">Deployment Guide</a>
+                    <a href="{{ url_for('main.userguide') }}">User Guide</a>
+                    <a href="{{ url_for('main.view_doc', filename='LIST_OF_APP_AVAILABLE.md') }}">Available Applications</a>
+                    <a href="{{ url_for('main.view_doc', filename='SERVERLESS.md') }}">Serverless</a>
+                    <a href="{{ url_for('auth.logout') }}" class="nav-logout">{{ get_text('logout') }}</a>
+                {% else %}
+                    <a href="{{ url_for('main.view_doc', filename='ARCHITECTURE_GUIDE.md') }}">Architecture Guide</a>
+                    <a href="{{ url_for('main.view_doc', filename='DEPLOYMENT_GUIDE.md') }}">Deployment Guide</a>
+                    <a href="{{ url_for('main.userguide') }}">User Guide</a>
+                    <a href="{{ url_for('main.view_doc', filename='LIST_OF_APP_AVAILABLE.md') }}">Available Applications</a>
+                    <a href="{{ url_for('main.view_doc', filename='SERVERLESS.md') }}">Serverless</a>
+                    <a href="{{ url_for('main.index') }}">{{ get_text('login') }}</a>
+                {% endif %}
+                <div class="lang-toggle">
+                    <button id="layoutToggleMobile" class="btn-icon" onclick="toggleLayout()" title="Switch to Horizontal Layout">
+                        🖥️
+                    </button>
+                    <a href="{{ url_for('main.set_language', language='en') }}" class="lang-btn {% if current_lang == 'en' %}active{% endif %}">EN</a>
+                    <a href="{{ url_for('main.set_language', language='fr') }}" class="lang-btn {% if current_lang == 'fr' %}active{% endif %}">FR</a>
+                </div>
+            </div>
+        </div>
+    </nav>
+    
+    <main class="main-content">
+        {% block content %}{% endblock %}
+    </main>
+    
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <script>
+        function toggleMobileMenu() {
+            const mobileNav = document.getElementById('mobileNav');
+            mobileNav.classList.toggle('active');
+        }
+        
+        // Close mobile menu when clicking outside
+        document.addEventListener('click', function(e) {
+            const mobileNav = document.getElementById('mobileNav');
+            const menuBtn = document.querySelector('.mobile-menu-btn');
+            
+            if (!mobileNav.contains(e.target) && !menuBtn.contains(e.target)) {
+                mobileNav.classList.remove('active');
+            }
+        });
+        
+        // Close mobile menu when window is resized to desktop
+        window.addEventListener('resize', function() {
+            if (window.innerWidth > 768) {
+                document.getElementById('mobileNav').classList.remove('active');
+            }
+        });
+        
+        // Navbar dropdown functionality
+        function toggleNavDropdown(dropdownType) {
+            const configDropdown = document.getElementById('navConfigDropdown');
+            const helpDropdown = document.getElementById('navHelpDropdown');
+            
+            // Close all dropdowns first
+            if (configDropdown) configDropdown.style.display = 'none';
+            if (helpDropdown) helpDropdown.style.display = 'none';
+            
+            // Open the requested dropdown
+            if (dropdownType === 'config' && configDropdown) {
+                configDropdown.style.display = 'block';
+            } else if (dropdownType === 'help' && helpDropdown) {
+                helpDropdown.style.display = 'block';
+            }
+        }
+        
+        // Close navbar dropdown when clicking outside
+        document.addEventListener('click', function(event) {
+            // Allow normal link navigation for Help menu items
+            if (event.target.closest('.nav-dropdown-content') && event.target.tagName === 'A' && event.target.href) {
+                // This is a navigation link in dropdown, allow it to work normally
+                return;
+            }
+            
+            // Don't close if clicking on dropdown button or dropdown content
+            if (!event.target.matches('.nav-dropdown-btn') && 
+                !event.target.closest('.nav-dropdown-content') &&
+                !event.target.closest('.nav-dropdown')) {
+                const configDropdown = document.getElementById('navConfigDropdown');
+                const helpDropdown = document.getElementById('navHelpDropdown');
+                if (configDropdown) configDropdown.style.display = 'none';
+                if (helpDropdown) helpDropdown.style.display = 'none';
+            }
+        });
+        
+        // Update navbar active states
+        function updateNavActive(activeTab) {
+            // Only remove nav-active from main navigation links, not dropdown buttons
+            document.querySelectorAll('.nav-links > a:not(.nav-dropdown-btn)').forEach(link => {
+                link.classList.remove('nav-active');
+            });
+            
+            if (activeTab === 'apps') {
+                document.getElementById('navApps').classList.add('nav-active');
+            } else if (activeTab === 'billing') {
+                document.getElementById('navBilling').classList.add('nav-active');
+            } else if (activeTab === 'security') {
+                const navSecurity = document.getElementById('navSecurity');
+                if (navSecurity) navSecurity.classList.add('nav-active');
+            } else if (activeTab === 'orchestratorServerless') {
+                const navOrchestratorServerless = document.getElementById('navOrchestratorServerless');
+                if (navOrchestratorServerless) navOrchestratorServerless.classList.add('nav-active');
+            } else if (activeTab === 'marketplace') {
+                const navMarketplace = document.getElementById('navMarketplace');
+                if (navMarketplace) navMarketplace.classList.add('nav-active');
+            } else if (activeTab === 'sandbox') {
+                const navSandbox = document.getElementById('navSandbox');
+                if (navSandbox) navSandbox.classList.add('nav-active');
+            }
+        }
+        
+        // Show tab function for navigation
+        function showTab(tabName) {
+            // Close mobile menu if open
+            document.getElementById('mobileNav').classList.remove('active');
+            
+            // Close any open dropdowns
+            const configDropdown = document.getElementById('navConfigDropdown');
+            const helpDropdown = document.getElementById('navHelpDropdown');
+            if (configDropdown) configDropdown.style.display = 'none';
+            if (helpDropdown) helpDropdown.style.display = 'none';
+            
+            // Update navbar active state
+            updateNavActive(tabName);
+            
+            // Trigger tab change if on dashboard page
+            if (typeof window.showDashboardTab === 'function') {
+                window.showDashboardTab(tabName);
+            } else {
+                // If not on dashboard, redirect to dashboard with tab
+                window.location.href = '/dashboard#' + tabName;
+            }
+        }
+        
+        // Layout toggle function
+        function toggleLayout() {
+            const dashboardLayout = document.querySelector('.dashboard-layout');
+            const layoutToggle = document.getElementById('layoutToggle');
+            const layoutToggleMobile = document.getElementById('layoutToggleMobile');
+            
+            if (dashboardLayout && dashboardLayout.classList.contains('vertical')) {
+                dashboardLayout.classList.remove('vertical');
+                if (layoutToggle) {
+                    layoutToggle.innerHTML = '📱';
+                    layoutToggle.title = 'Switch to Vertical Layout';
+                }
+                if (layoutToggleMobile) {
+                    layoutToggleMobile.innerHTML = '📱';
+                    layoutToggleMobile.title = 'Switch to Vertical Layout';
+                }
+            } else if (dashboardLayout) {
+                dashboardLayout.classList.add('vertical');
+                if (layoutToggle) {
+                    layoutToggle.innerHTML = '🖥️';
+                    layoutToggle.title = 'Switch to Horizontal Layout';
+                }
+                if (layoutToggleMobile) {
+                    layoutToggleMobile.innerHTML = '🖥️';
+                    layoutToggleMobile.title = 'Switch to Horizontal Layout';
+                }
+            }
+        }
+    </script>
+</body>
+</html>

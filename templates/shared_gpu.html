@@ -1,0 +1,249 @@
+{% extends "base.html" %}
+
+{% block title %}Shared GPU - Server #{{ server_id }} - {{ PLTF_NAME }}{% endblock %}
+
+{% block content %}
+<div class="dashboard-container">
+    <div class="section-header">
+        <h2>🖥️ Shared GPU Management - Server #{{ server_id }}</h2>
+        <a href="/dashboard#servers" class="btn btn-secondary">← Back to Servers</a>
+    </div>
+
+    <!-- Status/Error Message Area -->
+    <div id="gpuStatusMessage" style="display: none; padding: 0.75rem 1rem; border-radius: var(--radius); margin-bottom: 1rem; font-size: 0.875rem;"></div>
+
+    <!-- Shared GPU Toggle -->
+    <div class="user-form" style="display: block; margin-bottom: 1.5rem;">
+        <h3>GPU Sharing</h3>
+        <div style="display: flex; align-items: center; gap: 1rem; margin-top: 0.75rem;">
+            <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.9rem;">
+                <input type="checkbox" id="gpuEnabledToggle" onchange="toggleSharedGpu()" style="width: 18px; height: 18px; cursor: pointer;">
+                <span id="gpuToggleLabel">Shared GPU Disabled</span>
+            </label>
+        </div>
+    </div>
+
+    <!-- Available MIG Profiles -->
+    <div class="user-form" style="display: block; margin-bottom: 1.5rem;">
+        <div class="section-header" style="margin-bottom: 0.75rem;">
+            <h3>Available MIG Profiles</h3>
+            <button class="btn btn-info btn-small" onclick="loadProfiles()">🔄 Refresh</button>
+        </div>
+        <div id="profilesContainer">
+            <div class="loading">Loading profiles...</div>
+        </div>
+        <div id="createInstancesSection" style="margin-top: 1rem; display: none;">
+            <button class="btn btn-primary" onclick="createInstances()">Create Instances</button>
+        </div>
+    </div>
+
+    <!-- Active MIG Instances -->
+    <div class="user-form" style="display: block;">
+        <div class="section-header" style="margin-bottom: 0.75rem;">
+            <h3>Active MIG Instances</h3>
+            <button class="btn btn-danger" onclick="destroyAllInstances()">🗑️ Destroy All Instances</button>
+        </div>
+        <div id="instancesContainer">
+            <div class="loading">Loading instances...</div>
+        </div>
+    </div>
+</div>
+
+<script>
+const serverId = {{ server_id }};
+const apiBase = `/api/servers/${serverId}/gpu`;
+
+// --- Status Messages ---
+function showMessage(text, type) {
+    const el = document.getElementById('gpuStatusMessage');
+    el.textContent = text;
+    el.style.display = 'block';
+    if (type === 'success') {
+        el.style.background = '#eafaf1';
+        el.style.color = 'var(--color-success)';
+        el.style.border = '1px solid var(--color-success)';
+    } else if (type === 'error') {
+        el.style.background = '#fef2f2';
+        el.style.color = 'var(--color-danger)';
+        el.style.border = '1px solid var(--color-danger)';
+    } else {
+        el.style.background = 'var(--color-background)';
+        el.style.color = 'var(--color-text)';
+        el.style.border = '1px solid var(--color-border)';
+    }
+    setTimeout(() => { el.style.display = 'none'; }, 8000);
+}
+
+// --- Toggle Shared GPU ---
+async function toggleSharedGpu() {
+    const toggle = document.getElementById('gpuEnabledToggle');
+    const enabled = toggle.checked;
+    try {
+        const res = await fetch(`${apiBase}/enabled`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled: enabled })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            throw new Error(data.error || 'Failed to update GPU state');
+        }
+        updateToggleLabel(data.shared_gpu_enabled);
+        showMessage(enabled ? 'Shared GPU enabled' : 'Shared GPU disabled', 'success');
+        if (enabled) {
+            loadProfiles();
+        }
+    } catch (err) {
+        toggle.checked = !enabled;
+        updateToggleLabel(!enabled);
+        showMessage(err.message, 'error');
+    }
+}
+
+function updateToggleLabel(enabled) {
+    const label = document.getElementById('gpuToggleLabel');
+    label.textContent = enabled ? 'Shared GPU Enabled' : 'Shared GPU Disabled';
+    label.style.color = enabled ? 'var(--color-success)' : 'var(--color-text-muted)';
+}
+
+// --- Load GPU Enabled Status ---
+async function loadGpuStatus() {
+    try {
+        const res = await fetch(`${apiBase}/enabled`);
+        if (res.ok) {
+            const data = await res.json();
+            const toggle = document.getElementById('gpuEnabledToggle');
+            toggle.checked = data.shared_gpu_enabled;
+            updateToggleLabel(data.shared_gpu_enabled);
+        }
+    } catch (err) {
+        // If endpoint doesn't support GET, default to unchecked
+    }
+}
+
+// --- Load Profiles ---
+async function loadProfiles() {
+    const container = document.getElementById('profilesContainer');
+    container.innerHTML = '<div class="loading">Loading profiles...</div>';
+    try {
+        const res = await fetch(`${apiBase}/profiles`);
+        const data = await res.json();
+        if (!res.ok) {
+            throw new Error(data.error || 'Failed to load profiles');
+        }
+        const profiles = data.profiles || [];
+        if (profiles.length === 0) {
+            container.innerHTML = '<p style="color: var(--color-text-muted); padding: 1rem;">No MIG profiles available. Ensure the GPU supports MIG and it is enabled.</p>';
+            document.getElementById('createInstancesSection').style.display = 'none';
+            return;
+        }
+        let html = '<table class="users-table"><thead><tr>';
+        html += '<th>Select</th><th>Profile ID</th><th>Name</th><th>Memory (MiB)</th>';
+        html += '</tr></thead><tbody>';
+        profiles.forEach(p => {
+            html += `<tr>`;
+            html += `<td><input type="checkbox" class="profile-checkbox" value="${p.profile_id}" data-name="${p.name}"></td>`;
+            html += `<td>${p.profile_id}</td>`;
+            html += `<td>${p.name}</td>`;
+            html += `<td>${p.memory_mib}</td>`;
+            html += `</tr>`;
+        });
+        html += '</tbody></table>';
+        container.innerHTML = html;
+        document.getElementById('createInstancesSection').style.display = 'block';
+    } catch (err) {
+        container.innerHTML = `<p style="color: var(--color-danger); padding: 1rem;">${err.message}</p>`;
+        document.getElementById('createInstancesSection').style.display = 'none';
+    }
+}
+
+// --- Create Instances ---
+async function createInstances() {
+    const checkboxes = document.querySelectorAll('.profile-checkbox:checked');
+    if (checkboxes.length === 0) {
+        showMessage('Please select at least one MIG profile', 'error');
+        return;
+    }
+    if (checkboxes.length > 7) {
+        showMessage('Maximum 7 profiles can be selected at once', 'error');
+        return;
+    }
+    const profileIds = Array.from(checkboxes).map(cb => cb.value);
+    try {
+        const res = await fetch(`${apiBase}/instances`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ profile_ids: profileIds })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            throw new Error(data.error || 'Failed to create instances');
+        }
+        showMessage(data.message || 'MIG instances created successfully', 'success');
+        loadInstances();
+    } catch (err) {
+        showMessage(err.message, 'error');
+    }
+}
+
+// --- Load Instances ---
+async function loadInstances() {
+    const container = document.getElementById('instancesContainer');
+    container.innerHTML = '<div class="loading">Loading instances...</div>';
+    try {
+        const res = await fetch(`${apiBase}/instances`);
+        const data = await res.json();
+        if (!res.ok) {
+            throw new Error(data.error || 'Failed to load instances');
+        }
+        const instances = data.instances || [];
+        if (instances.length === 0) {
+            container.innerHTML = '<p style="color: var(--color-text-muted); padding: 1rem;">No active MIG instances on this server.</p>';
+            return;
+        }
+        let html = '<table class="users-table"><thead><tr>';
+        html += '<th>UUID</th><th>Profile Name</th><th>GPU Memory (MB)</th><th>Created At</th>';
+        html += '</tr></thead><tbody>';
+        instances.forEach(inst => {
+            html += `<tr>`;
+            html += `<td style="font-family: var(--font-mono); font-size: 0.75rem;">${inst.instance_uuid}</td>`;
+            html += `<td>${inst.profile_name}</td>`;
+            html += `<td>${inst.gpu_memory_mb}</td>`;
+            html += `<td>${inst.created_at || '-'}</td>`;
+            html += `</tr>`;
+        });
+        html += '</tbody></table>';
+        container.innerHTML = html;
+    } catch (err) {
+        container.innerHTML = `<p style="color: var(--color-danger); padding: 1rem;">${err.message}</p>`;
+    }
+}
+
+// --- Destroy All Instances ---
+async function destroyAllInstances() {
+    if (!confirm('Are you sure you want to destroy ALL MIG instances on this server? This action cannot be undone.')) {
+        return;
+    }
+    try {
+        const res = await fetch(`${apiBase}/instances`, {
+            method: 'DELETE'
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            throw new Error(data.error || 'Failed to destroy instances');
+        }
+        showMessage(data.message || `Destroyed ${data.count} instance(s)`, 'success');
+        loadInstances();
+    } catch (err) {
+        showMessage(err.message, 'error');
+    }
+}
+
+// --- Page Load ---
+document.addEventListener('DOMContentLoaded', function() {
+    loadGpuStatus();
+    loadProfiles();
+    loadInstances();
+});
+</script>
+{% endblock %}

@@ -1,0 +1,15 @@
+# Default applications configuration
+# Format: name | description | git_url | git_repo_size | docker_build_duration | docker_start_duration | docker_stop_duration | docker_ps_duration
+# Lines starting with # are comments, empty lines are ignored
+
+ai-staticwebsite | Simple static Web Site | https://github.com/Sam9682/ai-staticwebsite.git | 4 | 29 | 29 | 10 | 1
+ai-shai-web-interface | Interface Web pour Shai | https://github.com/Sam9682/ai-shai-web-interface.git | 10 | 30 | 30 | 10 | 1
+opcp-openstack-first-steps | OPCP Openstack First Steps | https://github.com/Sam9682/opcp-openstack-first-steps.git | 10 | 30 | 30 | 10 | 1
+opcp-openstack-automation |  OPCP Openstack Automation | https://github.com/Sam9682/opcp-openstack-automation.git | 10 | 30 | 30 | 10 | 1
+opcp-psmc-dashboard | OPCP PSMC Dashboard | https://github.com/Sam9682/opcp-psmc-dashboard.git | 10 | 30 | 30 | 10 | 1
+opcp-openstack-simulator | OPCP Openstack Simulator | https://github.com/Sam9682/opcp-openstack-simulator.git | 10 | 30 | 30 | 10 | 1
+opcp-introduction | OPCP Introduction - non tech | https://github.com/Sam9682/opcp-introduction.git | 10 | 30 | 30 | 10 | 1
+opcp-serverless-brik | OPCP Serverless Docker Execution | https://github.com/Sam9682/opcp-serverless-brik.git | 10 | 30 | 30 | 10 | 1
+opcp-ai-start-labs | OPCP AI Start Labs | https://github.com/Sam9682/opcp-ai-start-labs.git | 10 | 30 | 30 | 10 | 1
+opcp-proxmox-experience | OPCP Proxmox experience | https://github.com/Sam9682/opcp-proxmox-experience.git | 10 | 30 | 30 | 10 | 1
+opcp-internal-rag | OPCP Internal PSMC RAG | https://github.com/Sam9682/opcp-internal-rag.git | 10 | 30 | 30 | 10 | 1
