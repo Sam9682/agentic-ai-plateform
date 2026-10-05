@@ -252,6 +252,18 @@ if [ "${BASH_SOURCE[0]}" != "${0}" ]; then
     return 0 2>/dev/null || true
 fi
 
+# Require conf/deploy.ini before doing anything: it holds the DOMAIN and other
+# deployment parameters this installer relies on. If it is missing, tell the
+# user to create it from the template and abort.
+if [ ! -f "${CONFIG_FILE}" ]; then
+    print_warning "${CONFIG_FILE} not found."
+    print_warning "Please define your deployment parameters first:"
+    print_warning "     - cp ./conf/deploy.ini.template ./conf/deploy.ini"
+    print_warning "     - edit ./conf/deploy.ini and set DOMAIN and the other values"
+    print_warning "Then re-run this script."
+    exit 1
+fi
+
 # Collect platform identity before any installation / clone step.
 prompt_platform_identity
 
@@ -280,19 +292,57 @@ print_success "OVH CLI installed"
 
 # Install AWS CLI
 print_step "Installing AWS CLI..."
-curl -s "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-unzip -q awscliv2.zip
-sudo ./aws/install > /dev/null 2>&1
-rm -rf aws awscliv2.zip
-print_success "AWS CLI installed"
+# Try the official installation method first
+if curl -s "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" && unzip -q awscliv2.zip; then
+    if [ -d "aws" ] && [ -f "aws/install" ]; then
+        sudo ./aws/install > /dev/null 2>&1
+        rm -rf aws awscliv2.zip
+        print_success "AWS CLI installed"
+    else
+        print_warning "AWS CLI installation files not found, falling back to apt installation"
+        sudo apt install -y awscli > /dev/null 2>&1
+        if command -v aws &> /dev/null; then
+            print_success "AWS CLI installed via apt"
+        else
+            print_warning "AWS CLI installation failed"
+        fi
+    fi
+else
+    print_warning "Failed to download AWS CLI, falling back to apt installation"
+    sudo apt install -y awscli > /dev/null 2>&1
+    if command -v aws &> /dev/null; then
+        print_success "AWS CLI installed via apt"
+    else
+        print_warning "AWS CLI installation failed"
+    fi
+fi
 
 # Install Terraform
 print_step "Installing Terraform..."
-curl -s "https://releases.hashicorp.com/terraform/1.14.5/terraform_1.14.5_linux_amd64.zip" -o "terraform.zip"
-unzip -q terraform.zip
-sudo mv terraform /usr/local/bin/
-rm -f terraform.zip
-print_success "Terraform installed"
+# Try the official installation method first
+if curl -s "https://releases.hashicorp.com/terraform/1.14.5/terraform_1.14.5_linux_amd64.zip" -o "terraform.zip" && unzip -q terraform.zip; then
+    if [ -f "terraform" ]; then
+        sudo mv terraform /usr/local/bin/terraform
+        rm -f terraform.zip
+        print_success "Terraform installed"
+    else
+        print_warning "Terraform binary not found after extraction, falling back to apt installation"
+        sudo apt install -y terraform > /dev/null 2>&1
+        if command -v terraform &> /dev/null; then
+            print_success "Terraform installed via apt"
+        else
+            print_warning "Terraform installation failed"
+        fi
+    fi
+else
+    print_warning "Failed to download or extract Terraform, falling back to apt installation"
+    sudo apt install -y terraform > /dev/null 2>&1
+    if command -v terraform &> /dev/null; then
+        print_success "Terraform installed via apt"
+    else
+        print_warning "Terraform installation failed"
+    fi
+fi
 
 # Configure network interface priorities
 print_step "Configuring network interface priorities..."
@@ -353,9 +403,13 @@ print_success "Docker installed"
 print_step "Installing Kata Containers..."
 wget -q https://github.com/kata-containers/kata-containers/releases/download/3.32.0/kata-static-3.32.0-amd64.tar.zst
 unzstd kata-static-3.32.0-amd64.tar.zst
-sudo tar xvf kata-static-3.32.0-amd64.tar > /dev/null 2>&1
-sudo mv ./opt/kata /opt/
+# Create a temporary directory to extract files to avoid changing parent directory ownership
+TEMP_DIR=$(mktemp -d)
+sudo tar xvf kata-static-3.32.0-amd64.tar -C "$TEMP_DIR" > /dev/null 2>&1
+sudo mv "$TEMP_DIR/opt/kata" /opt/
 sudo mkdir -p /etc/docker
+# Clean up temporary directory
+rm -rf "$TEMP_DIR"
 # Register the 'kata' runtime with the Docker daemon. The "runtimeType" key
 # pointing at the containerd-shim-kata-v2 binary matches the official Kata
 # "how-to-use-kata-with-docker" guide for the Go runtime (requires Docker v26+
@@ -494,7 +548,11 @@ echo -e "${GREEN}[OK] Installation completed successfully!${NC}"
 echo ""
 print_warning "Don't forget to :"
 print_warning "     - PLTF_NAME and PLTF_FOLDER are already set in ./conf/deploy.ini; review DOMAIN and other settings there"
-print_warning "     - add ssl certificate in ~/${PLTF_FOLDER}/ssl/fullchain_domain.crt for nginx https"
-print_warning "     - add ssl private key in ~/${PLTF_FOLDER}/ssl/privateKey_domain.key for nginx https"
+DOMAIN="$(get_ini_value "${CONFIG_FILE}" "DOMAIN")"
+# Create the ssl/${DOMAIN}/ folder (if it does not already exist) so the user
+# has a place to drop the certificate and private key referenced below.
+mkdir -p "ssl/${DOMAIN}"
+print_warning "     - add ssl certificate in ssl/${DOMAIN}/fullchain_domain.crt for nginx https"
+print_warning "     - add ssl private key in ssl/${DOMAIN}/privateKey_domain.key for nginx https"
 print_warning "     - enter aws_access_key_id & aws_secret_access_key in ~/.aws/credentials for s3 synchronization"
 print_warning "     - the default user is admin/password"
