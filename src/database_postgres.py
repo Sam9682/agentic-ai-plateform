@@ -72,37 +72,50 @@ def load_deploy_config():
 NAME_OF_APPLICATION, APPLICATION_IDENTITY_NUMBER, RANGE_START, RANGE_RESERVED, RANGE_START_CONTROLPLAN, RANGE_RESERVED_CONTROLPLAN, RANGE_PORTS_PER_APPLICATION, DOMAIN = load_deploy_config()
 
 def calculate_app_ports(user_id, app_id):
-    """Calculate 12 consecutive ports (6 HTTP + 6 HTTPS) per application,
-    using the same logic as deployControlPlan.sh calculate_ports().
+    """Calculate 12 consecutive ports (6 HTTPS + 6 HTTP) per application,
+    using the same layout as the canonical ``deployApp.sh`` ``calculate_ports``.
 
-    Returns a tuple of 12 ports in the order:
-        HTTP_PORT, HTTPS_PORT,
-        HTTP_PORT2, HTTPS_PORT2,
-        HTTP_PORT3, HTTPS_PORT3,
-        HTTP_PORT4, HTTPS_PORT4,
-        HTTP_PORT5, HTTPS_PORT5,
-        HTTP_PORT6, HTTPS_PORT6
+    The authoritative deployment script lays the 12 ports out as consecutive
+    offsets from a per-application base, with the main HTTPS web interface at
+    offset 0 (see ``shared/deployApp.sh`` ``PORT_NAMES`` and ``shared/README.md``)::
+
+        HTTPS_PORT  = base + 0   (main web interface)   HTTP_PORT  = base + 1
+        HTTPS_PORT1 = base + 2                           HTTP_PORT1 = base + 3
+        HTTPS_PORT2 = base + 4                           HTTP_PORT2 = base + 5
+        HTTPS_PORT3 = base + 6                           HTTP_PORT3 = base + 7
+        HTTPS_PORT4 = base + 8                           HTTP_PORT4 = base + 9
+        HTTPS_PORT5 = base + 10                          HTTP_PORT5 = base + 11
+
+    The returned tuple is ordered to match :data:`APP_PORT_COLUMNS`
+    (``http_port, https_port, http_port2, https_port2, ...``). Each DB column
+    pair N maps to the deployApp.sh pair as follows: ``https_port`` is the main
+    port (base + 0) and ``http_port`` is base + 1; ``https_portN`` / ``http_portN``
+    (N >= 2) map to ``HTTPS_PORT{N-1}`` / ``HTTP_PORT{N-1}`` i.e. base + 2*(N-1)
+    and base + 2*(N-1) + 1.
     """
-    PORT_RANGE_BEGIN = RANGE_START + user_id * RANGE_RESERVED
-    HTTP_PORT = PORT_RANGE_BEGIN + app_id * RANGE_PORTS_PER_APPLICATION
-    HTTPS_PORT = HTTP_PORT + 1
-    HTTP_PORT2 = HTTPS_PORT + 1
-    HTTPS_PORT2 = HTTP_PORT2 + 1
-    HTTP_PORT3 = HTTPS_PORT2 + 1
-    HTTPS_PORT3 = HTTP_PORT3 + 1
-    HTTP_PORT4 = HTTPS_PORT3 + 1
-    HTTPS_PORT4 = HTTP_PORT4 + 1
-    HTTP_PORT5 = HTTPS_PORT4 + 1
-    HTTPS_PORT5 = HTTP_PORT5 + 1
-    HTTP_PORT6 = HTTPS_PORT5 + 1
-    HTTPS_PORT6 = HTTP_PORT6 + 1
+    base = RANGE_START + user_id * RANGE_RESERVED + app_id * RANGE_PORTS_PER_APPLICATION
+
+    # https_* ports sit on even offsets (main at base+0), http_* on the
+    # following odd offset, matching the canonical deployApp.sh layout.
+    https_port = base + 0
+    http_port = base + 1
+    https_port2 = base + 2
+    http_port2 = base + 3
+    https_port3 = base + 4
+    http_port3 = base + 5
+    https_port4 = base + 6
+    http_port4 = base + 7
+    https_port5 = base + 8
+    http_port5 = base + 9
+    https_port6 = base + 10
+    http_port6 = base + 11
     return (
-        HTTP_PORT, HTTPS_PORT,
-        HTTP_PORT2, HTTPS_PORT2,
-        HTTP_PORT3, HTTPS_PORT3,
-        HTTP_PORT4, HTTPS_PORT4,
-        HTTP_PORT5, HTTPS_PORT5,
-        HTTP_PORT6, HTTPS_PORT6,
+        http_port, https_port,
+        http_port2, https_port2,
+        http_port3, https_port3,
+        http_port4, https_port4,
+        http_port5, https_port5,
+        http_port6, https_port6,
     )
 
 
@@ -123,6 +136,64 @@ APP_PORT_COLUMNS_SQL = ', '.join(APP_PORT_COLUMNS)
 APP_PORT_PLACEHOLDERS_SQL = ', '.join(['%s'] * len(APP_PORT_COLUMNS))
 # "http_port = %s, https_port = %s, ..." for use in UPDATE SET clauses.
 APP_PORT_UPDATE_SQL = ', '.join(f'{col} = %s' for col in APP_PORT_COLUMNS)
+
+
+def read_deployed_identity_number(user_name, app_name):
+    """Return the APPLICATION_IDENTITY_NUMBER from a deployed app's conf/deploy.ini.
+
+    ``deployApp.sh`` computes the per-application port base from the
+    ``APPLICATION_IDENTITY_NUMBER`` found in each deployed app's
+    ``conf/deploy.ini``. That value is the authoritative identity for an app
+    that is already deployed/running, and it may differ from the platform's
+    ``applications.id``. This reads it so the dashboard/database can be aligned
+    with the ports the running container actually binds.
+
+    Returns the integer identity number, or ``None`` when the file does not
+    exist, is unreadable, or does not define a numeric
+    ``APPLICATION_IDENTITY_NUMBER``.
+    """
+    if not user_name or not app_name:
+        return None
+    # Import locally to avoid a circular import at module load time.
+    from .config_postgres import LINUX_USER_INSTALLATION
+    app_slug = app_name.lower().replace(' ', '-')
+    config_path = os.path.join(
+        '/home', LINUX_USER_INSTALLATION, 'deployments',
+        user_name, app_slug, 'conf', 'deploy.ini',
+    )
+    try:
+        if not os.path.exists(config_path):
+            return None
+        with open(config_path, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith('#') or '=' not in line:
+                    continue
+                key, value = line.split('=', 1)
+                if key.strip() == 'APPLICATION_IDENTITY_NUMBER':
+                    value = value.strip().strip('"').strip("'")
+                    return int(value)
+    except (OSError, ValueError) as e:
+        logger.warning(
+            "Could not read APPLICATION_IDENTITY_NUMBER for %s/%s: %s",
+            user_name, app_name, e,
+        )
+    return None
+
+
+def resolve_app_identity_number(user_name, app_name, fallback_app_id):
+    """Resolve the identity number to use for port calculation.
+
+    Prefers the deployed app's ``conf/deploy.ini`` ``APPLICATION_IDENTITY_NUMBER``
+    (what ``deployApp.sh`` and therefore the running container use); falls back
+    to ``fallback_app_id`` (the platform ``applications.id``) when the deployed
+    value is unavailable (e.g. the app has not been deployed yet).
+    """
+    identity = read_deployed_identity_number(user_name, app_name)
+    if identity is not None:
+        return identity
+    return fallback_app_id
+
 
 class PostgreSQLManager:
     """Thread-safe PostgreSQL database manager with connection pooling"""
