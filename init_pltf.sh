@@ -172,7 +172,7 @@ resolve_platform_defaults() {
     DEFAULT_PLTF_FOLDER="$(_resolve_default  PLTF_FOLDER   PLTF_FOLDER   "agentic-ai-plateform")"
     DEFAULT_PLTF_NAME="$(_resolve_default    PLTF_NAME     PLTF_NAME     "agentic-ai-plateform")"
     DEFAULT_REPO_URL="$(_resolve_default     REPO_URL      REPO_URL      "https://github.com/Sam9682/agentic-ai-plateform.git")"
-    DEFAULT_SUBMODULE_URL="$(_resolve_default SUBMODULE_URL SUBMODULE_URL "git@github.com:Sam9682/ai-swautomorph--shared.git")"
+    DEFAULT_SUBMODULE_URL="$(_resolve_default SUBMODULE_URL SUBMODULE_URL "git@github.com:Sam9682/agentic-ai-plateform--skills.git")"
     DEFAULT_INSTALL_DIR="$(_resolve_default  INSTALL_DIR   INSTALL_DIR   "../")"
 }
 

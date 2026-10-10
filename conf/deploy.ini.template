@@ -18,7 +18,7 @@ REPO_URL=https://github.com/Sam9682/agentic-ai-plateform.git
 
 # Shared submodule URL added as the 'shared' git submodule by init_pltf.sh.
 # Default source when SUBMODULE_URL is not provided via environment variable.
-SUBMODULE_URL=git@github.com:Sam9682/ai-swautomorph--shared.git
+SUBMODULE_URL=git@github.com:Sam9682/agentic-ai-plateform--skills.git
 
 # Number of consecutive ports allocated per application (6 HTTP + 6 HTTPS).
 # Must match calculate_ports() in deployControlPlan.sh and

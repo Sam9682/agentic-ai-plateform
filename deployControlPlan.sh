@@ -75,7 +75,7 @@ RANGE_RESERVED_CONTROLPLAN=${RANGE_RESERVED_CONTROLPLAN:-0}
 S3_BUCKET_NAME=${S3_BUCKET_NAME:-"agentic-ai-plateform-s3"}
 PLTF_FOLDER=${PLTF_FOLDER:-"agentic-ai-plateform"}
 # Display name shown in banners/usage; read from PLTF_NAME in deploy.ini.
-PLTF_NAME=${PLTF_NAME:-"agentic-ai-plateform_AI_SharedGPU_Docker_Serverless"}
+PLTF_NAME=${PLTF_NAME:-"agentic-ai-plateform"}
 LINUX_USER_INSTALLATION=${LINUX_USER_INSTALLATION:-"ubuntu"}
 
 # Global Parameters (command line args override config)
