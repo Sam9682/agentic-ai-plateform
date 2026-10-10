@@ -1,13 +1,13 @@
 # Virtual Advisor - Application Management Testing
 
 ## Overview
-The Virtual Advisor now handles application management actions (STOP/START/RESTART/PS/LOGS) by detecting keywords and loading context from `./shared/` folder.
+The Virtual Advisor now handles application management actions (STOP/START/RESTART/PS/LOGS) by detecting keywords and loading context from `./agentic-ai-plateform--skills/` folder.
 
 ## Supported Actions
 
 ### 1. START
 **Keywords**: start, deploy, launch, run
-**Context File**: `./shared/START_context.md`
+**Context File**: `./agentic-ai-plateform--skills/START_context.md`
 **Example Questions**:
 - "Start the application"
 - "Deploy my app"
@@ -15,7 +15,7 @@ The Virtual Advisor now handles application management actions (STOP/START/RESTA
 
 ### 2. STOP
 **Keywords**: stop, shutdown, halt, terminate
-**Context File**: `./shared/STOP_context.md`
+**Context File**: `./agentic-ai-plateform--skills/STOP_context.md`
 **Example Questions**:
 - "Stop the application"
 - "Shutdown the service"
@@ -23,7 +23,7 @@ The Virtual Advisor now handles application management actions (STOP/START/RESTA
 
 ### 3. RESTART
 **Keywords**: restart, reboot, reload
-**Context File**: `./shared/RESTART_context.md`
+**Context File**: `./agentic-ai-plateform--skills/RESTART_context.md`
 **Example Questions**:
 - "Restart the application"
 - "Reboot the service"
@@ -31,7 +31,7 @@ The Virtual Advisor now handles application management actions (STOP/START/RESTA
 
 ### 4. PS (Status)
 **Keywords**: status, ps, check, running
-**Context File**: `./shared/PS_context.md`
+**Context File**: `./agentic-ai-plateform--skills/PS_context.md`
 **Example Questions**:
 - "What's the status of my application?"
 - "Check if the service is running"
@@ -39,7 +39,7 @@ The Virtual Advisor now handles application management actions (STOP/START/RESTA
 
 ### 5. LOGS
 **Keywords**: logs, log, output, console
-**Context File**: `./shared/LOGS_context.md`
+**Context File**: `./agentic-ai-plateform--skills/LOGS_context.md`
 **Example Questions**:
 - "Show me the logs"
 - "Display application output"
@@ -49,7 +49,7 @@ The Virtual Advisor now handles application management actions (STOP/START/RESTA
 
 1. **User sends message** to Virtual Advisor via dashboard
 2. **Keyword detection** identifies the action type
-3. **Context loading** reads the appropriate `*_context.md` file from `./shared/`
+3. **Context loading** reads the appropriate `*_context.md` file from `./agentic-ai-plateform--skills/`
 4. **Parameter substitution** replaces placeholders:
    - `{USER_ID}` - Current user's ID
    - `{USER_NAME}` - User's full name
@@ -94,8 +94,8 @@ tail -f /var/log/<PLTF_FOLDER>.log
 ## Troubleshooting
 
 ### Context file not found
-- Verify files exist in `/home/ubuntu/<PLTF_FOLDER>/shared/`
-- Check file permissions: `chmod 644 ./shared/*_context.md`
+- Verify files exist in `/home/ubuntu/<PLTF_FOLDER>/agentic-ai-plateform--skills/`
+- Check file permissions: `chmod 644 ./agentic-ai-plateform--skills/*_context.md`
 
 ### Commands not executing
 - Ensure `qchat` is installed: `which qchat`

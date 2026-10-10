@@ -77,7 +77,7 @@ def calculate_app_ports(user_id, app_id):
 
     The authoritative deployment script lays the 12 ports out as consecutive
     offsets from a per-application base, with the main HTTPS web interface at
-    offset 0 (see ``shared/deployApp.sh`` ``PORT_NAMES`` and ``shared/README.md``)::
+    offset 0 (see ``agentic-ai-plateform--skills/deployApp.sh`` ``PORT_NAMES`` and ``agentic-ai-plateform--skills/README.md``)::
 
         HTTPS_PORT  = base + 0   (main web interface)   HTTP_PORT  = base + 1
         HTTPS_PORT1 = base + 2                           HTTP_PORT1 = base + 3

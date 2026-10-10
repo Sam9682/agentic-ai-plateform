@@ -144,7 +144,7 @@ The platform automatically selects the optimal server based on:
    - Use natural language to request code modifications via Developer agent
    - System creates Git branch: `{user_id}-automorph-{app_name}-{timestamp}`
    - Automatic code modification, testing, and redeployment with validation
-   - Context-aware prompts from shared/ directory with operation-specific guidance
+   - Context-aware prompts from agentic-ai-plateform--skills/ directory with operation-specific guidance
    - Streaming responses with real-time progress updates and error handling
 
 #### Enhanced API Endpoints
@@ -397,7 +397,7 @@ Applications must include a `deployApp.sh` script that supports:
 
 6. **Virtual Agents Issues**:
    - Verify AI Chat installation and PATH configuration
-   - Check context files in shared/ directory for proper formatting
+   - Check context files in agentic-ai-plateform--skills/ directory for proper formatting
    - Validate prompt generation and logging functionality
    - Review timeout settings and process management
    - Ensure streaming responses work correctly with SSE
@@ -556,7 +556,7 @@ La plateforme sélectionne automatiquement le serveur optimal basé sur :
 
 6. **Problèmes d'Agents Virtuels**:
    - Vérifier l'installation AI Chat et configuration PATH
-   - Vérifier les fichiers de contexte dans le répertoire shared/ pour formatage approprié
+   - Vérifier les fichiers de contexte dans le répertoire agentic-ai-plateform--skills/ pour formatage approprié
    - Valider la génération de prompts et fonctionnalité de journalisation
    - Examiner les paramètres de timeout et gestion de processus
    - S'assurer que les réponses streaming fonctionnent correctement avec SSE

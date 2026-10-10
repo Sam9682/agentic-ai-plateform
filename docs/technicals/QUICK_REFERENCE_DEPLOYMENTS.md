@@ -199,7 +199,7 @@ WHERE (backup_entry->>'backup_date')::timestamp
 | Test Script | `scripts/test_backups_history.py` |
 | API Routes | `src/routes/api_routes.py` |
 | Dashboard | `templates/dashboard.html` |
-| Backup Context | `shared/BACKUP_DATABASE_context.md` |
+| Backup Context | `agentic-ai-plateform--skills/BACKUP_DATABASE_context.md` |
 
 ## Support Resources
 

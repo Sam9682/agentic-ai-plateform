@@ -72,7 +72,7 @@ python3 scripts/add_backup_to_deployment.py \
 
 ### 5. Integration with BACKUP_DATABASE
 
-**File**: `shared/BACKUP_DATABASE_context.md`
+**File**: `agentic-ai-plateform--skills/BACKUP_DATABASE_context.md`
 
 Added step 7 to automatically record backups in deployment history:
 
@@ -268,7 +268,7 @@ curl -X DELETE http://localhost:5000/api/deployments/5 \
 ### Modified Files
 1. `src/routes/api_routes.py` - Added 5 new/updated endpoints
 2. `templates/dashboard.html` - Added column, buttons, and functions
-3. `shared/BACKUP_DATABASE_context.md` - Added backup recording step
+3. `agentic-ai-plateform--skills/BACKUP_DATABASE_context.md` - Added backup recording step
 
 ### New Files
 1. `migration/add_backups_history_to_deployments.sql`
@@ -285,7 +285,7 @@ If issues occur, rollback using:
 ```bash
 # 1. Revert code changes
 cd /home/ubuntu/<PLTF_FOLDER>
-git checkout HEAD -- src/routes/api_routes.py templates/dashboard.html shared/BACKUP_DATABASE_context.md
+git checkout HEAD -- src/routes/api_routes.py templates/dashboard.html agentic-ai-plateform--skills/BACKUP_DATABASE_context.md
 
 # 2. Remove database column
 psql -U swautomorph -d ai_swautomorph -c "ALTER TABLE deployments DROP COLUMN IF EXISTS backups_history;"

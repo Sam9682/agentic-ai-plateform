@@ -52,7 +52,7 @@ Virtual Advisor now handles **application management** in addition to answering 
 
 When you ask about app management:
 1. ✅ Virtual Advisor detects the action keyword
-2. 📄 Loads detailed instructions from `./shared/` folder
+2. 📄 Loads detailed instructions from `./agentic-ai-plateform--skills/` folder
 3. 🔄 Replaces your user info (ID, name, email)
 4. 🤖 Sends to AI Chat with execution permissions
 5. 📊 Returns results with status and logs
@@ -117,4 +117,4 @@ When you ask about app management:
 
 - Full documentation: `VIRTUAL_ADVISOR_CHANGES.md`
 - Testing guide: `TEST_VIRTUAL_ADVISOR.md`
-- Context files: `./shared/*_context.md`
+- Context files: `./agentic-ai-plateform--skills/*_context.md`

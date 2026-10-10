@@ -318,7 +318,7 @@ On first run, a guided setup wizard writes `conf/deploy.ini` safely (timestamped
 - 🌿 Ensure Git repository is accessible and credentials are valid
 - 🖥️ Confirm AI Chat is installed and accessible in PATH
 - ⏱️ Check for timeout issues (30-minute limit)
-- 📝 Verify context files exist in shared/ directory
+- 📝 Verify context files exist in agentic-ai-plateform--skills/ directory
 
 #### 🚀 Operations Agent Issues
 - ⚙️ Check if deployment scripts (`deployApp.sh`) are executable

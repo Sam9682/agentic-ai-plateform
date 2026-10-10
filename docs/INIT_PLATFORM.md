@@ -17,7 +17,7 @@ Each of the four identity values is resolved independently through a fixed prece
 2. Otherwise the matching key in `conf/deploy.ini` is used (if present and non-empty).
 3. Otherwise a built-in hardcoded fallback is used, so the script never breaks on a fresh or incomplete config.
 
-The hardcoded fallbacks are `agentic-ai-plateform` (PLTF_FOLDER), `agentic-ai-plateform` (PLTF_NAME), `https://github.com/Sam9682/agentic-ai-plateform.git` (REPO_URL) and `git@github.com:Sam9682/agentic-ai-plateform--skills.git` (SUBMODULE_URL). The shipped `conf/deploy.ini` already defines these keys (its `PLTF_NAME` is the longer deployment-specific value, which takes precedence over the fallback), and every parameter in that file carries an explanatory comment.
+The hardcoded fallbacks are `agentic-ai-plateform` (PLTF_FOLDER), `agentic-ai-plateform` (PLTF_NAME), `https://github.com/Sam9682/agentic-ai-plateform.git` (REPO_URL) and `git@github.com:Sam9682/agentic-ai-plateform--skills/.git` (SUBMODULE_URL). The shipped `conf/deploy.ini` already defines these keys (its `PLTF_NAME` is the longer deployment-specific value, which takes precedence over the fallback), and every parameter in that file carries an explanatory comment.
 
 ## Prerequisites
 
@@ -61,7 +61,7 @@ The script first prompts for the platform identity, then runs the install steps.
 | Platform folder slug (`PLTF_FOLDER`) | `agentic-ai-plateform` | install dir, container prefixes, `conf/deploy.ini` |
 | Platform display name (`PLTF_NAME`) | `agentic-ai-plateform_AI_SharedGPU_Docker_Serverless` | web UI, generated docs, `conf/deploy.ini` |
 | Repository clone URL (`REPO_URL`) | `https://github.com/Sam9682/agentic-ai-plateform.git` | the clone source |
-| Shared submodule URL (`SUBMODULE_URL`) | `git@github.com:Sam9682/agentic-ai-plateform--skills.git` | the `shared` submodule source |
+| Shared submodule URL (`SUBMODULE_URL`) | `git@github.com:Sam9682/agentic-ai-plateform--skills/.git` | the `shared` submodule source |
 
 The folder slug is validated (lowercase letters, digits and hyphens only); an invalid value is re-prompted, or aborts the run if it was pre-set via the environment.
 

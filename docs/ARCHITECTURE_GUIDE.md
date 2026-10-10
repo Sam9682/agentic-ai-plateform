@@ -65,7 +65,7 @@ AI-SwAutoMorph is a **centralized application deployment and management platform
 │   ├── add_mig_gpu.sql             # MIG GPU tables
 │   └── add_password_reset_and_2fa.sql # Security features
 ├── 📁 tests/                        # Automated test suite (pytest)
-├── 📁 shared/                       # Context files for virtual agents
+├── 📁 agentic-ai-plateform--skills/                       # Context files for virtual agents
 │   ├── 📝 MODIFY_CODE_context.md    # Developer agent context
 │   ├── ▶️ START_context.md          # Start operation context
 │   ├── ⏹️ STOP_context.md           # Stop operation context
@@ -128,7 +128,7 @@ The platform provides **two specialized AI agents** with advanced features:
 - 🗣️ Natural language to code translation
 - 🌿 Git branch management with format `{user_id}-automorph-{app_name}-{timestamp}`
 - 🧪 Automatic testing and deployment
-- 🎯 Context-aware prompts from shared/MODIFY_CODE_context.md
+- 🎯 Context-aware prompts from agentic-ai-plateform--skills/MODIFY_CODE_context.md
 - ⚡ Streaming responses with Server-Sent Events
 - ⏱️ Timeout management (30 minutes) with graceful cleanup
 - 📝 Prompt logging to dev_prompt_generated.txt
@@ -348,7 +348,7 @@ AI-SwAutoMorph est une **plateforme centralisée de déploiement et de gestion d
 │   ├── add_mig_gpu.sql             # MIG GPU tables
 │   └── add_password_reset_and_2fa.sql # Security features
 ├── 📁 tests/                        # Automated test suite (pytest)
-├── 📁 shared/                       # Fichiers de contexte pour agents virtuels
+├── 📁 agentic-ai-plateform--skills/                       # Fichiers de contexte pour agents virtuels
 │   ├── 📝 MODIFY_CODE_context.md    # Contexte agent développeur
 │   ├── ▶️ START_context.md          # Contexte opération start
 │   ├── ⏹️ STOP_context.md           # Contexte opération stop
@@ -368,7 +368,7 @@ La plateforme fournit **deux agents IA spécialisés** avec fonctionnalités ava
 - 🗣️ Traduction langage naturel vers code
 - 🌿 Gestion des branches Git avec format `{user_id}-automorph-{app_name}-{timestamp}`
 - 🧪 Tests et déploiement automatiques
-- 🎯 Prompts contextuels depuis shared/MODIFY_CODE_context.md
+- 🎯 Prompts contextuels depuis agentic-ai-plateform--skills/MODIFY_CODE_context.md
 - ⚡ Réponses en streaming avec Server-Sent Events
 - ⏱️ Gestion des timeouts (30 minutes) avec nettoyage gracieux
 - 📝 Journalisation des prompts vers dev_prompt_generated.txt

@@ -559,7 +559,7 @@ python3 ./scripts/controller_cli.py db-health
 ├── static/               # CSS, JS, and static files
 ├── ssl/                  # SSL certificates
 ├── logs/                 # Application logs with Gunicorn support
-├── shared/               # Context files for virtual agents
+├── agentic-ai-plateform--skills/               # Context files for virtual agents
 ├── docs/                  # Comprehensive documentation
 │   ├── USER_GUIDE.md             # AI agent usage guide
 │   ├── ARCHITECTURE_GUIDE.md     # System architecture

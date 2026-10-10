@@ -54,7 +54,7 @@ mkdir -p "${REPO_DIR}/shared" \
          "${REPO_DIR}/conf"
 printf 'PLTF_NAME=demo\nPLTF_FOLDER=demo\n' > "${REPO_DIR}/conf/deploy.ini"
 printf '#!/bin/sh\n' > "${REPO_DIR}/.venv/bin/activate"
-: > "${REPO_DIR}/shared/.gitkeep"
+: > "${REPO_DIR}/agentic-ai-plateform--skills/.gitkeep"
 : > "${REPO_DIR}/README.md"
 
 # --- build the simulated home artifacts ------------------------------------

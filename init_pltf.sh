@@ -172,7 +172,7 @@ resolve_platform_defaults() {
     DEFAULT_PLTF_FOLDER="$(_resolve_default  PLTF_FOLDER   PLTF_FOLDER   "agentic-ai-plateform")"
     DEFAULT_PLTF_NAME="$(_resolve_default    PLTF_NAME     PLTF_NAME     "agentic-ai-plateform")"
     DEFAULT_REPO_URL="$(_resolve_default     REPO_URL      REPO_URL      "https://github.com/Sam9682/agentic-ai-plateform.git")"
-    DEFAULT_SUBMODULE_URL="$(_resolve_default SUBMODULE_URL SUBMODULE_URL "git@github.com:Sam9682/agentic-ai-plateform--skills.git")"
+    DEFAULT_SUBMODULE_URL="$(_resolve_default SUBMODULE_URL SUBMODULE_URL "git@github.com:Sam9682/agentic-ai-plateform--skills/.git")"
     DEFAULT_INSTALL_DIR="$(_resolve_default  INSTALL_DIR   INSTALL_DIR   "../")"
 }
 
@@ -550,7 +550,7 @@ print_success "Configuration complete"
 
 # Hand the clone and user-space home artifacts back to the invoking user when
 # the installer ran under sudo. Placed last so every user-space artifact
-# (REPO_DIR with shared/.venv/logs/conf/deploy.ini, plus ~/.aws and
+# (REPO_DIR with agentic-ai-plateform--skills/.venv/logs/conf/deploy.ini, plus ~/.aws and
 # ~/deployments/admin) already exists and a single recursive pass catches them
 # all. No-op for non-sudo and bare-root runs.
 print_step "Restoring ownership to the invoking user..."

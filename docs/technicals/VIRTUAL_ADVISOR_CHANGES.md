@@ -2,7 +2,7 @@
 
 ## Summary of Changes
 
-The Virtual Advisor has been enhanced to handle application management actions (STOP/START/RESTART/PS/LOGS) by integrating with AI Chat and using context prompts from the `./shared/` folder.
+The Virtual Advisor has been enhanced to handle application management actions (STOP/START/RESTART/PS/LOGS) by integrating with AI Chat and using context prompts from the `./agentic-ai-plateform--skills/` folder.
 
 ## Modified Files
 
@@ -13,7 +13,7 @@ The Virtual Advisor has been enhanced to handle application management actions (
 **Changes**:
 - Added parameters: `user_id`, `user_name`, `user_email`, `description`
 - Implemented action keyword detection for: START, STOP, RESTART, PS, LOGS
-- Loads context from `./shared/{ACTION}_context.md` files
+- Loads context from `./agentic-ai-plateform--skills/{ACTION}_context.md` files
 - Replaces placeholders: `{USER_ID}`, `{USER_NAME}`, `{USER_EMAIL}`, `{DESCRIPTION}`, `{TAIL_LINES}`
 - Uses `--trust-all-tools` flag when action detected (enables command execution)
 - Falls back to simple Q&A mode if no action detected
@@ -40,7 +40,7 @@ action_keywords = {
 
 ## Context Files Used
 
-Located in `./shared/` folder:
+Located in `./agentic-ai-plateform--skills/` folder:
 - `START_context.md` - Application deployment and startup
 - `STOP_context.md` - Stop running containers
 - `RESTART_context.md` - Restart services without rebuild
@@ -57,7 +57,7 @@ User Message → Keyword Detection → Load Context → Replace Params → AI Ch
 
 1. **User asks**: "What's the status of my application?"
 2. **Detection**: Keyword "status" matches PS action
-3. **Load**: Reads `./shared/PS_context.md`
+3. **Load**: Reads `./agentic-ai-plateform--skills/PS_context.md`
 4. **Replace**: 
    - `{USER_ID}` → "5"
    - `{USER_NAME}` → "John Doe"
@@ -107,7 +107,7 @@ tail -f /var/log/<PLTF_FOLDER>.log | grep "VIRTUAL ADVISOR"
 ## Next Steps
 
 To add new actions:
-1. Create `./shared/NEWACTION_context.md` with instructions
+1. Create `./agentic-ai-plateform--skills/NEWACTION_context.md` with instructions
 2. Add keywords to `action_keywords` dict in `automorph_application.py`
 3. Test with Virtual Advisor interface
 

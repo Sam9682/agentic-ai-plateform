@@ -2,7 +2,7 @@
 
 ## Overview
 
-Successfully modified the Virtual Advisor to handle application management actions (STOP/START/RESTART/PS/LOGS) with AI Chat integration and context prompts from `./shared/` folder.
+Successfully modified the Virtual Advisor to handle application management actions (STOP/START/RESTART/PS/LOGS) with AI Chat integration and context prompts from `./agentic-ai-plateform--skills/` folder.
 
 ## Files Modified
 
@@ -12,7 +12,7 @@ Successfully modified the Virtual Advisor to handle application management actio
 **Changes**:
 - Added parameters for user context (user_id, user_name, user_email, description)
 - Implemented keyword detection for 5 actions: START, STOP, RESTART, PS, LOGS
-- Loads context templates from `./shared/{ACTION}_context.md`
+- Loads context templates from `./agentic-ai-plateform--skills/{ACTION}_context.md`
 - Replaces placeholders with actual user data
 - Uses `--trust-all-tools` flag for command execution when action detected
 - Falls back to Q&A mode for non-action questions
@@ -37,7 +37,7 @@ Successfully modified the Virtual Advisor to handle application management actio
 
 ## Context Files Used
 
-Located in `./shared/` folder (already existing):
+Located in `./agentic-ai-plateform--skills/` folder (already existing):
 - `START_context.md` - Application deployment and startup
 - `STOP_context.md` - Stop running containers
 - `RESTART_context.md` - Restart services without rebuild
@@ -52,7 +52,7 @@ User Selects Action → Types Message → Frontend Sends [ACTION] message
                                               ↓
                                     Backend Detects Action
                                               ↓
-                                    Loads Context from ./shared/
+                                    Loads Context from ./agentic-ai-plateform--skills/
                                               ↓
                                     Replaces {USER_ID}, {USER_NAME}, etc.
                                               ↓
@@ -73,7 +73,7 @@ User Selects Action → Types Message → Frontend Sends [ACTION] message
 **Backend Processing**:
 1. Receives: `[START] deploy my application`
 2. Detects: START action
-3. Loads: `./shared/START_context.md`
+3. Loads: `./agentic-ai-plateform--skills/START_context.md`
 4. Replaces: `{USER_ID}` → "5", `{USER_NAME}` → "John Doe"
 5. Executes: AI Chat with full context
 6. Returns: Deployment results
@@ -99,7 +99,7 @@ If user doesn't use dropdown, backend still detects from keywords:
 ## Testing Checklist
 
 - [x] Syntax validation (Python files)
-- [x] Context files exist in ./shared/
+- [x] Context files exist in ./agentic-ai-plateform--skills/
 - [ ] Test PS action (status check)
 - [ ] Test START action (deployment)
 - [ ] Test STOP action (shutdown)
@@ -123,7 +123,7 @@ If user doesn't use dropdown, backend still detects from keywords:
 1. **Verify Prerequisites**:
    ```bash
    which qchat  # Ensure AI Chat is installed
-   ls -la /home/ubuntu/<PLTF_FOLDER>/shared/*.md  # Verify context files
+   ls -la /home/ubuntu/<PLTF_FOLDER>/agentic-ai-plateform--skills/*.md  # Verify context files
    ```
 
 2. **Test Syntax**:
@@ -167,9 +167,9 @@ Look for:
 **Solution**: Check keyword matching or use dropdown
 
 ### Issue: Context file not found
-**Solution**: Verify files in `./shared/` folder
+**Solution**: Verify files in `./agentic-ai-plateform--skills/` folder
 ```bash
-ls -la /home/ubuntu/<PLTF_FOLDER>/shared/
+ls -la /home/ubuntu/<PLTF_FOLDER>/agentic-ai-plateform--skills/
 ```
 
 ### Issue: Commands not executing

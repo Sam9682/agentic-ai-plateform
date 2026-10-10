@@ -141,7 +141,7 @@ def process_qchat_devops_stream(user_question: str, user_id: str = '0',
     
     # Load context if action detected
     if detected_action:
-        context_file = f"/home/ubuntu/<PLTF_FOLDER>/shared/{detected_action.upper()}_context.md"
+        context_file = f"/home/ubuntu/<PLTF_FOLDER>/agentic-ai-plateform--skills/{detected_action.upper()}_context.md"
         
         if os.path.exists(context_file):
             with open(context_file, 'r') as f:

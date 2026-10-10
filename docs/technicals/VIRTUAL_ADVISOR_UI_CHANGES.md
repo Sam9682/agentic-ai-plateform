@@ -98,11 +98,11 @@ The Virtual Advisor dialog has been enhanced with:
 
 ### Context Loading
 Backend detects action from `[ACTION]` prefix and loads appropriate context from:
-- `./shared/PS_context.md`
-- `./shared/START_context.md`
-- `./shared/STOP_context.md`
-- `./shared/RESTART_context.md`
-- `./shared/LOGS_context.md`
+- `./agentic-ai-plateform--skills/PS_context.md`
+- `./agentic-ai-plateform--skills/START_context.md`
+- `./agentic-ai-plateform--skills/STOP_context.md`
+- `./agentic-ai-plateform--skills/RESTART_context.md`
+- `./agentic-ai-plateform--skills/LOGS_context.md`
 
 ## Benefits
 

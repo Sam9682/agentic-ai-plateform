@@ -65,7 +65,7 @@ Both agents support:
 - **action_operation** (optional): Specific operation type (defaults to "MODIFY_CODE", validated against allowed operations)
 
 #### 🎯 Enhanced Context Loading
-The agent automatically loads context from `/home/ubuntu/<PLTF_FOLDER>/shared/MODIFY_CODE_context.md` which includes:
+The agent automatically loads context from `/home/ubuntu/<PLTF_FOLDER>/agentic-ai-plateform--skills/MODIFY_CODE_context.md` which includes:
 - Application-specific configuration with environment variables
 - User context and permissions with role-based access
 - Git repository information with branch management
@@ -234,11 +234,11 @@ X-Context-Loaded: true
 
 ### 🎯 Context-Aware Prompts
 
-The virtual agents use enhanced context-aware prompts loaded from the `shared/` directory with advanced features:
+The virtual agents use enhanced context-aware prompts loaded from the `agentic-ai-plateform--skills/` directory with advanced features:
 
 #### 📁 Enhanced Context File Structure
 ```
-shared/
+agentic-ai-plateform--skills/
 ├── MODIFY_CODE_context.md    # Developer agent context with coding standards
 ├── START_context.md          # Start operation context with environment setup
 ├── STOP_context.md           # Stop operation context with cleanup procedures

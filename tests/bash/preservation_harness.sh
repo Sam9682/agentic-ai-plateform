@@ -86,12 +86,12 @@ mkdir -p "${REPO_DIR}/shared" \
          "${REPO_DIR}/conf"
 printf 'PLTF_NAME=demo\nPLTF_FOLDER=demo\n' > "${REPO_DIR}/conf/deploy.ini"
 printf '#!/bin/sh\n' > "${REPO_DIR}/.venv/bin/activate"
-: > "${REPO_DIR}/shared/.gitkeep"
+: > "${REPO_DIR}/agentic-ai-plateform--skills/.gitkeep"
 : > "${REPO_DIR}/README.md"
 # A deeper / varied shape when requested, so the property spans tree shapes.
 if [ "${TREE_SHAPE}" = "full" ]; then
-    mkdir -p "${REPO_DIR}/shared/sub/deep" "${REPO_DIR}/logs/old"
-    : > "${REPO_DIR}/shared/sub/deep/file.txt"
+    mkdir -p "${REPO_DIR}/agentic-ai-plateform--skills/sub/deep" "${REPO_DIR}/logs/old"
+    : > "${REPO_DIR}/agentic-ai-plateform--skills/sub/deep/file.txt"
     : > "${REPO_DIR}/logs/old/app.log"
 fi
 
@@ -131,8 +131,8 @@ path_of() {
         logs)        echo "${REPO_DIR}/logs" ;;
         deploy_ini)  echo "${REPO_DIR}/conf/deploy.ini" ;;
         readme)      echo "${REPO_DIR}/README.md" ;;
-        deep)        echo "${REPO_DIR}/shared/sub/deep" ;;
-        deep_file)   echo "${REPO_DIR}/shared/sub/deep/file.txt" ;;
+        deep)        echo "${REPO_DIR}/agentic-ai-plateform--skills/sub/deep" ;;
+        deep_file)   echo "${REPO_DIR}/agentic-ai-plateform--skills/sub/deep/file.txt" ;;
         logs_old)    echo "${REPO_DIR}/logs/old/app.log" ;;
         aws)         echo "${SIM_HOME}/.aws" ;;
         aws_creds)   echo "${SIM_HOME}/.aws/credentials" ;;

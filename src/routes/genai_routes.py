@@ -61,7 +61,7 @@ def return_prompt_for_developer(detected_action, application_name, application_f
             if not safe_action:
                 return ''
         
-        context_file = f"/home/{LINUX_USER_INSTALLATION}/{PLTF_FOLDER}/shared/{safe_action}_context.md"
+        context_file = f"/home/{LINUX_USER_INSTALLATION}/{PLTF_FOLDER}/agentic-ai-plateform--skills/{safe_action}_context.md"
         
         if os.path.exists(context_file):
             logger.info(f'AI Chat Developer - Loading context from {detected_action.upper()}_context.md')
@@ -153,7 +153,7 @@ def return_prompt_for_operator(detected_action, application_name, application_fo
             logger.warning('AI Chat Operator - Context file not found: invalid action, using default Q&A mode')
             return _create_fallback_prompt(detected_action), False
         
-        context_file = f"/home/{LINUX_USER_INSTALLATION}/{PLTF_FOLDER}/shared/{safe_action}_context.md"
+        context_file = f"/home/{LINUX_USER_INSTALLATION}/{PLTF_FOLDER}/agentic-ai-plateform--skills/{safe_action}_context.md"
                 
         if os.path.exists(context_file):
             logger.info(f'AI Chat Operator - Loading context from {detected_action.upper()}_context.md')

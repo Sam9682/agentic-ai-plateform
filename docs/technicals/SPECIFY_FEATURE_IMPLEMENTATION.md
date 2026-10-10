@@ -5,13 +5,13 @@ Successfully implemented a new "SPECIFY an AI context" option in the Virtual Age
 
 ## Files Created
 
-### 1. shared/SPECIFY_context.md
+### 1. agentic-ai-plateform--skills/SPECIFY_context.md
 - AI prompt template for generating detailed specifications
 - Transforms 1-2 sentence user requests into comprehensive technical specs
 - Includes sections for: Objective, Scope, Technical Requirements, Implementation Details, Acceptance Criteria, and Constraints
 - Uses template variables: {{MESSAGE}}, {{APPLICATION_NAME}}, {{APPLICATION_FOLDER}}, {{REPO_GITHUB_URL}}
 
-### 2. shared/README_SPECIFY.md
+### 2. agentic-ai-plateform--skills/README_SPECIFY.md
 - User documentation for the SPECIFY feature
 - Step-by-step usage guide
 - Benefits and use cases
@@ -47,7 +47,7 @@ Successfully implemented a new "SPECIFY an AI context" option in the Virtual Age
 ### Existing Code Support
 The backend already supports the SPECIFY action through:
 - `src/routes/genai_routes.py` - `return_prompt_for_developer()` function
-- Automatically loads context file: `/home/ubuntu/<PLTF_FOLDER>/shared/SPECIFY_context.md`
+- Automatically loads context file: `/home/ubuntu/<PLTF_FOLDER>/agentic-ai-plateform--skills/SPECIFY_context.md`
 - Replaces template variables with actual values
 - Streams response back to frontend
 
@@ -76,8 +76,8 @@ User Input → JavaScript Handler → POST /api/request_dev_ai_for_app
 
 ### Context File Processing
 ```python
-context_file = f"/home/ubuntu/<PLTF_FOLDER>/shared/{safe_action}_context.md"
-# For SPECIFY action: /home/ubuntu/<PLTF_FOLDER>/shared/SPECIFY_context.md
+context_file = f"/home/ubuntu/<PLTF_FOLDER>/agentic-ai-plateform--skills/{safe_action}_context.md"
+# For SPECIFY action: /home/ubuntu/<PLTF_FOLDER>/agentic-ai-plateform--skills/SPECIFY_context.md
 ```
 
 ### Template Variables Replaced

@@ -5,7 +5,7 @@ Backfill/correct the per-application ports stored in ``user_applications``.
 Historically ``calculate_app_ports`` laid the 12 per-application ports out with
 HTTP at the base offset and HTTPS at base+1, and it always used the platform
 ``applications.id`` as the identity number. The canonical deployment script
-(``shared/deployApp.sh``) instead puts the **main HTTPS** port at the base
+(``agentic-ai-plateform--skills/deployApp.sh``) instead puts the **main HTTPS** port at the base
 offset (base+0) and derives the per-application base from each app's
 ``conf/deploy.ini`` ``APPLICATION_IDENTITY_NUMBER``.
 
