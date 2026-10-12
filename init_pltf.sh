@@ -512,7 +512,7 @@ cd "${CLONE_DEST}"
 # their targets regardless of the current working directory later in the run.
 REPO_DIR="$(pwd)"
 export REPO_DIR
-git submodule add "${SUBMODULE_URL}" shared > /dev/null 2>&1
+git submodule add "${SUBMODULE_URL}" agentic-ai-plateform--skills
 git submodule update --init --recursive > /dev/null 2>&1
 print_success "Repository cloned into ${CLONE_DEST}"
 

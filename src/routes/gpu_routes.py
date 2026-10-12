@@ -70,49 +70,20 @@ def get_server_ip(server_id):
 
 def ssh_execute(server_ip, command, timeout=30):
     """Execute a command on a remote server via SSH.
-    
-    Uses subprocess.run() with StrictHostKeyChecking=no and UserKnownHostsFile=/dev/null
-    to avoid interactive prompts.
-    
+
+    Thin wrapper around the shared :func:`src.ssh_utils.ssh_execute` so GPU
+    management and Runtime Security share one SSH implementation.
+
     Args:
         server_ip: IP address of the target server.
         command: Shell command string to execute remotely.
         timeout: Maximum execution time in seconds (default 30).
-        
+
     Returns:
         tuple: (success: bool, stdout: str, stderr: str)
     """
-    ssh_cmd = [
-        'ssh',
-        '-o', 'StrictHostKeyChecking=no',
-        '-o', 'UserKnownHostsFile=/dev/null',
-        f'ubuntu@{server_ip}',
-        command
-    ]
-
-    logger.info(f"Executing SSH command on {server_ip}: {command}")
-
-    try:
-        result = subprocess.run(
-            ssh_cmd,
-            capture_output=True,
-            text=True,
-            timeout=timeout
-        )
-
-        if result.returncode == 0:
-            logger.info(f"SSH command succeeded on {server_ip}")
-            return True, result.stdout, result.stderr
-        else:
-            logger.warning(f"SSH command failed on {server_ip} (exit code {result.returncode}): {result.stderr[:512]}")
-            return False, result.stdout, result.stderr
-
-    except subprocess.TimeoutExpired:
-        logger.error(f"SSH command timed out on {server_ip} after {timeout}s")
-        return False, '', f'Command timed out after {timeout} seconds'
-    except Exception as e:
-        logger.error(f"SSH execution error on {server_ip}: {str(e)}")
-        return False, '', str(e)
+    from ..ssh_utils import ssh_execute as _shared_ssh_execute
+    return _shared_ssh_execute(server_ip, command, timeout=timeout)
 
 
 def parse_mig_instances(output):
