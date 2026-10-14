@@ -10,7 +10,9 @@ PLTF_NAME=agentic-ai-plateform
 PLTF_FOLDER=agentic-ai-plateform
 
 # Platform version string.
-VERSION=0.0.1
+# 0.0.2 adds the agentic firewall (Runtime Security: agentic workload
+# discovery, classification, and alert-only anomaly detection).
+VERSION=0.0.2
 
 # Main repository clone URL. Default source for init_pltf.sh when REPO_URL is
 # not provided via environment variable.

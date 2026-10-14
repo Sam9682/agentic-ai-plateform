@@ -7,7 +7,7 @@
 set -e
 
 # Version (read from conf/deploy.ini, fallback to default)
-VERSION="0.0.1"
+VERSION="0.0.2"
 if [ -f "./conf/deploy.ini" ]; then
     INI_VERSION=$(grep -E "^VERSION=" ./conf/deploy.ini 2>/dev/null | cut -d'=' -f2 | xargs)
     if [ -n "$INI_VERSION" ]; then

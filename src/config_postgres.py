@@ -100,7 +100,7 @@ def get_version():
                     return line.split('=', 1)[1].strip().strip("'\"")
     except Exception as e:
         logger.error(f'Failed to read VERSION from deploy.ini: {e}')
-    return '0.0.1'
+    return '0.0.2'
 
 
 # Linux installation user from deploy.ini
