@@ -1,0 +1,6 @@
+tls:
+  certificates:
+  - certFile: /etc/traefik/ssl/softfluid.fr/fullchain_domain.crt
+    keyFile: /etc/traefik/ssl/softfluid.fr/privateKey_domain.key
+  stores:
+    default: {}

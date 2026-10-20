@@ -68,6 +68,8 @@ except Exception as e:
 api_bp = Blueprint('api', __name__, url_prefix='/api')
 
 from ..db_health import check_database_health, get_database_stats
+# The reverse proxy is now Traefik; the module keeps the nginx_manager import
+# path and the three preserved public functions (Proxy_Manager, Req 8.1).
 from ..nginx_manager import insert_location_block, remove_location_block, sync_all_locations
 from ..platform_discovery import get_current_server_ip, check_remote_platform, determine_role, update_server_role
 
@@ -581,18 +583,18 @@ def api_user_applications(user_id):
                     (user_id, app_id, url, *app_ports)
                 )
                 
-                # Update nginx configuration with dynamic location
+                # Publish the application's Traefik route
                 try:
-                    # Get username for nginx location
+                    # Get username for the route prefix
                     user_result = db_manager.execute_query(
                         'SELECT username FROM users WHERE id = %s',
                         (user_id,), fetch_one=True
                     )
                     user_name = user_result[0] if user_result else f'user_{user_id}'
                     insert_location_block(user_name, app_name, url, url)
-                    logger.info(f"Nginx location added for user {user_name} app {app_name}")
+                    logger.info(f"Traefik route added for user {user_name} app {app_name}")
                 except Exception as e:
-                    logger.warning(f"Failed to update nginx config: {e}")
+                    logger.warning(f"Failed to update Traefik route: {e}")
                 
                 return jsonify({'message': 'Application assigned successfully'})
             except Exception as e:
@@ -618,19 +620,19 @@ def api_user_applications(user_id):
                 (user_id, app_id)
             )
             
-            # Remove nginx location
+            # Remove the application's Traefik route
             if app_result:
                 try:
-                    # Get username for nginx location
+                    # Get username for the route prefix
                     user_result = db_manager.execute_query(
                         'SELECT username FROM users WHERE id = %s',
                         (user_id,), fetch_one=True
                     )
                     user_name = user_result[0] if user_result else f'user_{user_id}'
                     remove_location_block(user_name, app_result[0])
-                    logger.info(f"Nginx location removed for user {user_name} app {app_result[0]}")
+                    logger.info(f"Traefik route removed for user {user_name} app {app_result[0]}")
                 except Exception as e:
-                    logger.warning(f"Failed to remove nginx location: {e}")
+                    logger.warning(f"Failed to remove Traefik route: {e}")
             
             return jsonify({'message': 'Application unassigned successfully'})
             
@@ -1380,14 +1382,14 @@ def _handle_clone_action(user_id, app_name, git_url, server_id, deployment_path,
     if result.returncode == 0:
         status = 'cloned'
         
-        # Get username for nginx location and swautomorph_url
+        # Get username for the Traefik route prefix and swautomorph_url
         user_result = db_manager.execute_query(
             'SELECT username FROM users WHERE id = %s',
             (user_id,), fetch_one=True
         )
         user_name = user_result[0] if user_result else f'user_{user_id}'
         
-        # Update nginx configuration after successful clone
+        # Publish the Traefik route after a successful clone
         try:
             user_app = db_manager.execute_query(
                 'SELECT url FROM user_applications WHERE user_id = %s AND application_id = (SELECT id FROM applications WHERE name = %s)',
@@ -1395,9 +1397,9 @@ def _handle_clone_action(user_id, app_name, git_url, server_id, deployment_path,
             )
             if user_app and user_app[0]:
                 insert_location_block(user_name, app_name, user_app[0], user_app[0])
-                logger.info(f"Nginx location updated for user {user_name} app {app_name}")
+                logger.info(f"Traefik route updated for user {user_name} app {app_name}")
         except Exception as e:
-            logger.warning(f"Failed to update nginx after clone: {e}")
+            logger.warning(f"Failed to update Traefik route after clone: {e}")
         
         # Copy SSL certificates after successful clone
         ssl_env = os.environ.copy()
@@ -1689,7 +1691,7 @@ def api_deployment_logs(deployment_id):
 
 @api_bp.route('/nginx/sync', methods=['POST'])
 def api_nginx_sync():
-    """Sync all nginx locations from database"""
+    """Reconcile all Traefik routes from the database (Proxy_Manager sync)."""
     if 'user_id' not in session:
         return jsonify({'error': 'Authentication required'}), 401
     
@@ -1703,9 +1705,9 @@ def api_nginx_sync():
     
     try:
         if sync_all_locations(db_manager):
-            return jsonify({'message': 'Nginx locations synced successfully'})
+            return jsonify({'message': 'Traefik routes synced successfully'})
         else:
-            return jsonify({'error': 'Failed to sync nginx locations'}), 500
+            return jsonify({'error': 'Failed to sync Traefik routes'}), 500
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -1923,14 +1925,14 @@ def api_deployment_delete(deployment_id):
 
 @api_bp.route('/nginx/update-deployment', methods=['POST'])
 def api_nginx_update_deployment():
-    """Update nginx configuration for a specific deployment"""
+    """Update the Traefik route for a specific deployment (Proxy_Manager)."""
     session_user_id = session.get('user_id', 'anonymous')
     remote_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
     
-    logger.info(f"[NGINX_UPDATE] POST request from user {session_user_id}, IP: {remote_ip}")
+    logger.info(f"[ROUTE_UPDATE] POST request from user {session_user_id}, IP: {remote_ip}")
     
     if 'user_id' not in session:
-        logger.warning(f"[NGINX_UPDATE] Authentication required from {remote_ip}")
+        logger.warning(f"[ROUTE_UPDATE] Authentication required from {remote_ip}")
         return jsonify({'error': 'Authentication required'}), 401
     
     user = db_manager.execute_query(
@@ -1939,7 +1941,7 @@ def api_nginx_update_deployment():
     )
     
     if not user or user[0] != 'admin':
-        logger.warning(f"[NGINX_UPDATE] Admin access denied for user {session_user_id}")
+        logger.warning(f"[ROUTE_UPDATE] Admin access denied for user {session_user_id}")
         return jsonify({'error': 'Admin access required'}), 403
     
     try:
@@ -1954,21 +1956,21 @@ def api_nginx_update_deployment():
             (user_id,), fetch_one=True
         )
 
-        logger.info(f"[NGINX_UPDATE] Request for user_name={user_name}, app={app_name}, url={deployment_url}")
+        logger.info(f"[ROUTE_UPDATE] Request for user_name={user_name}, app={app_name}, url={deployment_url}")
         
         if not all([user_name, app_name, deployment_url]):
-            logger.error(f"[NGINX_UPDATE] Missing parameters: user_name={user_name}, app={app_name}, url={deployment_url}")
+            logger.error(f"[ROUTE_UPDATE] Missing parameters: user_name={user_name}, app={app_name}, url={deployment_url}")
             return jsonify({'error': 'user_name, app_name, and deployment_url are required'}), 400
         
-        # Check if nginx location already exists and update/insert
+        # Write/overwrite the application's Traefik route (insert is idempotent)
         if insert_location_block(user_name, app_name, deployment_url, user_appli_url):
-            logger.info(f"[NGINX_UPDATE] SUCCESS - Nginx updated for user {user_name}, app {app_name}")
-            return jsonify({'message': f'Nginx configuration updated for {app_name}'})
+            logger.info(f"[ROUTE_UPDATE] SUCCESS - Traefik route updated for user {user_name}, app {app_name}")
+            return jsonify({'message': f'Traefik route updated for {app_name}'})
         else:
-            logger.error(f"[NGINX_UPDATE] FAILED - Could not update nginx for user {user_name}, app {app_name}")
-            return jsonify({'error': 'Failed to update nginx configuration'}), 500
+            logger.error(f"[ROUTE_UPDATE] FAILED - Could not update Traefik route for user {user_name}, app {app_name}")
+            return jsonify({'error': 'Failed to update Traefik route'}), 500
     except Exception as e:
-        logger.error(f"[NGINX_UPDATE] Exception for user {session_user_id}: {str(e)}")
+        logger.error(f"[ROUTE_UPDATE] Exception for user {session_user_id}: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @api_bp.route('/deployments/<app_name>/gitea', methods=['GET'])

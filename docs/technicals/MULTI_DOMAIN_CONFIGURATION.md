@@ -2,7 +2,11 @@
 
 ## Overview
 
-The AI-SwAutoMorph platform supports multiple domains with dynamic nginx configuration generation. This allows you to host the main application on one domain (e.g., softfluid.fr) while proxying additional domains (e.g., hypervisia.fr) to different backends.
+The AI-SwAutoMorph platform supports multiple domains through Traefik routers and entrypoints. This lets you host the main application on one domain (e.g., `softfluid.fr`) while routing additional domains (e.g., `hypervisia.fr`) to different backends.
+
+Traefik is the single HTTP/HTTPS entrypoint for the platform. It owns ports `:80` (entrypoint `web`) and `:443` (entrypoint `websecure`), terminates TLS, and routes requests to backends based on the request host. Multi-domain routing is expressed as Traefik **routers** (host-matching rules) and **services** (backend URLs) emitted into a file-provider dynamic config rather than nginx `server` blocks.
+
+> Terminology note: `src/nginx_manager.py` keeps its module name for compatibility, but it now acts as the **Proxy_Manager** and writes Traefik dynamic configuration. There is no nginx or ModSecurity WAF in the platform.
 
 ## Configuration File: `conf/deploy.ini`
 
@@ -15,15 +19,15 @@ DOMAIN=softfluid.fr
 PLTF_NAME=SoftFluid AI
 ```
 
-This domain will:
-- Host the main Flask application on `http://localhost:${FLASK_PORT:-5000}`
-- Include all standard location blocks (/, /gitea/, etc.)
-- Support ModSecurity WAF protection (if enabled)
-- Use SSL certificates from `/home/ubuntu/<PLTF_FOLDER>/ssl/softfluid.fr/`
+This domain is used to:
+
+- Route the main application and per-app routes (`Host(softfluid.fr) && PathPrefix(/{user}/{app})`) through Traefik.
+- Select the TLS certificate for the primary domain by SNI.
+- Resolve SSL certificate paths under `/home/ubuntu/<PLTF_FOLDER>/ssl/softfluid.fr/`.
 
 ### Secondary Domains Configuration
 
-The `SECONDARY_DOMAINS` variable allows you to configure additional domains with custom proxy configurations:
+The `SECONDARY_DOMAINS` variable configures additional domains, each routed to a custom backend:
 
 ```ini
 # Secondary domains (comma-separated list)
@@ -36,15 +40,17 @@ SECONDARY_DOMAINS=hypervisia.fr:hypervisia.fr www.hypervisia.fr:https://softflui
 
 Each secondary domain entry consists of three colon-separated parts:
 
-1. **domain**: The domain name used for SSL certificate path (e.g., `hypervisia.fr`)
-2. **server_names**: Space-separated list of server names for nginx (e.g., `hypervisia.fr www.hypervisia.fr`)
-3. **proxy_pass**: The backend URL to proxy requests to (e.g., `https://softfluid.fr:6137`)
+1. **domain**: The domain name used for the SSL certificate path (e.g., `hypervisia.fr`).
+2. **server_names**: Space-separated list of host names the router matches, becoming the Traefik router's `Host(...)` list (e.g., `hypervisia.fr www.hypervisia.fr`).
+3. **proxy_pass**: The backend URL the router's service forwards to (e.g., `https://softfluid.fr:6137`).
 
-Multiple secondary domains can be configured by separating them with commas:
+Multiple secondary domains are separated with commas:
 
 ```ini
 SECONDARY_DOMAINS=domain1:server_names1:proxy_pass1,domain2:server_names2:proxy_pass2
 ```
+
+The `proxy_pass` key name is retained for configuration-format compatibility; in the Traefik model it is simply the service backend URL.
 
 ### Complete Example
 
@@ -73,114 +79,85 @@ Each domain (main and secondary) must have its SSL certificates in the following
     └── privateKey_domain.key
 ```
 
+The `ssl/` directory is mounted read-only into the Traefik container at `/etc/traefik/ssl` (`./ssl:/etc/traefik/ssl:ro`), so Traefik references the certificates in place without copying or reissuing them.
+
 ### Certificate Requirements
 
-- `fullchain_domain.crt`: Full certificate chain including intermediate certificates
-- `privateKey_domain.key`: Private key for the domain
+- `fullchain_domain.crt`: Full certificate chain including intermediate certificates.
+- `privateKey_domain.key`: Private key for the domain.
 
-## Generated Nginx Configuration
+## Generated Traefik Configuration
 
-The `create_nginx_config()` function in `deployControlPlan.sh` dynamically generates nginx server blocks based on the configuration.
+Multi-domain routing is produced as Traefik dynamic configuration served by the **file provider**, which Traefik watches and hot-reloads with no restart and no `nginx -t`-style validation step.
 
-### Configuration Generation Order
+Two file-provider documents drive multi-domain behavior:
 
-1. **Secondary Domains** (processed first)
-   - One server block per secondary domain
-   - HTTPS only (port 443)
-   - Custom proxy_pass from configuration
-   - Domain-specific SSL certificates
+- `traefik/dynamic/tls.yml` — one `tls.certificates` entry per configured domain (primary `DOMAIN` plus each `SECONDARY_DOMAINS` entry), referencing the mounted certificate files. Routers with `tls: {}` select the matching certificate by SNI.
+- `traefik/dynamic/secondary-domains.yml` — one router + one service per `SECONDARY_DOMAINS` entry.
 
-2. **HTTP Redirect** (main domain)
-   - Redirects HTTP (port 80) to HTTPS
-   - Applies to main domain and www subdomain
+These files are generated at provisioning time from `DOMAIN` + `SECONDARY_DOMAINS` and refreshed when those values change.
 
-3. **Main Domain HTTPS** (processed last)
-   - Full application functionality
-   - Proxies to Flask application
-   - Includes all location blocks (/gitea/, etc.)
-   - ModSecurity WAF support (if enabled)
-   - Domain-specific SSL certificates
+### Routing Model
+
+For each secondary-domain entry `domain:server_names:proxy_pass`:
+
+1. **Router** — a router whose `Host(...)` rule lists the entry's `server_names`. It is attached to both the `web` (`:80`) and `websecure` (`:443`) entrypoints. The `web` router carries an HTTP→HTTPS redirect middleware; the `websecure` router sets `tls: {}` so Traefik selects the domain's certificate by SNI.
+2. **Service** — a `loadBalancer` service whose single server URL equals the entry's `proxy_pass` backend.
+
+The primary `DOMAIN` is served by the per-app routers generated by the Proxy_Manager (see `NGINX_DYNAMIC_LOCATIONS.md`) and by the platform's own Traefik labels; its certificate is selected from the same TLS store by SNI.
 
 ### Example Generated Configuration
 
 For the configuration:
+
 ```ini
 DOMAIN=softfluid.fr
 SECONDARY_DOMAINS=hypervisia.fr:hypervisia.fr www.hypervisia.fr:https://softfluid.fr:6137
 ```
 
-The generated nginx configuration will be:
+The generated TLS dynamic config references the certificate for each domain:
 
-```nginx
-# Secondary domain: hypervisia.fr
-server {
-    listen 443 ssl;
-    server_name hypervisia.fr www.hypervisia.fr;
-    
-    ssl_certificate /home/ubuntu/<PLTF_FOLDER>/ssl/hypervisia.fr/fullchain_domain.crt;
-    ssl_certificate_key /home/ubuntu/<PLTF_FOLDER>/ssl/hypervisia.fr/privateKey_domain.key;
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers HIGH:!aNULL:!MD5;
-
-    location / {
-        proxy_pass https://softfluid.fr:6137;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-
-# HTTP redirect for main domain
-server {
-    listen 80;
-    server_name softfluid.fr www.softfluid.fr;
-    return 301 https://$host$request_uri;
-}
-
-# Main domain HTTPS
-server {
-    listen 443 ssl;
-    server_name softfluid.fr www.softfluid.fr;
-    
-    ssl_certificate /home/ubuntu/<PLTF_FOLDER>/ssl/softfluid.fr/fullchain_domain.crt;
-    ssl_certificate_key /home/ubuntu/<PLTF_FOLDER>/ssl/softfluid.fr/privateKey_domain.key;
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers HIGH:!aNULL:!MD5;
-    
-    # ModSecurity (if enabled)
-    modsecurity on;
-    modsecurity_rules_file /etc/nginx/modsec/main.conf;
-    
-    location / {
-        proxy_pass http://localhost:5000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-    
-    location /gitea/ {
-        proxy_pass http://localhost:3000/;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header X-Forwarded-Host $host;
-        proxy_buffering off;
-        
-        # WebSocket support for Gitea
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        
-        # Increase timeouts for large operations
-        proxy_connect_timeout 60s;
-        proxy_send_timeout 300s;
-        proxy_read_timeout 300s;
-    }
-}
+```yaml
+# traefik/dynamic/tls.yml
+tls:
+  certificates:
+    - certFile: "/etc/traefik/ssl/softfluid.fr/fullchain_domain.crt"
+      keyFile:  "/etc/traefik/ssl/softfluid.fr/privateKey_domain.key"
+    - certFile: "/etc/traefik/ssl/hypervisia.fr/fullchain_domain.crt"
+      keyFile:  "/etc/traefik/ssl/hypervisia.fr/privateKey_domain.key"
+  stores:
+    default: {}
 ```
+
+The generated secondary-domain router and service:
+
+```yaml
+# traefik/dynamic/secondary-domains.yml
+http:
+  routers:
+    secondary-hypervisia-fr:
+      rule: "Host(`hypervisia.fr`, `www.hypervisia.fr`)"   # server_names
+      entryPoints: ["websecure"]
+      service: "secondary-hypervisia-fr"
+      tls: {}
+    secondary-hypervisia-fr-web:
+      rule: "Host(`hypervisia.fr`, `www.hypervisia.fr`)"
+      entryPoints: ["web"]
+      service: "secondary-hypervisia-fr"
+      middlewares: ["secondary-hypervisia-fr-redirect"]
+  middlewares:
+    secondary-hypervisia-fr-redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true
+  services:
+    secondary-hypervisia-fr:
+      loadBalancer:
+        servers:
+          - url: "https://softfluid.fr:6137"               # proxy_pass
+```
+
+WebSocket upgrades require no special configuration — Traefik forwards `Upgrade`/`Connection` headers automatically for any router.
 
 ## Deployment Process
 
@@ -206,36 +183,42 @@ cp privkey.key /home/ubuntu/<PLTF_FOLDER>/ssl/yourdomain.com/privateKey_domain.k
 
 # Set proper permissions
 chmod 644 /home/ubuntu/<PLTF_FOLDER>/ssl/yourdomain.com/fullchain_domain.crt
-chmod 600 /home/ubuntu/agentic-ai-plateform-docker-ah/ssl/yourdomain.com/privateKey_domain.key
+chmod 600 /home/ubuntu/<PLTF_FOLDER>/ssl/yourdomain.com/privateKey_domain.key
 ```
 
 ### 3. Deploy Configuration
 
-Run the deployment script to regenerate nginx configuration:
+Run the deployment script to regenerate the Traefik dynamic configuration:
 
 ```bash
 ./deployControlPlan.sh deploy
 ```
 
 The script will:
-1. Load configuration from `conf/deploy.ini`
-2. Generate nginx configuration with all domains
-3. Test nginx configuration syntax
-4. Reload nginx to apply changes
+
+1. Load configuration from `conf/deploy.ini`.
+2. Generate the Traefik dynamic config (`tls.yml` and `secondary-domains.yml`) for all domains.
+3. Write the files into the watched `traefik/dynamic/` directory.
+
+Traefik's file watcher hot-applies the changes; there is no configuration-test or reload command to run.
 
 ### 4. Verify Configuration
 
-Check that nginx is running correctly:
+Check that Traefik is serving the domains correctly:
 
 ```bash
-# Test nginx configuration
-sudo nginx -t
+# Confirm Traefik is listening on :80 and :443
+sudo ss -tlnp | grep -E ':80|:443'
 
-# Check nginx status
-sudo systemctl status nginx
+# Inspect the generated dynamic config
+cat /home/ubuntu/<PLTF_FOLDER>/traefik/dynamic/secondary-domains.yml
+cat /home/ubuntu/<PLTF_FOLDER>/traefik/dynamic/tls.yml
 
-# View generated configuration
-cat /etc/nginx/sites-available/<PLTF_FOLDER>
+# Follow Traefik logs
+docker logs -f <PLTF_FOLDER>-traefik
+
+# Test an HTTPS handshake for a configured domain
+openssl s_client -connect yourdomain.com:443 -servername yourdomain.com </dev/null
 ```
 
 ## Use Cases
@@ -271,9 +254,10 @@ SECONDARY_DOMAINS=api.example.com:api.example.com:http://localhost:8000,admin.ex
 
 ### Issue: SSL Certificate Errors
 
-**Symptoms**: Browser shows SSL certificate warnings
+**Symptoms**: Browser shows SSL certificate warnings.
 
 **Solutions**:
+
 1. Verify certificate files exist:
    ```bash
    ls -la /home/ubuntu/<PLTF_FOLDER>/ssl/yourdomain.com/
@@ -284,210 +268,191 @@ SECONDARY_DOMAINS=api.example.com:api.example.com:http://localhost:8000,admin.ex
    openssl x509 -in /home/ubuntu/<PLTF_FOLDER>/ssl/yourdomain.com/fullchain_domain.crt -text -noout
    ```
 
-3. Ensure certificate matches domain:
+3. Ensure the certificate matches the domain:
    ```bash
    openssl x509 -in /home/ubuntu/<PLTF_FOLDER>/ssl/yourdomain.com/fullchain_domain.crt -noout -subject
    ```
 
-### Issue: Nginx Configuration Syntax Error
+4. Confirm a `tls.certificates` entry exists for the domain in `traefik/dynamic/tls.yml` so Traefik can select it by SNI.
 
-**Symptoms**: `nginx -t` fails with syntax errors
+### Issue: Dynamic Config Not Applied
+
+**Symptoms**: A newly added domain does not route, or Traefik logs show a config error.
 
 **Solutions**:
-1. Check `deploy.ini` format:
-   - Ensure no extra spaces in domain configuration
-   - Verify colon separators are correct
-   - Check for proper comma separation between domains
 
-2. Manually inspect generated configuration:
+1. Check `deploy.ini` format:
+   - Ensure no extra spaces around the colon separators in each entry.
+   - Verify the three-part `domain:server_names:proxy_pass` structure.
+   - Check comma separation between multiple domains.
+
+2. Inspect the generated dynamic files:
    ```bash
-   cat /tmp/<PLTF_FOLDER>-site
+   cat /home/ubuntu/<PLTF_FOLDER>/traefik/dynamic/secondary-domains.yml
    ```
 
-3. Test with minimal configuration first, then add domains incrementally
+3. Review Traefik logs for file-provider parse errors. Traefik keeps the last valid config on malformed YAML and logs the problem:
+   ```bash
+   docker logs <PLTF_FOLDER>-traefik | grep -i error
+   ```
 
 ### Issue: Domain Not Accessible
 
-**Symptoms**: Domain returns connection refused or timeout
+**Symptoms**: Domain returns connection refused or timeout.
 
 **Solutions**:
-1. Verify DNS points to correct server:
+
+1. Verify DNS points to the correct server:
    ```bash
    dig yourdomain.com
    nslookup yourdomain.com
    ```
 
-2. Check firewall allows HTTPS traffic:
+2. Check the firewall allows HTTPS traffic:
    ```bash
    sudo ufw status
    sudo ufw allow 443/tcp
    ```
 
-3. Verify nginx is listening on port 443:
+3. Verify Traefik is listening on port 443:
    ```bash
-   sudo netstat -tlnp | grep :443
+   sudo ss -tlnp | grep :443
    ```
 
-4. Check nginx error logs:
+4. Check Traefik logs for routing decisions:
    ```bash
-   sudo tail -f /var/log/nginx/error.log
+   docker logs -f <PLTF_FOLDER>-traefik
    ```
 
-### Issue: Proxy Backend Unreachable
+### Issue: Backend Unreachable
 
-**Symptoms**: 502 Bad Gateway or 504 Gateway Timeout
+**Symptoms**: 502 Bad Gateway or 504 Gateway Timeout.
 
 **Solutions**:
-1. Verify backend service is running:
+
+1. Verify the backend service is running:
    ```bash
    curl http://localhost:5000  # or your backend URL
    ```
 
-2. Check backend logs for errors
+2. Check the backend logs for errors.
 
-3. Verify proxy_pass URL in configuration:
+3. Verify the `proxy_pass` backend URL in the configuration matches the running backend:
    ```bash
-   grep proxy_pass /etc/nginx/sites-available/<PLTF_FOLDER>
+   grep -A3 'services:' /home/ubuntu/<PLTF_FOLDER>/traefik/dynamic/secondary-domains.yml
    ```
 
-4. Test backend connectivity from nginx server:
+4. Test backend connectivity from the Traefik host:
    ```bash
-   telnet backend-host backend-port
+   curl -v https://softfluid.fr:6137
    ```
 
 ## Security Considerations
 
-### SSL/TLS Configuration
+### TLS Configuration
 
-- Uses TLS 1.2 and 1.3 only (older versions disabled)
-- Strong cipher suites configured
-- Perfect Forward Secrecy enabled
+- Traefik terminates TLS for every configured domain using the existing certificates.
+- Certificates are selected per request by SNI from the file-provider TLS store.
+- Secondary-domain routers redirect HTTP (`web` entrypoint) to HTTPS.
 
 ### Certificate Management
 
-- Keep private keys secure (chmod 600)
-- Regularly renew certificates before expiration
-- Use Let's Encrypt for automated renewal
-- Monitor certificate expiration dates
+- Keep private keys secure (`chmod 600`).
+- Renew certificates before expiration and refresh the dynamic config.
+- Use Let's Encrypt for automated renewal.
+- Monitor certificate expiration dates.
 
-### Proxy Security
+### Routing Security
 
-- All proxy headers properly configured
-- X-Forwarded-Proto prevents protocol downgrade attacks
-- Host header validation prevents host header injection
-- ModSecurity WAF protection on main domain
+- Traefik's Docker provider uses `exposedByDefault=false`, so only containers that opt in with `traefik.enable=true` are routed; platform-internal services are not accidentally exposed.
+- Host-based routers ensure requests only reach a backend when the request host matches a configured `server_names` list.
 
 ## Advanced Configuration
 
-### Custom Location Blocks for Secondary Domains
+### Additional Routes for Secondary Domains
 
-To add custom location blocks to secondary domains, modify the `create_nginx_config()` function in `deployControlPlan.sh`:
-
-```bash
-# After the main location / block for secondary domain
-cat >> /tmp/<PLTF_FOLDER>-site << EOF
-    location /api/ {
-        proxy_pass ${custom_api_backend};
-        # Additional proxy settings
-    }
-EOF
-```
+Secondary domains are generated from the `domain:server_names:proxy_pass` format, which maps each entry to a single router and backend. To add extra path-based routes for a secondary domain, extend the generator that writes `traefik/dynamic/secondary-domains.yml` to emit an additional router (with a `PathPrefix(...)` rule) and service for the same host.
 
 ### Load Balancing Multiple Backends
 
-Configure multiple backend servers for a domain:
+A Traefik service can list multiple backend servers. To load-balance a domain across several backends, emit a `loadBalancer` with multiple `servers` entries:
 
-```ini
-SECONDARY_DOMAINS=api.example.com:api.example.com:http://backend-pool
-```
-
-Then add upstream configuration in nginx:
-
-```nginx
-upstream backend-pool {
-    least_conn;
-    server backend1.local:8080;
-    server backend2.local:8080;
-    server backend3.local:8080;
-}
+```yaml
+services:
+  secondary-example-com:
+    loadBalancer:
+      servers:
+        - url: "http://backend1.local:8080"
+        - url: "http://backend2.local:8080"
+        - url: "http://backend3.local:8080"
 ```
 
 ### WebSocket Support
 
-For secondary domains requiring WebSocket support, modify the generated configuration to include:
-
-```nginx
-proxy_http_version 1.1;
-proxy_set_header Upgrade $http_upgrade;
-proxy_set_header Connection "upgrade";
-```
+WebSocket upgrades work out of the box: Traefik forwards `Upgrade`/`Connection` headers automatically for any router, so no additional configuration is required for secondary domains.
 
 ## Migration Guide
 
-### Migrating from Hardcoded Configuration
+### Migrating Domain Configuration
 
-If you previously had hardcoded domain configurations in `deployControlPlan.sh`:
+If you previously had domains configured as nginx `server` blocks:
 
-1. **Identify all domains** currently configured
-2. **Extract SSL certificate paths** for each domain
-3. **Determine proxy_pass targets** for each domain
-4. **Update deploy.ini** with new format:
+1. **Identify all domains** currently served.
+2. **Extract SSL certificate paths** for each domain.
+3. **Determine backend targets** for each domain (the former `proxy_pass` value).
+4. **Update deploy.ini** with the entry format:
    ```ini
    DOMAIN=primary-domain.com
    SECONDARY_DOMAINS=domain1:server_names1:proxy1,domain2:server_names2:proxy2
    ```
-5. **Organize SSL certificates** into domain-specific directories
-6. **Test configuration** with `nginx -t`
-7. **Deploy** using `./deployControlPlan.sh deploy`
+5. **Organize SSL certificates** into domain-specific directories under `ssl/`.
+6. **Deploy** using `./deployControlPlan.sh deploy` to regenerate the Traefik dynamic config.
+7. **Verify** the HTTPS handshake and routing for each domain.
 
 ### Rollback Procedure
 
 If issues occur after deployment:
 
-1. **Restore previous nginx configuration**:
-   ```bash
-   sudo cp /etc/nginx/sites-available/<PLTF_FOLDER>.backup /etc/nginx/sites-available/<PLTF_FOLDER>
-   ```
-
-2. **Test and reload**:
-   ```bash
-   sudo nginx -t && sudo systemctl reload nginx
-   ```
-
-3. **Revert deploy.ini changes**:
+1. **Revert `deploy.ini` changes**:
    ```bash
    git checkout conf/deploy.ini
    ```
 
+2. **Regenerate the dynamic config** from the restored configuration:
+   ```bash
+   ./deployControlPlan.sh deploy
+   ```
+
+Traefik hot-reloads the regenerated files; there is no separate reload command.
+
 ## Best Practices
 
-1. **Always backup** configuration before changes:
+1. **Always back up** configuration before changes:
    ```bash
    cp conf/deploy.ini conf/deploy.ini.backup
-   sudo cp /etc/nginx/sites-available/<PLTF_FOLDER> /etc/nginx/sites-available/<PLTF_FOLDER>.backup
    ```
 
-2. **Test in staging** environment first
+2. **Test in a staging** environment first.
 
-3. **Use version control** for deploy.ini changes
+3. **Use version control** for `deploy.ini` changes.
 
-4. **Document** each domain's purpose and backend
+4. **Document** each domain's purpose and backend.
 
-5. **Monitor** nginx logs after deployment:
+5. **Monitor** Traefik logs after deployment:
    ```bash
-   sudo tail -f /var/log/nginx/access.log /var/log/nginx/error.log
+   docker logs -f <PLTF_FOLDER>-traefik
    ```
 
-6. **Set up alerts** for certificate expiration
+6. **Set up alerts** for certificate expiration.
 
-7. **Regular security audits** of SSL configuration:
+7. **Run regular security audits** of the TLS configuration:
    ```bash
-   # Test SSL configuration
-   openssl s_client -connect yourdomain.com:443 -tls1_2
+   openssl s_client -connect yourdomain.com:443 -servername yourdomain.com -tls1_2
    ```
 
 ## Related Documentation
 
 - [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md) - General deployment procedures
-- [NGINX_DYNAMIC_LOCATIONS.md](./NGINX_DYNAMIC_LOCATIONS.md) - Dynamic location management
+- [NGINX_DYNAMIC_LOCATIONS.md](./NGINX_DYNAMIC_LOCATIONS.md) - Per-app Traefik route management
+- [LIGHT_ORCHESTRATOR.md](./LIGHT_ORCHESTRATOR.md) - Traefik as the single entrypoint
 - [ARCHITECTURE_GUIDE.md](./ARCHITECTURE_GUIDE.md) - System architecture overview

@@ -28,11 +28,13 @@ Le App Orchestrator est un système d'orchestration simple et maintenable pour S
 - Si DOWN, suppression du container et recréation ailleurs si nécessaire
 - Monitoring continu de la santé des instances
 
-### 🌐 Nginx Dynamique
-- Génération automatique des upstreams par service
-- Load balancing `least_conn`
-- Reload automatique Nginx après ajout/suppression d'instances
-- Support des sticky sessions (optionnel)
+### 🌐 Reverse Proxy Traefik
+- Traefik v3.1 est le **point d'entrée HTTP/HTTPS unique** (propriétaire de `:80` et `:443`) ; nginx et le WAF ModSecurity + OWASP CRS ont été retirés
+- Découverte automatique des routes via le **Docker label provider** (`exposedByDefault=false`) et le **file provider** (surveillance de `traefik/dynamic/`)
+- Load balancing géré par Traefik ; les conteneurs rejoignent le réseau Docker externe `swautomorph-shared`
+- Routage par préfixe : chaque application est exposée sous `/{user}/{app}` et le middleware **StripPrefix** retire le préfixe avant de transmettre la requête au conteneur
+- Pas de réécriture `sub_filter` du corps des réponses HTML/CSS/JS : les applications sont **path-aware** et émettent elles-mêmes leurs URLs préfixées via la variable d'environnement `BASE_PATH = /{user}/{app}/` (base href ou équivalent public-path du framework)
+- Les WebSockets et les timeouts proxy (connect 30s, read/send 60s) sont conservés ; aucune découverte de ports via `docker ps` (les ports sont connus au moment du déploiement)
 
 ## Architecture
 
@@ -132,14 +134,11 @@ python3 ./scripts/orchestrator_cli.py scale my-app 3
 python3 ./scripts/orchestrator_cli.py delete my-app
 ```
 
-#### Générer la Configuration Nginx
+#### Synchroniser les Routes Traefik
 ```bash
-python3 ./scripts/orchestrator_cli.py nginx --output /etc/nginx/conf.d/orchestrator-upstreams.conf
-```
-
-#### Recharger Nginx
-```bash
-python3 ./scripts/orchestrator_cli.py reload
+# Réconcilie les fichiers de configuration dynamique Traefik (traefik/dynamic/)
+# à partir de la base de données
+python3 ./scripts/sync_nginx_locations.py
 ```
 
 ### API REST
@@ -184,61 +183,77 @@ curl -X DELETE https://www.swautomorph.com/api/orchestrator/services/my-app \
 curl https://www.swautomorph.com/api/orchestrator/status
 ```
 
-#### Générer la Configuration Nginx
+#### Synchroniser les Routes Traefik
 ```bash
-curl https://www.swautomorph.com/api/orchestrator/nginx/config
-```
-
-#### Recharger Nginx
-```bash
-curl -X POST https://www.swautomorph.com/api/orchestrator/nginx/reload \
+curl -X POST https://www.swautomorph.com/api/nginx/sync \
   -H "Cookie: session=your-session-cookie"
 ```
 
-## Configuration Nginx
+## Configuration Traefik
 
-### Exemple de Configuration
+Traefik v3.1 est le point d'entrée HTTP/HTTPS unique. Il remplace nginx (et le WAF ModSecurity, retiré). Le routage est découvert automatiquement :
 
-```nginx
-# Include orchestrator-generated upstreams
-include /etc/nginx/conf.d/orchestrator-upstreams.conf;
+- **Docker label provider** (`exposedByDefault=false`) : les conteneurs d'application portent des labels Traefik posés au moment de la création du conteneur (dans le `docker-compose.yml` généré par application).
+- **File provider** : Traefik surveille `traefik/dynamic/` et applique à chaud les fichiers de route par application (`app-{user}-{app}.yml`), la configuration TLS (`tls.yml`) et les domaines secondaires (`secondary-domains.yml`). Aucune étape de validation/reload de type `nginx -t` n'est nécessaire.
 
-server {
-    listen 80;
-    server_name my-app.swautomorph.com;
-    
-    location / {
-        proxy_pass http://my-app;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        
-        # Health check
-        proxy_next_upstream error timeout invalid_header http_500 http_502 http_503 http_504;
-        proxy_connect_timeout 5s;
-        proxy_send_timeout 60s;
-        proxy_read_timeout 60s;
-    }
-}
+Les conteneurs d'application et Traefik communiquent via le réseau Docker externe `swautomorph-shared`.
+
+### Exemple de route (labels Docker)
+
+```yaml
+labels:
+  - "traefik.enable=true"
+  - "traefik.docker.network=swautomorph-shared"
+  # Routeur : host + préfixe par application
+  - "traefik.http.routers.admin-my-app.rule=Host(`softfluid.fr`) && PathPrefix(`/admin/my-app`)"
+  - "traefik.http.routers.admin-my-app.entrypoints=websecure"
+  - "traefik.http.routers.admin-my-app.tls=true"
+  - "traefik.http.routers.admin-my-app.middlewares=admin-my-app-strip@docker"
+  # StripPrefix : retire /admin/my-app avant de transmettre à l'app
+  - "traefik.http.middlewares.admin-my-app-strip.stripprefix.prefixes=/admin/my-app"
+  # Service : port HTTP interne du conteneur (connu au déploiement, pas via docker ps)
+  - "traefik.http.services.admin-my-app.loadbalancer.server.port=5000"
 ```
 
-### Upstream Généré Automatiquement
+### Exemple de route équivalente (file provider)
 
-```nginx
-upstream my-app {
-    least_conn;
-    server 192.168.1.100:8001;
-    server 192.168.1.101:8002;
-}
+```yaml
+# traefik/dynamic/app-admin-my-app.yml
+http:
+  routers:
+    admin-my-app:
+      rule: "Host(`softfluid.fr`) && PathPrefix(`/admin/my-app`)"
+      entryPoints: ["websecure"]
+      service: "admin-my-app"
+      middlewares: ["admin-my-app-strip"]
+      tls: {}
+  middlewares:
+    admin-my-app-strip:
+      stripPrefix:
+        prefixes: ["/admin/my-app"]
+  services:
+    admin-my-app:
+      loadBalancer:
+        serversTransport: app-transport
+        servers:
+          - url: "http://admin-my-app:5000"
+  serversTransports:
+    app-transport:
+      forwardingTimeouts:
+        dialTimeout: "30s"            # connect (anciennement proxy_connect_timeout 30s)
+        responseHeaderTimeout: "60s"  # read (anciennement proxy_read_timeout 60s)
 ```
+
+### Applications path-aware (remplacement de `sub_filter`)
+
+La réécriture `sub_filter` du corps des réponses n'existe plus. La plateforme injecte `BASE_PATH = /{user}/{app}/` comme variable d'environnement dans le conteneur ; l'application émet ses URLs d'assets et de liens sous ce préfixe (via `<base href>` ou l'équivalent public-path de son framework). Le middleware StripPrefix retire `/{user}/{app}` avant que la requête n'atteigne l'application, de sorte que celle-ci voit toujours des chemins relatifs à la racine en interne.
 
 ## Monitoring et Maintenance
 
 ### Health Checks
 - Exécutés automatiquement toutes les 30 secondes
 - Endpoint configurable par service (défaut : `/health`)
-- Instances unhealthy automatiquement supprimées des upstreams
+- Instances unhealthy automatiquement retirées du routage
 
 ### Réconciliation
 - Boucle de réconciliation automatique toutes les 30 secondes
@@ -311,7 +326,7 @@ python3 ./scripts/orchestrator_cli.py create order-service python:3.9-slim \
 ### Évolutivité
 - **Serveurs** : Ajoutez des serveurs via l'interface SwAutoMorph
 - **Services** : Scalez horizontalement selon les besoins
-- **Load Balancing** : Nginx gère automatiquement la répartition de charge
+- **Load Balancing** : Traefik gère automatiquement la répartition de charge
 
 ## Dépannage
 
@@ -327,11 +342,11 @@ python3 ./scripts/orchestrator_cli.py create order-service python:3.9-slim \
 3. Vérifiez la connectivité réseau
 4. Redémarrez le service si nécessaire
 
-### Nginx ne Route Pas
-1. Vérifiez la génération des upstreams
-2. Rechargez la configuration Nginx
-3. Vérifiez les logs Nginx
-4. Vérifiez la résolution DNS
+### Traefik ne Route Pas
+1. Vérifiez que le fichier de route existe dans `traefik/dynamic/` (ou que le conteneur porte bien `traefik.enable=true` et ses labels de routeur)
+2. Vérifiez que le conteneur d'application a rejoint le réseau `swautomorph-shared`
+3. Consultez les logs Traefik (`docker logs <pltf>-traefik`)
+4. Vérifiez la résolution DNS et le certificat TLS du domaine
 
 ### Performance
 - Ajustez le nombre de replicas selon la charge

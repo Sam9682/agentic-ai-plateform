@@ -8,9 +8,21 @@ import requests
 import logging
 import psycopg2
 from contextlib import contextmanager
-from .database_postgres import db_manager, get_runtime_type
+from .database_postgres import db_manager, get_runtime_type, DOMAIN
 
 logger = logging.getLogger(__name__)
+
+# Shared external Docker network that Traefik joins so its Docker provider can
+# reach app containers by name/alias. Every app container created here is
+# attached to this network in addition to its default network so Traefik can
+# route to it (nginx-to-traefik-migration design, "Docker network strategy").
+TRAEFIK_SHARED_NETWORK = "swautomorph-shared"
+
+# Canonical platform env var carrying the per-app Base_Path. template_deploy
+# injects BASE_PATH=/{user}/{app}/ into the deployment environment; the
+# orchestrator reads it to recover the user_name needed to build Traefik router
+# names/rules without changing create_service's signature.
+BASE_PATH_ENV_VAR = "BASE_PATH"
 
 class LightOrchestrator:
     """Simple orchestrator for managing multi-instance applications"""
@@ -272,6 +284,70 @@ class LightOrchestrator:
                 ''', (db_instance_id,))
                 conn.commit()
 
+    @staticmethod
+    def _user_app_from_environment(environment, fallback_app_name):
+        """Recover ``(user_name, app_name)`` for Traefik routing.
+
+        template_deploy injects ``BASE_PATH=/{user}/{app}/`` into the deployment
+        environment (design "Base_Path propagation to apps"). We parse it here so
+        the orchestrator can build the Traefik router name/rule without a new
+        ``create_service`` parameter. If BASE_PATH is absent or malformed, we fall
+        back to the service name as the app and leave the user empty so the
+        router name degrades gracefully instead of raising.
+        """
+        base_path = None
+        if isinstance(environment, dict):
+            base_path = environment.get(BASE_PATH_ENV_VAR)
+
+        if base_path:
+            parts = [segment for segment in str(base_path).split('/') if segment]
+            if len(parts) >= 2:
+                return parts[0], parts[1]
+            if len(parts) == 1:
+                return "", parts[0]
+
+        return "", fallback_app_name
+
+    @staticmethod
+    def _internal_http_port(ports, fallback_port):
+        """Return the container's internal HTTP port for the Traefik service.
+
+        Traefik reaches the app over the shared network, so the backend port is
+        the port the app listens on *inside* the container — the ``container_port``
+        key of the ports map — not the published host port (retires docker ps
+        discovery, Req 1.5). Falls back to the allocated host port if the ports
+        map is empty.
+        """
+        if ports:
+            try:
+                first_container_port = next(iter(ports.keys()))
+                return int(first_container_port)
+            except (StopIteration, TypeError, ValueError):
+                pass
+        return fallback_port
+
+    def _build_traefik_labels(self, user_name, app_name, backend_port):
+        """Build the Traefik Docker-provider labels for an app container.
+
+        Mirrors design "Concrete label example": enable Traefik on the shared
+        network, a host+prefix router on the websecure entrypoint with TLS, a
+        StripPrefix middleware removing the per-app prefix, and a service pointing
+        at the container's internal HTTP port (Req 1.3, 1.4, 1.5, 3.2).
+        """
+        router = f"{user_name}-{app_name}" if user_name else app_name
+        prefix = f"/{user_name}/{app_name}" if user_name else f"/{app_name}"
+        return {
+            "traefik.enable": "true",
+            "traefik.docker.network": TRAEFIK_SHARED_NETWORK,
+            f"traefik.http.routers.{router}.rule":
+                f"Host(`{DOMAIN}`) && PathPrefix(`{prefix}`)",
+            f"traefik.http.routers.{router}.entrypoints": "websecure",
+            f"traefik.http.routers.{router}.tls": "true",
+            f"traefik.http.routers.{router}.middlewares": f"{router}-strip",
+            f"traefik.http.middlewares.{router}-strip.stripprefix.prefixes": prefix,
+            f"traefik.http.services.{router}.loadbalancer.server.port": str(backend_port),
+        }
+
     def _start_container(self, server_id, instance_id, image, port, ports, environment, volumes):
         """Start a Docker container"""
         # Get server info
@@ -295,7 +371,9 @@ class LightOrchestrator:
             for container_port, host_port in ports.items():
                 cmd.extend(['-p', f'{port}:{container_port}'])
 
-        # Add environment variables
+        # Add environment variables. BASE_PATH (injected by template_deploy) is
+        # forwarded here unchanged so it reaches the container at create time;
+        # we do not re-inject it (template_deploy owns that value).
         if environment:
             for key, value in environment.items():
                 cmd.extend(['-e', f'{key}={value}'])
@@ -304,6 +382,24 @@ class LightOrchestrator:
         if volumes:
             for volume in volumes:
                 cmd.extend(['-v', volume])
+
+        # Attach the app container to the shared Traefik network so Traefik's
+        # Docker provider can reach it by name/alias. This replaces the old
+        # nginx-sidecar + <HTTPS_PORT>:443 publish model: the container is
+        # exposed purely through Traefik labels + the shared network, never a
+        # published :443 (Req 1.1, 1.4, 2.2).
+        cmd.extend(['--network', TRAEFIK_SHARED_NETWORK])
+
+        # Attach Traefik routing labels so the route is discovered the moment the
+        # container starts, with no docker ps port scraping (Req 1.3, 1.5).
+        user_name, app_name = self._user_app_from_environment(
+            environment, fallback_app_name=instance_id
+        )
+        backend_port = self._internal_http_port(ports, port)
+        for label_key, label_value in self._build_traefik_labels(
+            user_name, app_name, backend_port
+        ).items():
+            cmd.extend(['-l', f'{label_key}={label_value}'])
 
         # Add restart policy
         cmd.extend(['--restart', 'unless-stopped'])

@@ -239,7 +239,7 @@ check_status() {
     echo "--------------------------------------------------------------------------------"
     echo -e "${CYAN}[STATUS]${NC} Locally Service Status:"
     check_flask_status
-    check_nginx_status
+    check_traefik_status
     check_gitea_status
     echo "--------------------------------------------------------------------------------"
     echo -e "${CYAN}[STATUS]${NC} Docker Compose Status:"
@@ -295,16 +295,12 @@ check_flask_status() {
     fi
 }
 
-check_nginx_status() {
-    if systemctl is-active --quiet nginx; then
-        echo -e "  $OK Nginx: Running"
-        if [ -f "${NGINX_SITES_ENABLED:-/etc/nginx/sites-enabled}/${NGINX_SITE_NAME:-${NAME_OF_APPLICATION}}" ]; then
-            echo -e "  $OK $NAME_OF_APPLICATION site: Configured"
-        else
-            echo -e "  $WARN $NAME_OF_APPLICATION site: Not configured"
-        fi
+check_traefik_status() {
+    local traefik_container="${PLTF_FOLDER:-agentic-ai-plateform}-traefik"
+    if docker ps --filter "name=${traefik_container}" --filter "status=running" --format '{{.Names}}' 2>/dev/null | grep -q "${traefik_container}"; then
+        echo -e "  $OK Traefik: Running (container ${traefik_container})"
     else
-        echo -e "  $ERROR Nginx: Not running"
+        echo -e "  $ERROR Traefik: Not running (container ${traefik_container})"
     fi
 }
 
@@ -845,15 +841,11 @@ stop_services() {
 
     if [ "$LOCAL_MODE" = "locally" ]; then
         stop_flask_service || CLEANUP_NEEDED=true
-        remove_nginx_config
-        stop_nginx_service
         confirm_gitea_stop
     elif [ "$LOCAL_MODE" = "docker" ]; then
         stop_docker_services
     else
         stop_flask_service || CLEANUP_NEEDED=true
-        remove_nginx_config
-        stop_nginx_service
         confirm_gitea_stop
         stop_docker_services
     fi
@@ -880,7 +872,7 @@ confirm_gitea_stop() {
             CHOICE=$(python3 << 'EOF'
 from simple_term_menu import TerminalMenu
 
-options = ["No, keep Gitea configuration (but nginx is stopped)","Yes, stop and remove Gitea configuration"]
+options = ["No, keep Gitea configuration","Yes, stop and remove Gitea configuration"]
 terminal_menu = TerminalMenu(
 options,
 title="🔧 Do you want to stop Gitea service?",
@@ -898,7 +890,7 @@ EOF
             # Fallback to simple prompt
             echo "Do you want to stop and remove Gitea configuration?"
             echo "1) Yes, stop and remove Gitea configuration"
-            echo "2) No, keep Gitea configuration (but nginx is stopped)"
+            echo "2) No, keep Gitea configuration"
             read -p "Enter your choice (1-2): " choice
             case $choice in
                 1) CHOICE="yes" ;;
@@ -1040,26 +1032,6 @@ stop_flask_service() {
     return 0
 }
 
-remove_nginx_config() {
-    if [ -f "/etc/nginx/sites-enabled/${NAME_OF_APPLICATION}" ]; then
-        sudo rm -f /etc/nginx/sites-enabled/${NAME_OF_APPLICATION}
-        # Only reload nginx if it's running
-        if systemctl is-active --quiet nginx; then
-            sudo nginx -t && sudo systemctl reload nginx
-        fi
-        echo "  ✅ Nginx configuration removed"
-    fi
-}
-
-stop_nginx_service() {
-    if systemctl is-active --quiet nginx; then
-        sudo systemctl stop nginx
-        echo "  ✅ Nginx service stopped"
-    else
-        echo "  ⚠️ Nginx service was not running"
-    fi
-}
-
 stop_docker_services() {
     docker-compose down
 }
@@ -1068,7 +1040,6 @@ stop_docker_services() {
 show_logs() {
     echo "📋 $NAME_OF_APPLICATION Service Logs:"
     show_flask_logs
-    show_nginx_logs
     show_docker_logs
 }
 
@@ -1108,12 +1079,6 @@ show_flask_logs() {
     fi
 }
 
-show_nginx_logs() {
-    echo ""
-    echo "🌐 Nginx Error Logs (last 20 lines):"
-    sudo tail -n 20 /var/log/nginx/error.log 2>/dev/null || echo "  ❌ Cannot access Nginx logs"
-}
-
 show_docker_logs() {
     HTTP_PORT=$HTTP_PORT HTTPS_PORT=$((HTTPS_PORT + 363)) HTTP_PORT2=$HTTP_PORT2 HTTPS_PORT2=$((HTTPS_PORT2 + 363)) HTTP_PORT3=$HTTP_PORT3 HTTPS_PORT3=$((HTTPS_PORT3 + 363)) HTTP_PORT4=$HTTP_PORT4 HTTPS_PORT4=$((HTTPS_PORT4 + 363)) HTTP_PORT5=$HTTP_PORT5 HTTPS_PORT5=$((HTTPS_PORT5 + 363)) HTTP_PORT6=$HTTP_PORT6 HTTPS_PORT6=$((HTTPS_PORT6 + 363)) USER_ID=$USER_ID docker-compose logs -f
 }
@@ -1124,12 +1089,10 @@ restart_services() {
 
     if [ "$LOCAL_MODE" = "locally" ]; then
         restart_flask_service
-        reload_nginx_config
     elif [ "$LOCAL_MODE" = "docker" ]; then
         restart_docker_services
     else
         restart_flask_service
-        reload_nginx_config
         restart_docker_services
     fi
 
@@ -1253,15 +1216,6 @@ restart_flask_service() {
     fi
 }
 
-reload_nginx_config() {
-    if systemctl is-active --quiet nginx; then
-        sudo nginx -t && sudo systemctl reload nginx
-    else
-        sudo systemctl start nginx
-        sudo nginx -t
-    fi
-}
-
 restart_docker_services() {
     HTTP_PORT=$HTTP_PORT HTTPS_PORT=$((HTTPS_PORT + 363)) HTTP_PORT2=$HTTP_PORT2 HTTPS_PORT2=$((HTTPS_PORT2 + 363)) HTTP_PORT3=$HTTP_PORT3 HTTPS_PORT3=$((HTTPS_PORT3 + 363)) HTTP_PORT4=$HTTP_PORT4 HTTPS_PORT4=$((HTTPS_PORT4 + 363)) HTTP_PORT5=$HTTP_PORT5 HTTPS_PORT5=$((HTTPS_PORT5 + 363)) HTTP_PORT6=$HTTP_PORT6 HTTPS_PORT6=$((HTTPS_PORT6 + 363)) USER_ID=$USER_ID docker-compose restart
 }
@@ -1284,14 +1238,14 @@ start_local_deployment() {
     # Setup Gitea (will skip if already configured) - non-blocking
     setup_gitea || echo "  ⚠️ Gitea setup failed - continuing with core services"
 
-    # Always start Flask and Nginx regardless of Gitea status
+    # Always start Flask and Traefik regardless of Gitea status
     echo "🚀 Starting core services..."
     start_flask_application
-    configure_nginx
+    configure_traefik
     configure_firewall
 
-    # Sync nginx locations as the final startup step (runs on top of reloaded nginx)
-    sync_nginx_locations
+    # Sync Traefik dynamic routes as the final startup step
+    sync_traefik_locations
 
     echo "✅ Local deployment completed successfully!"
 }
@@ -1540,8 +1494,8 @@ start_docker_deployment() {
 
     echo "  ✅ Docker services started"
 
-    # Sync nginx locations as the final startup step (runs once services are up)
-    sync_nginx_locations
+    # Sync Traefik dynamic routes as the final startup step (runs once services are up)
+    sync_traefik_locations
 }
 
 install_python_dependencies() {
@@ -1666,164 +1620,33 @@ start_flask_application() {
     fi
 }
 
-configure_nginx() {
-    echo "🌐 Configuring Nginx..."
-    # Setup ModSecurity configuration if not already done
-    setup_modsecurity_config
-    # Check and enable ModSecurity module
-    check_and_enable_modsecurity
-    create_nginx_config
-    enable_nginx_site
-    test_and_reload_nginx
-}
+# Bring up the Traefik reverse-proxy baseline. Traefik itself runs as a
+# container via the root docker-compose.yml (the `traefik` service). This
+# step only ensures the shared Docker network and the watched dynamic-config
+# directory exist, then writes the TLS + secondary-domain dynamic config by
+# invoking the venv Python against src.nginx_manager (the Proxy_Manager).
+configure_traefik() {
+    echo "🌐 Configuring Traefik..."
 
-setup_modsecurity_config() {
-    source "$(dirname "${BASH_SOURCE[0]}")/setup_modsecurity_config.sh"
-}
+    # Ensure the shared network Traefik uses to reach app containers exists.
+    docker network create swautomorph-shared 2>/dev/null || true
 
-check_and_enable_modsecurity() {
-    # Check if ModSecurity module exists
-    if [ -f "/usr/lib/nginx/modules/ngx_http_modsecurity_module.so" ] || [ -f "/etc/nginx/modules/ngx_http_modsecurity_module.so" ]; then
-        enable_modsecurity_module
-        MODSECURITY_AVAILABLE=true
+    # Ensure the watched dynamic-config directory exists.
+    mkdir -p "${TRAEFIK_DYNAMIC_DIR:-./traefik/dynamic}"
+
+    # Prefer the venv python; fall back to python3 (mirrors sync_traefik_locations).
+    local traefik_python="python3"
+    if [ -x ".venv/bin/python" ]; then
+        traefik_python=".venv/bin/python"
+    fi
+
+    # Write the TLS store and the secondary-domain routers/services into the
+    # Traefik dynamic directory. A failure here is non-fatal to the deploy.
+    if "$traefik_python" -c "from src.nginx_manager import write_tls_config, write_secondary_domains_config; import os; write_tls_config(); write_secondary_domains_config(os.environ.get('SECONDARY_DOMAINS', ''))"; then
+        echo "  ✅ Traefik TLS and secondary-domain config written"
     else
-        echo "  ⚠️ ModSecurity module not found, using basic reverse proxy configuration"
-        MODSECURITY_AVAILABLE=false
+        echo "  ⚠️ Traefik dynamic config generation failed (exit non-zero) - continuing"
     fi
-}
-
-enable_modsecurity_module() {
-    # Add load_module directive to main nginx.conf if not already present
-    if ! grep -q "load_module modules/ngx_http_modsecurity_module.so" /etc/nginx/nginx.conf; then
-        sudo sed -i '1i load_module modules/ngx_http_modsecurity_module.so;' /etc/nginx/nginx.conf
-        echo "  ✅ ModSecurity module enabled in nginx.conf"
-    fi
-}
-
-create_nginx_config() {
-    # Start with empty config
-    > $TMP_DIR/${NAME_OF_APPLICATION}-site
-
-    # Process secondary domains first
-    if [ -n "${SECONDARY_DOMAINS:-}" ]; then
-        IFS=',' read -ra DOMAIN_CONFIGS <<< "$SECONDARY_DOMAINS"
-        for domain_config in "${DOMAIN_CONFIGS[@]}"; do
-            IFS=':' read -r domain server_names proxy_pass <<< "$domain_config"
-
-            # Trim whitespace
-            domain=$(echo "$domain" | xargs)
-            server_names=$(echo "$server_names" | xargs)
-            proxy_pass=$(echo "$proxy_pass" | xargs)
-
-            if [ -n "$domain" ] && [ -n "$server_names" ]; then
-                cat >> $TMP_DIR/${NAME_OF_APPLICATION}-site << EOF
-server {
-    listen 443 ssl;
-    server_name ${server_names};
-
-    ssl_certificate /home/${LINUX_USER_INSTALLATION}/${PLTF_FOLDER}/ssl/${domain}/fullchain_domain.crt;
-    ssl_certificate_key /home/${LINUX_USER_INSTALLATION}/${PLTF_FOLDER}/ssl/${domain}/privateKey_domain.key;
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers HIGH:!aNULL:!MD5;
-
-    location / {
-        proxy_pass ${proxy_pass};
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-    }
-}
-
-EOF
-            fi
-        done
-    fi
-
-    # HTTP redirect for main domain
-    cat >> $TMP_DIR/${NAME_OF_APPLICATION}-site << EOF
-server {
-    listen 80;
-    server_name ${DOMAIN} www.${DOMAIN};
-    return 301 https://\$host\$request_uri;
-}
-
-EOF
-
-    # Main domain HTTPS server block
-    cat >> $TMP_DIR/${NAME_OF_APPLICATION}-site << EOF
-server {
-    listen 443 ssl;
-    server_name ${DOMAIN} www.${DOMAIN};
-
-    ssl_certificate /home/${LINUX_USER_INSTALLATION}/${PLTF_FOLDER}/ssl/${DOMAIN}/fullchain_domain.crt;
-    ssl_certificate_key /home/${LINUX_USER_INSTALLATION}/${PLTF_FOLDER}/ssl/${DOMAIN}/privateKey_domain.key;
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers HIGH:!aNULL:!MD5;
-EOF
-
-    # Add ModSecurity configuration only if available
-    if [ "${MODSECURITY_AVAILABLE:-false}" = "true" ]; then
-        cat >> $TMP_DIR/${NAME_OF_APPLICATION}-site << EOF
-
-    # WAF Protection
-    modsecurity on;
-    modsecurity_rules_file ${MODSECURITY_CONF_DIR:-/etc/nginx/modsec}/main.conf;
-EOF
-        echo "  ✅ ModSecurity WAF protection enabled"
-    else
-        echo "  ⚠️ Using basic reverse proxy without WAF protection"
-    fi
-
-    # Add location blocks for main domain
-    cat >> $TMP_DIR/${NAME_OF_APPLICATION}-site << EOF
-
-    location / {
-        proxy_pass http://localhost:${FLASK_PORT:-5000};
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-    }
-
-    location /gitea/ {
-        proxy_pass http://localhost:${GITEA_PORT:-3000}/;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_set_header X-Forwarded-Host \$host;
-        proxy_buffering off;
-
-        # WebSocket support for Gitea
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
-
-        # Increase timeouts for large operations
-        proxy_connect_timeout 60s;
-        proxy_send_timeout 300s;
-        proxy_read_timeout 300s;
-    }
-}
-EOF
-}
-
-enable_nginx_site() {
-    sudo mv $TMP_DIR/${NAME_OF_APPLICATION}-site /etc/nginx/sites-available/${NAME_OF_APPLICATION}
-    sudo ln -sf /etc/nginx/sites-available/${NAME_OF_APPLICATION} /etc/nginx/sites-enabled/
-}
-
-test_and_reload_nginx() {
-    if systemctl is-active --quiet nginx; then
-        echo "  ✅ Nginx is running - reloading configuration"
-        sudo nginx -t && sudo systemctl reload nginx
-    else
-        echo "  🚀 Starting Nginx service"
-        sudo systemctl start nginx
-        sudo nginx -t
-    fi
-    echo "  ✅ Nginx configured successfully"
 }
 
 configure_firewall() {
@@ -1835,14 +1658,15 @@ configure_firewall() {
     sudo ufw --force enable
 }
 
-# Sync nginx location config from the database (final startup step).
-# Runs with the activated .venv Python so src.nginx_manager and
-# src.database_postgres import correctly. A sync failure is non-fatal:
-# it warns and lets the deploy complete (guarded against set -e).
-sync_nginx_locations() {
-    echo "🔁 Syncing nginx locations from database..."
+# Sync Traefik dynamic routes from the database (final startup step).
+# Runs with the activated .venv Python so src.nginx_manager (the Proxy_Manager)
+# and src.database_postgres import correctly; sync_all_locations now writes
+# Traefik dynamic files. A sync failure is non-fatal: it warns and lets the
+# deploy complete (guarded against set -e).
+sync_traefik_locations() {
+    echo "🔁 Syncing Traefik routes from database..."
     if [ ! -f "./scripts/sync_nginx_locations.py" ]; then
-        echo -e "  $WARN sync script not found - skipping nginx location sync"
+        echo -e "  $WARN sync script not found - skipping Traefik route sync"
         return 0
     fi
     # Prefer the venv python; fall back to python3. Capture the exit code
@@ -1852,9 +1676,9 @@ sync_nginx_locations() {
         sync_python=".venv/bin/python"
     fi
     if "$sync_python" ./scripts/sync_nginx_locations.py; then
-        echo -e "  $OK Nginx locations synced from database"
+        echo -e "  $OK Traefik routes synced from database"
     else
-        echo -e "  $WARN Nginx location sync failed (exit non-zero) - continuing deploy"
+        echo -e "  $WARN Traefik route sync failed (exit non-zero) - continuing deploy"
     fi
     return 0
 }
@@ -1931,43 +1755,6 @@ check_local_requirements() {
         # Setup PostgreSQL database and user for the application
         setup_postgresql_database
     fi
-
-    if ! command -v nginx &> /dev/null; then
-        echo "📦 Installing Nginx with ModSecurity..."
-        install_nginx_with_modsecurity
-        echo "✅ Nginx with ModSecurity installed successfully"
-    fi
-}
-
-install_nginx_with_modsecurity() {
-    sudo apt update
-
-    # Install nginx and ModSecurity components
-    sudo apt install -y nginx wget git
-
-    # Try to install nginx-module-security (may not be available on all systems)
-    sudo apt install -y libmodsecurity3 2>/dev/null || {
-        echo "  ⚠️ libmodsecurity3 not available, installing alternative packages"
-        sudo apt install -y libmodsecurity-dev modsecurity-crs 2>/dev/null || true
-    }
-
-    # Create ModSecurity directories
-    sudo mkdir -p ${MODSECURITY_CONF_DIR:-/etc/nginx/modsec}
-
-    # Download OWASP CRS rules if not available via package
-    if [ ! -d "${MODSECURITY_RULES_DIR:-/usr/share/modsecurity-crs}" ]; then
-        sudo git clone https://github.com/coreruleset/coreruleset.git ${MODSECURITY_RULES_DIR:-/usr/share/modsecurity-crs}
-        cd ${MODSECURITY_RULES_DIR:-/usr/share/modsecurity-crs}
-        sudo git checkout ${OWASP_CRS_VERSION:-v3.3.5}
-    fi
-
-    # Configure ModSecurity
-    setup_modsecurity_config
-
-    # Check if ModSecurity module is available before enabling
-    check_and_enable_modsecurity
-
-    sudo systemctl enable nginx
 }
 
 # Setup PostgreSQL database and user for the application
@@ -2113,7 +1900,7 @@ help() {
     echo "Usage: $0 [COMMAND] [MODE] [USER_ID] [USER_NAME] [USER_EMAIL] [DESCRIPTION] [OPTIONS]"
     echo ""
     echo "COMMANDS:"
-    echo "  start     - Deploy and start all services (Flask app, Nginx, Gitea)"
+    echo "  start     - Deploy and start all services (Flask app, Traefik, Gitea)"
     echo "              • Sets up SSL certificates and environment"
     echo "              • Installs dependencies and configures services"
     echo "              • Opens firewall ports (80, 443, 3000)"
@@ -2126,7 +1913,7 @@ help() {
     echo "              • Removes hourly database backup cron job"
     echo "              • Creates final database backup in ./softfluid/db/backup/\$DATETIME/"
     echo "              • Stops Flask application and removes PID file"
-    echo "              • Removes Nginx site configuration"
+    echo "              • Stops Traefik (container) if running"
     echo "              • Optionally stops and removes Gitea (interactive)"
     echo "              • Stops Docker containers if running"
     echo ""
@@ -2134,7 +1921,7 @@ help() {
     echo "  -r        - Restart all services without full redeployment (alias for restart)"
     echo "  --restart - Restart all services without full redeployment (alias for restart)"
     echo "              • Restarts Flask application with new PID"
-    echo "              • Reloads Nginx configuration"
+    echo "              • Re-syncs Traefik dynamic routes"
     echo "              • Restarts Docker containers if in Docker mode"
     echo ""
     echo "  upgrade   - Upgrade application from git remote"
@@ -2148,7 +1935,7 @@ help() {
     echo "  -p        - Show status of all services (alias for ps)"
     echo "  --ps      - Show status of all services (alias for ps)"
     echo "              • Flask application status and PID"
-    echo "              • Nginx service status and site configuration"
+    echo "              • Traefik container status"
     echo "              • Gitea service status"
     echo "              • Docker Compose container status"
     echo ""
@@ -2156,7 +1943,7 @@ help() {
     echo "  -l        - Display logs from all services (alias for logs)"
     echo "  --logs    - Display logs from all services (alias for logs)"
     echo "              • Flask application logs (current day)"
-    echo "              • Nginx error logs (last 20 lines)"
+    echo "              • Traefik container logs (via docker)"
     echo "              • Docker Compose logs (if running)"
     echo ""
     echo "  --recover_db - Recover PostgreSQL database from backup"
@@ -2187,7 +1974,7 @@ help() {
     echo "MODES:"
     echo "  locally   - Deploy without Docker (direct system installation)"
     echo "              • Installs services directly on the host system"
-    echo "              • Uses system Python, Nginx, and Gitea"
+    echo "              • Uses system Python and Gitea, with Traefik as the proxy"
     echo "              • Suitable for production deployments"
     echo ""
     echo "  docker    - Deploy using Docker containers"
@@ -2238,7 +2025,7 @@ help() {
     echo ""
     echo "SERVICES:"
     echo "  • Flask Web Application (Python)"
-    echo "  • Nginx Reverse Proxy (HTTPS/SSL)"
+    echo "  • Traefik Reverse Proxy (HTTPS/SSL)"
     echo "  • Gitea Git Repository Server"
     echo "  • Docker Containers (optional)"
     echo ""

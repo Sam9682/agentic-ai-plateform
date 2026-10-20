@@ -17,13 +17,13 @@ agentic-ai-plateform is a centralized application deployment and management plat
 - 🖥️ Command-line interface (CLI) with comprehensive commands
 - 🔌 REST API endpoints with streaming support (Server-Sent Events)
 - 🤖 MCP (Model Context Protocol) support
-- 🛡️ ModSecurity WAF protection with OWASP CRS rules
+- 🚦 **Traefik reverse proxy**: single HTTP/HTTPS entrypoint (v3.1) with automatic route discovery
 - 🔄 Automated database backups with PostgreSQL pg_dump
 - 💰 Billing and cost tracking system with activity logging
 - 🤖 **Virtual AI Agents**: AI Chat Developer and Operations assistants
 - 📊 Database health monitoring and statistics
 - 🌐 Multi-server deployment support with capacity management
-- 🔀 **Dynamic Nginx Locations**: Automatic reverse proxy configuration per user/app
+- 🔀 **Dynamic Traefik Routing**: Per user/app routes via Docker labels + file provider, with StripPrefix path handling
 - 📖 Comprehensive user guide and documentation
 - 🔧 **PostgreSQL connection pooling** with thread-safe operations
 - 🔄 **SQLite to PostgreSQL migration tools**
@@ -140,7 +140,8 @@ vim ./conf/deploy.ini
 DOMAIN="www.agentic-ai-plateform.com"
 EMAIL="admin@agentic-ai-plateform.com"
 GITEA_VERSION="1.21.3"
-MODSECURITY_CONF_DIR="/etc/nginx/modsec"
+# SECONDARY_DOMAINS: comma-separated "domain:server_names:proxy_pass" entries
+# routed through Traefik routers/entrypoints
 ```
 
 ### Database Initialization
@@ -284,7 +285,7 @@ curl -X POST https://www.swautomorph.com/api/templates/fastapi-starter/deploy \
   -d '{"application_name":"my-api"}'
 ```
 
-On any failure after port allocation, partial records are rolled back in a single transaction and the nginx location block is removed, so no partial resources remain.
+On any failure after port allocation, partial records are rolled back in a single transaction and the Traefik route is removed, so no partial resources remain.
 
 ### Container Runtime Isolation
 
@@ -332,14 +333,24 @@ Scripts that ignore the extra argument and env var continue to work unchanged.
 > on each server (handled by `init_pltf.sh`). Verify with `docker info` (look for
 > `kata` under Runtimes) and `docker run --runtime kata hello-world`.
 
-### Dynamic Nginx Locations
+### Dynamic Traefik Routing
+
+Traefik v3.1 is the single HTTP/HTTPS entrypoint (owns `:80`/`:443`). It replaces nginx and the ModSecurity WAF, both of which have been removed. Routes are discovered automatically through two providers:
+
+- **Docker label provider** (`exposedByDefault=false`): each app container carries Traefik labels (router rule, StripPrefix middleware, backend port) applied at container-create time in the generated per-app `docker-compose.yml`.
+- **File provider**: Traefik watches `traefik/dynamic/` and hot-applies per-app route files (`app-{user}-{app}.yml`), TLS config (`tls.yml`), and secondary-domain routers (`secondary-domains.yml`) — no `nginx -t`-style validation or reload step.
+
+Each application is exposed under `/{user}/{app}`; the **StripPrefix** middleware removes that prefix before forwarding to the container over the external `swautomorph-shared` Docker network. The backend port is known at deploy time (no `docker ps` port discovery). Proxy timeouts (connect 30s, read/send 60s) and WebSocket upgrades are carried forward from the previous nginx setup.
+
+Response-body `sub_filter` rewriting of HTML/CSS/JS is gone. Apps are now **path-aware**: the platform injects `BASE_PATH = /{user}/{app}/` as an environment variable and each app emits its own prefixed asset/link URLs (via `<base href>` or its framework's public-path equivalent).
+
 ```bash
 # Access user applications via dynamic URLs
 # Format: https://www.swautomorph.com/{USER_ID}/{APPLICATION_NAME}
-# Example: User 2's ai-staticwebsite running on port 6217
+# Example: User 2's ai-staticwebsite
 curl https://www.swautomorph.com/2/ai-staticwebsite
 
-# Sync all nginx locations from database (admin required)
+# Sync all Traefik routes from database (admin required)
 curl -X POST https://www.swautomorph.com/api/nginx/sync \
   -H "Cookie: session=your-session-cookie"
 
@@ -401,8 +412,8 @@ python3 ./scripts/controller_cli.py query-table applications --limit 10
 # Mount S3 storage for backups
 python3 ./scripts/controller_cli.py mount-s3fs softfluid /mnt/s3
 
-# Nginx and platform/replication operations
-python3 ./scripts/controller_cli.py update-nginx-locations
+# Proxy routes and platform/replication operations
+python3 ./scripts/controller_cli.py update-nginx-locations   # syncs Traefik routes from the database
 python3 ./scripts/controller_cli.py platform-status
 python3 ./scripts/controller_cli.py replication-sync-status
 
@@ -514,7 +525,7 @@ python3 ./scripts/controller_cli.py db-health
 │   ├── query_converter.py        # SQL dialect conversion helper
 │   ├── db_sync.py                # Database sync helpers for replication
 │   ├── db_health.py              # Database health & statistics
-│   ├── nginx_manager.py          # Dynamic nginx location management
+│   ├── nginx_manager.py          # Proxy_Manager: writes Traefik dynamic route config (preserved module path/API)
 │   ├── orchestrator.py           # Application orchestration & reconciliation
 │   ├── replication_manager.py    # Peer-to-peer database replication
 │   ├── platform_discovery.py     # Platform capability discovery
@@ -541,14 +552,14 @@ python3 ./scripts/controller_cli.py db-health
 │   ├── controller_cli.py         # Command-line interface (click)
 │   ├── orchestrator_cli.py       # Orchestrator CLI
 │   ├── mcp_server.py             # Model Context Protocol server
-│   ├── sync_nginx_locations.py   # Sync nginx locations from database
+│   ├── sync_nginx_locations.py   # Sync Traefik routes from database
 │   ├── mount_s3fs.py             # Mount S3 storage for backups
 │   ├── controlplan_service.py    # systemd service wrapper
 │   ├── generate_ssl.sh           # Self-signed SSL certificate generator
 │   ├── setup_letsencrypt.sh      # Let's Encrypt certificate setup
 │   ├── install_worker_service.sh # Install the serverless worker service
 │   ├── postgresql_schema.sql     # PostgreSQL schema definition
-│   └── test_*.py                 # pytest suites (platform, orchestrator, nginx, backups)
+│   └── test_*.py                 # pytest suites (platform, orchestrator, Traefik routes, backups)
 ├── tests/                 # Additional test suites
 │   ├── bash/             # Shell tests for init_pltf.sh (ownership, preservation, path)
 │   └── js/               # Dashboard JavaScript tests (sorting, highlight, headers)
@@ -557,7 +568,8 @@ python3 ./scripts/controller_cli.py db-health
 │   ├── dashboard.html            # Main dashboard
 │   └── ...                       # Other templates
 ├── static/               # CSS, JS, and static files
-├── ssl/                  # SSL certificates
+├── ssl/                  # SSL certificates (mounted read-only into Traefik)
+├── traefik/              # Traefik dynamic config (dynamic/: per-app routes, tls.yml, secondary-domains.yml)
 ├── logs/                 # Application logs with Gunicorn support
 ├── agentic-ai-plateform--skills/               # Context files for virtual agents
 ├── docs/                  # Comprehensive documentation
@@ -579,8 +591,7 @@ python3 ./scripts/controller_cli.py db-health
 ├── Dockerfile.postgres   # PostgreSQL image
 ├── requirements.txt      # Python dependencies
 ├── setup_postgresql.sh   # PostgreSQL setup helper
-├── setup_modsecurity_config.sh # ModSecurity WAF configuration
-├── init_pltf.sh          # Platform initialization (Docker, NVIDIA drivers, MIG, Kata runtime)
+├── init_pltf.sh          # Platform initialization (Docker, NVIDIA drivers, MIG, Kata runtime, swautomorph-shared network)
 └── deployControlPlan.sh  # Main deployment script
 ```
 
@@ -597,14 +608,14 @@ python3 ./scripts/controller_cli.py db-health
 - **Container Runtime**: Configurable runtime type — standard containers (runc) or MicroVM isolation (Kata Containers) for stronger workload boundaries
 - **MIG Shared GPU**: NVIDIA Multi-Instance GPU partitioning via SSH with per-server configuration and web UI
 - **Replication**: Peer-to-peer database replication across multiple servers with sync tokens
-- **Nginx Proxy**: Dynamic location blocks for user applications with automatic configuration
-- **Security**: ModSecurity WAF with OWASP CRS rules, password reset, and 2FA via email
+- **Traefik Proxy**: Single HTTP/HTTPS entrypoint (v3.1) with Docker-label + file-provider route discovery, StripPrefix path handling, and TLS termination; replaces nginx and the ModSecurity WAF
+- **Security**: Session-based auth with SSO tokens, password reset, and 2FA via email
 - **Monitoring**: Health checks, database statistics, real-time streaming logs, and performance metrics
 - **Virtual AI Agents**: AI Chat Developer and Operations assistants with context-aware prompts
 - **Billing System**: Comprehensive cost tracking with activity logging, usage monitoring, and automated invoicing
 - **Multi-language**: English/French support with session-based language switching and bilingual documentation
 - **Backup System**: Automated hourly backups with S3 sync and interactive recovery tools
-- **Platform Init**: Automated server provisioning including Docker, NVIDIA drivers, and MIG mode setup
+- **Platform Init**: Automated server provisioning including Docker, NVIDIA drivers, MIG mode setup, and the `swautomorph-shared` Traefik network
 
 ## Troubleshooting
 
@@ -642,8 +653,7 @@ docker-compose down -v
 docker system prune -f
 
 # Complete reset (Local)
-sudo systemctl stop nginx gitea
-sudo rm -rf /etc/nginx/sites-enabled/<PLTF_FOLDER>
+# Traefik runs as a container (stopped via docker-compose down above); no host nginx service to stop
 # Drop the PostgreSQL database (prompts for confirmation)
 python3 ./scripts/controller_cli.py delete-db
 

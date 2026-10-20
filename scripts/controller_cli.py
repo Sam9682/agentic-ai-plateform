@@ -442,17 +442,17 @@ def select_table(table_name, limit):
 
 @cli.command()
 def update_nginx_locations():
-    """Sync nginx locations from database"""
+    """Sync Traefik routes from database"""
     try:
         from src.database_postgres import db_manager
         from src.nginx_manager import sync_all_locations
         
-        click.echo('Synchronizing nginx locations from database...')
+        click.echo('Synchronizing Traefik routes from database...')
         
         if sync_all_locations(db_manager):
-            click.echo('✓ Nginx locations synced successfully')
+            click.echo('✓ Traefik routes synced successfully')
         else:
-            click.echo('✗ Failed to sync nginx locations')
+            click.echo('✗ Failed to sync Traefik routes')
             sys.exit(1)
     except Exception as e:
         click.echo(f'✗ Error: {str(e)}')

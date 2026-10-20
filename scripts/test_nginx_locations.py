@@ -1,87 +1,139 @@
 #!/usr/bin/env python3
-"""Test script for nginx dynamic location management"""
+"""Test script for Traefik dynamic route management (Proxy_Manager).
+
+Exercises the preserved public entry points ``insert_location_block`` /
+``remove_location_block`` plus the pure route builder ``_build_route_config``,
+asserting the generated Traefik dynamic config (not retired nginx output).
+
+Runnable both as a plain script (``python3 scripts/test_nginx_locations.py``)
+and under pytest (``pytest scripts/test_nginx_locations.py``).
+"""
 import sys
 import os
+import tempfile
+
+import yaml
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from src import nginx_manager
 from src.nginx_manager import (
     insert_location_block,
     remove_location_block,
-    generate_location_block,
-    read_nginx_config,
-    test_nginx_config
+    _build_route_config,
+    _route_file_path,
+    TRAEFIK_DYNAMIC_DIR,  # noqa: F401 - imported to prove the symbol still exists
 )
 
+# Explicit public domain so the assertions do not depend on deploy.ini.
+DOMAIN = "www.swautomorph.com"
+
+
 def test_generate_location():
-    """Test location block generation"""
-    print("Testing location block generation...")
-    block = generate_location_block(2, "ai-staticwebsite", "https://www.swautomorph.com:6217", "https://www.swautomorph.com:6217")
-    
-    assert "/2/ai-staticwebsite" in block
-    # nginx must proxy to the HTTP endpoint (HTTP scheme + HTTP port, the first
-    # port of the pair), not the stored HTTPS URL (https://...:6217).
-    assert "http://www.swautomorph.com:6216" in block
-    assert "https://www.swautomorph.com:6217" not in block
-    assert "proxy_pass" in block
-    assert "rewrite" in block
-    
-    print("✓ Location block generation works")
-    print(block)
+    """Traefik route generation produces a prefix-correct router/service."""
+    print("Testing Traefik route generation...")
+
+    config = _build_route_config(
+        "admin", "ai-hypervisia", "admin-ai-hypervisia", 5000, DOMAIN
+    )
+    dumped = yaml.safe_dump(config, default_flow_style=False, sort_keys=False)
+
+    http = config["http"]
+    router = http["routers"]["admin-ai-hypervisia"]
+    middleware = http["middlewares"]["admin-ai-hypervisia-strip"]
+    service = http["services"]["admin-ai-hypervisia"]
+
+    # Router rule: Host(<domain>) && PathPrefix(`/admin/ai-hypervisia`) (Property 1)
+    assert router["rule"] == f"Host(`{DOMAIN}`) && PathPrefix(`/admin/ai-hypervisia`)"
+    assert "Host(`" + DOMAIN + "`) && PathPrefix(`/admin/ai-hypervisia`)" in dumped
+
+    # StripPrefix middleware with exactly the prefix /admin/ai-hypervisia (Property 2)
+    assert middleware["stripPrefix"]["prefixes"] == ["/admin/ai-hypervisia"]
+
+    # Backend service points at the supplied port 5000 (Property 1)
+    servers = service["loadBalancer"]["servers"]
+    assert servers == [{"url": "http://admin-ai-hypervisia:5000"}]
+
+    # No nginx directives anywhere in the generated config (Property 4)
+    assert "proxy_pass" not in dumped
+    assert "sub_filter" not in dumped
+    assert "location" not in dumped
+
+    print("✓ Traefik route generation works")
+    print(dumped)
+
 
 def test_insert_location():
-    """Test inserting location block"""
-    print("\nTesting location block insertion...")
-    
-    # Test with sample data
-    result = insert_location_block(2, "ai-staticwebsite", "https://www.swautomorph.com:6217",  "https://www.swautomorph.com:6217")
-    
-    if result:
-        print("✓ Location block inserted successfully")
-        
-        # Verify it's in the config
-        config = read_nginx_config()
-        if "/2/ai-staticwebsite" in config:
-            print("✓ Location block found in config")
-        else:
-            print("✗ Location block not found in config")
-    else:
-        print("✗ Failed to insert location block")
+    """Inserting a route writes the per-app dynamic file with the router."""
+    print("\nTesting Traefik route insertion...")
+
+    url = f"https://{DOMAIN}:6217"
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        # Point the module's dynamic dir at a temp directory for the test.
+        original_dir = nginx_manager.TRAEFIK_DYNAMIC_DIR
+        nginx_manager.TRAEFIK_DYNAMIC_DIR = tmp_dir
+        try:
+            result = insert_location_block("admin", "ai-hypervisia", url, url)
+            assert result, "insert_location_block should report success"
+
+            route_file = nginx_manager._route_file_path("admin", "ai-hypervisia")
+            assert os.path.exists(route_file), f"route file missing: {route_file}"
+
+            with open(route_file, "r", encoding="utf-8") as f:
+                contents = f.read()
+            config = yaml.safe_load(contents)
+
+            # The written file carries the per-app router. (Property 6)
+            assert "admin-ai-hypervisia" in config["http"]["routers"]
+            assert "PathPrefix(`/admin/ai-hypervisia`)" in contents
+            assert "proxy_pass" not in contents
+
+            print("✓ Traefik route inserted and dynamic file written")
+            print(contents)
+        finally:
+            nginx_manager.TRAEFIK_DYNAMIC_DIR = original_dir
+
 
 def test_remove_location():
-    """Test removing location block"""
-    print("\nTesting location block removal...")
-    
-    result = remove_location_block(2, "ai-staticwebsite")
-    
-    if result:
-        print("✓ Location block removed successfully")
-        
-        # Verify it's removed from config
-        config = read_nginx_config()
-        if "/2/ai-staticwebsite" not in config:
-            print("✓ Location block removed from config")
-        else:
-            print("✗ Location block still in config")
-    else:
-        print("✗ Failed to remove location block")
+    """Removing a route deletes the per-app dynamic file."""
+    print("\nTesting Traefik route removal...")
+
+    url = f"https://{DOMAIN}:6217"
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        original_dir = nginx_manager.TRAEFIK_DYNAMIC_DIR
+        nginx_manager.TRAEFIK_DYNAMIC_DIR = tmp_dir
+        try:
+            # Seed a route to remove.
+            assert insert_location_block("admin", "ai-hypervisia", url, url)
+            route_file = nginx_manager._route_file_path("admin", "ai-hypervisia")
+            assert os.path.exists(route_file)
+
+            result = remove_location_block("admin", "ai-hypervisia")
+            assert result, "remove_location_block should report success"
+            assert not os.path.exists(route_file), "route file should be gone"
+
+            print("✓ Traefik route removed and dynamic file deleted")
+        finally:
+            nginx_manager.TRAEFIK_DYNAMIC_DIR = original_dir
+
 
 def main():
-    print("=== Nginx Dynamic Location Tests ===\n")
-    
+    print("=== Traefik Dynamic Route Tests ===\n")
+
     try:
         test_generate_location()
         test_insert_location()
         test_remove_location()
-        
+
         print("\n=== All tests completed ===")
         return 0
-        
+
     except Exception as e:
         print(f"\n✗ Test failed: {e}")
         import traceback
         traceback.print_exc()
         return 1
+
 
 if __name__ == '__main__':
     sys.exit(main())

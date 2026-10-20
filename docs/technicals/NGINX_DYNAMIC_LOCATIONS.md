@@ -1,76 +1,131 @@
-# Nginx Dynamic Location Management
+# Dynamic Application Routing (Traefik)
+
+> **Migration note:** This document previously described dynamic **nginx location
+> blocks**. The platform now uses **Traefik v3.1** as its single HTTP/HTTPS
+> entrypoint. nginx, the per-app nginx sidecar, `sub_filter` response rewriting,
+> `docker ps` host-port discovery, and the ModSecurity WAF have all been removed.
+> The module `src/nginx_manager.py` keeps its name and public API for backward
+> compatibility, but it now writes **Traefik dynamic configuration** instead of
+> nginx config. Think of it as the **Proxy_Manager**.
 
 ## Overview
 
-SwAutoMorph now automatically creates nginx location blocks for each user's applications, allowing access via:
+The platform automatically creates a Traefik route for each user application,
+allowing access via:
 ```
-https://www.swautomorph.com/{USER_NAME}/{APPLICATION_NAME}
+https://<DOMAIN>/{USER_NAME}/{APPLICATION_NAME}
 ```
 
-This URL pattern reverse proxies to the application's actual URL (e.g., `https://www.swautomorph.com:6217`).
+Traefik matches that host + path prefix, strips the `/{USER_NAME}/{APPLICATION_NAME}`
+prefix, and forwards the request to the application container over the shared
+Docker network `swautomorph-shared`, reaching it on its **internal HTTP port**
+(the port the app listens on inside the container — known at deploy time, never
+scraped from `docker ps`).
 
 ## How It Works
 
-### Automatic Configuration
+Routing is **hybrid** — the same route is expressed through two Traefik providers
+that are equivalent in effect:
 
-When an application is assigned to a user or deployed:
-1. A location block is dynamically inserted into nginx configuration
-2. The location path follows the pattern `/{USER_NAME}/{APPLICATION_NAME}`
-3. Requests are reverse proxied to the application's actual URL
-4. Path rewriting removes the user prefix before forwarding
+### 1. Docker label provider (static baseline)
+
+When an application is deployed, its generated per-app `docker-compose.yml`
+carries Traefik labels on the app container at create time. Traefik's Docker
+provider discovers the route the moment the container starts — no Python
+involvement, self-healing on restart. Labels define:
+
+- `traefik.enable=true` and `traefik.docker.network=swautomorph-shared`
+- a router rule `Host(<DOMAIN>) && PathPrefix(/{user}/{app})`, `entrypoints=websecure`, `tls=true`
+- a `stripprefix` middleware removing `/{user}/{app}`
+- `services.<router>.loadbalancer.server.port=<internal HTTP port>`
+
+### 2. Traefik file provider (programmatic path)
+
+`src/nginx_manager.py` (the Proxy_Manager) writes and deletes a **per-app
+dynamic config file** under a watched directory:
+```
+${PLTF_FOLDER}/traefik/dynamic/app-{user}-{app}.yml
+```
+Traefik hot-reloads file-provider changes with **no restart** and **no
+`nginx -t`-style validation step**. Writes are **atomic** (temp file +
+`os.replace`), so Traefik never reads a half-written file. This is the path the
+platform's deploy / rollback / teardown / sync lifecycle uses, and it is
+reconcilable directly from the database.
+
+Because StripPrefix removes `/{user}/{app}` before forwarding, the app sees
+root-relative paths internally. Apps are made **path-aware** by a `BASE_PATH`
+environment variable set to `/{user}/{app}/`, so they emit asset and link URLs
+under their prefix. This replaces the old nginx `sub_filter` response rewriting.
+WebSocket upgrades are forwarded automatically by Traefik (no special directive).
 
 ### Example
 
-For user `john` with application `ai-staticwebsite` running on port `6217`:
+For user `admin` with application `ai-hypervisia`, internal HTTP port `5000`,
+and domain `softfluid.fr`:
 
 **Access URL:**
 ```
-https://www.swautomorph.com/john/ai-staticwebsite
+https://softfluid.fr/admin/ai-hypervisia
 ```
 
-**Proxies to:**
-```
-https://www.swautomorph.com:6217
+**Docker-label form (on the app container, baseline):**
+```yaml
+labels:
+  - "traefik.enable=true"
+  - "traefik.docker.network=swautomorph-shared"
+  - "traefik.http.routers.admin-ai-hypervisia.rule=Host(`softfluid.fr`) && PathPrefix(`/admin/ai-hypervisia`)"
+  - "traefik.http.routers.admin-ai-hypervisia.entrypoints=websecure"
+  - "traefik.http.routers.admin-ai-hypervisia.tls=true"
+  - "traefik.http.routers.admin-ai-hypervisia.middlewares=admin-ai-hypervisia-strip@docker"
+  - "traefik.http.middlewares.admin-ai-hypervisia-strip.stripprefix.prefixes=/admin/ai-hypervisia"
+  - "traefik.http.services.admin-ai-hypervisia.loadbalancer.server.port=5000"
 ```
 
-**Generated nginx configuration:**
-```nginx
-location /john/ai-staticwebsite {
-    proxy_pass https://www.swautomorph.com:6217;
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    
-    # WebSocket support
-    proxy_http_version 1.1;
-    proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection "upgrade";
-    
-    # Timeouts
-    proxy_connect_timeout 30s;
-    proxy_send_timeout 60s;
-    proxy_read_timeout 60s;
-    
-    # Rewrite path to remove user prefix
-    rewrite ^/john/ai-staticwebsite(/.*)?$ $1 break;
-}
+**File-provider form written by `insert_location_block`
+(`traefik/dynamic/app-admin-ai-hypervisia.yml`):**
+```yaml
+http:
+  routers:
+    admin-ai-hypervisia:
+      rule: "Host(`softfluid.fr`) && PathPrefix(`/admin/ai-hypervisia`)"
+      entryPoints: ["websecure"]
+      service: "admin-ai-hypervisia"
+      middlewares: ["admin-ai-hypervisia-strip"]
+      tls: {}
+  middlewares:
+    admin-ai-hypervisia-strip:
+      stripPrefix:
+        prefixes: ["/admin/ai-hypervisia"]
+  services:
+    admin-ai-hypervisia:
+      loadBalancer:
+        serversTransport: app-transport
+        servers:
+          - url: "http://admin-ai-hypervisia:5000"
+  serversTransports:
+    app-transport:
+      forwardingTimeouts:
+        dialTimeout: "30s"            # connect (was nginx proxy_connect_timeout 30s)
+        responseHeaderTimeout: "60s"  # read    (was nginx proxy_read_timeout 60s)
 ```
 
 ## API Usage
 
 ### Automatic Updates
 
-Nginx locations are automatically updated when:
+Routes are automatically updated when:
 - Assigning an application to a user via `/api/users/{user_id}/applications` (POST)
 - Unassigning an application via `/api/users/{user_id}/applications` (DELETE)
 - Cloning/deploying an application via `/api/deployments` (POST with action=clone)
 
+Each of these calls the preserved `insert_location_block` / `remove_location_block`
+functions, which now write or delete the per-app Traefik dynamic file.
+
 ### Manual Sync
 
-Sync all locations from database (admin only):
+Sync all routes from the database (admin only):
 ```bash
-curl -X POST https://www.swautomorph.com/api/nginx/sync \
+curl -X POST https://<DOMAIN>/api/nginx/sync \
   -H "Cookie: session=your-session-cookie"
 ```
 
@@ -79,56 +134,64 @@ Or via CLI:
 python3 ./scripts/sync_nginx_locations.py
 ```
 
+`sync_all_locations` reconciles the dynamic directory to **exactly** match the
+database: it writes a route file for every DB app and deletes any `app-*.yml`
+that no longer corresponds to a DB app. It is **idempotent** — a second run
+produces the same directory contents. Port reconciliation is no longer needed,
+because ports come from the deploy-time contract rather than live containers.
+
 ## Configuration Files
 
-- **Nginx config:** `/etc/nginx/sites-available/<PLTF_FOLDER>-dynamic`
-- **Enabled symlink:** `/etc/nginx/sites-enabled/<PLTF_FOLDER>-dynamic`
-- **Manager module:** `src/nginx_manager.py`
+- **Per-app routes:** `${PLTF_FOLDER}/traefik/dynamic/app-{user}-{app}.yml`
+- **TLS config:** `${PLTF_FOLDER}/traefik/dynamic/tls.yml`
+- **Secondary domains:** `${PLTF_FOLDER}/traefik/dynamic/secondary-domains.yml`
+- **Manager module:** `src/nginx_manager.py` (the Proxy_Manager)
+- **Certificates:** `ssl/<DOMAIN>/fullchain_domain.crt` and `ssl/<DOMAIN>/privateKey_domain.key`
+  (mounted read-only into Traefik at `/etc/traefik/ssl`)
 
 ## Troubleshooting
 
-### Check nginx configuration
+### Inspect the active routes
 ```bash
-sudo nginx -t
+ls ${PLTF_FOLDER}/traefik/dynamic/
+cat ${PLTF_FOLDER}/traefik/dynamic/app-<user>-<app>.yml
 ```
 
-### View current configuration
+### Check Traefik logs
 ```bash
-cat /etc/nginx/sites-available/<PLTF_FOLDER>-dynamic
+docker logs ${PLTF_FOLDER:-agentic-ai-plateform}-traefik
+tail -f logs/api_routes.log
 ```
 
-### Reload nginx manually
-```bash
-sudo systemctl reload nginx
-```
-
-### Sync all locations
+### Re-sync all routes
 ```bash
 python3 ./scripts/sync_nginx_locations.py
 ```
 
-### Check logs
-```bash
-tail -f /var/log/nginx/error.log
-tail -f logs/api_routes.log
-```
+There is no reload/validate command to run: Traefik's file watcher hot-applies
+changes automatically, and a malformed dynamic file is logged and ignored while
+Traefik keeps serving the last valid config.
 
 ## Security Considerations
 
-- Only admin users can manually sync nginx locations
-- Path validation prevents directory traversal attacks
-- Configuration testing before reload prevents broken configs
-- Automatic rollback on configuration errors
+- Only admin users can manually trigger a route sync.
+- Path validation prevents injection into router rules and file paths.
+- Atomic writes (`os.replace`) ensure Traefik never reads a partial route file.
+- `exposedByDefault=false` means only containers that opt in with
+  `traefik.enable=true` are routed, so platform-internal services (postgres,
+  gitea, the control-plane app) are not accidentally exposed.
 
 ## Implementation Details
 
-### Module: `src/nginx_manager.py`
+### Module: `src/nginx_manager.py` (Proxy_Manager)
 
-**Functions:**
-- `insert_location_block(user_id, app_name, target_url)` - Add/update location
-- `remove_location_block(user_id, app_name)` - Remove location
-- `sync_all_locations(db_manager)` - Sync all from database
-- `reload_nginx()` - Test and reload nginx
+**Preserved public functions (signatures unchanged):**
+- `insert_location_block(user_name, app_name, deployment_url, user_appli_url)` — write the app's Traefik route file
+- `remove_location_block(user_name, app_name)` — delete the app's route file (missing file is success)
+- `sync_all_locations(db_manager)` — reconcile the dynamic directory to match the database
+
+Every function returns a boolean; any failure returns `False` so callers run
+their existing rollback paths.
 
 ### Integration Points
 
@@ -140,7 +203,7 @@ tail -f logs/api_routes.log
 
 ### Database Schema
 
-Uses existing `user_applications` table with username lookup:
+Uses the existing `user_applications` table with username lookup:
 ```sql
 SELECT u.username, a.name, ua.url
 FROM user_applications ua
@@ -149,12 +212,12 @@ JOIN users u ON ua.user_id = u.id
 WHERE ua.url IS NOT NULL AND ua.url != ''
 ```
 
-**Note:** The system uses `username` (not `user_id`) in URL paths for better readability and user experience.
+**Note:** The system uses `username` (not `user_id`) in URL paths for better
+readability and user experience.
 
 ## Future Enhancements
 
-- Support for custom domain mapping
-- SSL certificate management per application
-- Rate limiting per user/application
-- Access control and authentication
+- Custom domain mapping per application
+- Per-app middleware (rate limiting, auth) via additional Traefik middlewares
 - Load balancing for multi-instance applications
+- Health checks per router/service

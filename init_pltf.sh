@@ -538,10 +538,19 @@ print_success "Python environment ready"
 # Final setup
 print_step "Final configuration..."
 mkdir -p "${REPO_DIR}/logs"
-if ! chmod +x "${REPO_DIR}/setup_modsecurity_config.sh"; then
-    print_error "Failed to make ${REPO_DIR}/setup_modsecurity_config.sh executable"
-    exit 1
-fi
+
+# Create the shared Docker network Traefik and per-app containers attach to.
+# Idempotent: creating an already-existing network is a no-op and must not
+# abort the installer.
+print_step "Creating shared Docker network (swautomorph-shared)..."
+docker network create swautomorph-shared 2>/dev/null || true
+print_success "Shared Docker network ready"
+
+# Create the Traefik dynamic configuration directory (relative to the repo
+# root, matching the compose mount ./traefik/dynamic). Traefik's file provider
+# watches this directory for per-app route files written by the platform.
+mkdir -p "${REPO_DIR}/traefik/dynamic"
+
 cd ~
 mkdir -p deployments
 cd deployments
@@ -566,7 +575,7 @@ DOMAIN="$(get_ini_value "${CONFIG_FILE}" "DOMAIN")"
 # Create the ssl/${DOMAIN}/ folder (if it does not already exist) so the user
 # has a place to drop the certificate and private key referenced below.
 mkdir -p "ssl/${DOMAIN}"
-print_warning "     - add ssl certificate in ssl/${DOMAIN}/fullchain_domain.crt for nginx https"
-print_warning "     - add ssl private key in ssl/${DOMAIN}/privateKey_domain.key for nginx https"
+print_warning "     - add ssl certificate in ssl/${DOMAIN}/fullchain_domain.crt for Traefik https"
+print_warning "     - add ssl private key in ssl/${DOMAIN}/privateKey_domain.key for Traefik https"
 print_warning "     - enter aws_access_key_id & aws_secret_access_key in ~/.aws/credentials for s3 synchronization"
 print_warning "     - the default user is admin/password"

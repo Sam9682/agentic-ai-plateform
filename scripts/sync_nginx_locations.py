@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CLI tool to sync nginx locations from database"""
+"""CLI tool to sync Traefik routes from database"""
 import sys
 import os
 
@@ -10,14 +10,14 @@ from src.database_postgres import db_manager
 from src.nginx_manager import sync_all_locations
 
 def main():
-    print("Synchronizing nginx locations from database...")
+    print("Synchronizing Traefik routes from database...")
     
     try:
         if sync_all_locations(db_manager):
-            print("✓ Nginx locations synced successfully")
+            print("✓ Traefik routes synced successfully")
             return 0
         else:
-            print("✗ Failed to sync nginx locations")
+            print("✗ Failed to sync Traefik routes")
             return 1
     except Exception as e:
         print(f"✗ Error: {e}")

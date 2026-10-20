@@ -57,6 +57,12 @@ _APP_NAME_RE = re.compile(r"^[a-z0-9-]+$")
 # Deployment status recorded on success (Req 8.1 / step 7).
 DEPLOYMENT_STATUS_RUNNING = "running"
 
+# Canonical platform env var carrying the per-app Base_Path. Apps map this to
+# their framework's public-path/base-href setting so they emit asset and link
+# URLs under their Prefix_Path now that nginx sub_filter rewriting is gone
+# (Req 3.2, 3.3; design "Base_Path propagation to apps", Property 3).
+BASE_PATH_ENV_VAR = "BASE_PATH"
+
 # Symbolic error codes surfaces map to HTTP status codes. Keeping the mapping
 # here means every surface (REST/CLI/MCP/dashboard) reports the same outcome
 # for the same failure.
@@ -236,13 +242,19 @@ class TemplateDeployService:
         # Step 5: create the service via the orchestrator (Req 8.1). Any failure
         # is treated as "orchestrator failed to initiate" -> 502 (Req 10.7, 8.4).
         orchestrator_ports = self._build_orchestrator_ports(ports_spec, app_ports)
+        # Inject BASE_PATH so the app can emit prefixed asset/link URLs under its
+        # Prefix_Path. Traefik's StripPrefix removes /{user}/{app} before the
+        # request reaches the container, so apps only need BASE_PATH to build the
+        # URLs they emit. BASE_PATH matches the old nginx location path exactly:
+        # ``/{user}/{app}/`` with a trailing slash (Req 3.2, 3.3; design Property 3).
+        deploy_environment = self._inject_base_path(environment, user_name, app_name)
         try:
             self._create_service(
                 name=app_name,
                 image=image,
                 user_id=user_id,
                 ports=orchestrator_ports,
-                environment=environment,
+                environment=deploy_environment,
                 memory_mb=memory_mb,
                 cpu_cores=cpu_cores,
                 timeout_seconds=timeout_seconds,
@@ -257,17 +269,17 @@ class TemplateDeployService:
                 template_id=template_id,
             )
 
-        # Step 6: expose the app via nginx (Req 8.3).
+        # Step 6: publish the app's Traefik route via the Proxy_Manager (Req 8.3).
         try:
             self.nginx.insert_location_block(user_name, app_name, access_url, access_url)
         except Exception as exc:
-            logger.error("nginx insert_location_block failed for '%s': %s", app_name, exc)
+            logger.error("Proxy_Manager insert_location_block failed for '%s': %s", app_name, exc)
             # Roll back orchestrator + records so no partial resources remain
             # (Req 8.4, 10.7).
             self._rollback(user_id, application_id, app_name, user_name)
             return DeployResult.failure(
                 ERROR_ORCHESTRATOR_FAILED,
-                "failed to publish nginx location",
+                "failed to publish Traefik route",
                 application_name=app_name,
                 template_id=template_id,
             )
@@ -407,7 +419,7 @@ class TemplateDeployService:
         )
 
     def _rollback(self, user_id, application_id, app_name, user_name):
-        """Roll back partial records in one transaction + best-effort nginx removal.
+        """Roll back partial records in one transaction + best-effort Traefik route removal.
 
         Removes any deployment and user_applications rows created for this
         (user, application) so no partial resources remain (Req 8.4, 10.7). The
@@ -438,15 +450,41 @@ class TemplateDeployService:
         except Exception as exc:
             logger.warning("Best-effort orchestrator cleanup failed for '%s': %s", app_name, exc)
 
-        # Best-effort nginx location removal.
+        # Best-effort Traefik route removal.
         try:
             self.nginx.remove_location_block(user_name, app_name)
         except Exception as exc:
-            logger.warning("Best-effort nginx cleanup failed for '%s': %s", app_name, exc)
+            logger.warning("Best-effort Traefik route cleanup failed for '%s': %s", app_name, exc)
 
     # ------------------------------------------------------------------
     # Orchestrator helpers
     # ------------------------------------------------------------------
+    @staticmethod
+    def _inject_base_path(environment, user_name: str, app_name: str) -> List[Dict[str, Any]]:
+        """Return the deployment environment with ``BASE_PATH`` injected.
+
+        ``BASE_PATH`` is ``/{user}/{app}/`` with a trailing slash, matching the
+        old nginx location path. It is carried into the per-app deployment
+        environment so it reaches the app container at create time, letting the
+        app emit asset/link URLs under its Prefix_Path (Req 3.2, 3.3; design
+        Property 3).
+
+        Templates express ``environment`` as a list of ``{"name", "value"}``
+        pairs. The input is copied (never mutated) and an existing ``BASE_PATH``
+        entry, if any, is overridden with the platform-computed value so the
+        platform remains authoritative.
+        """
+        base_path = f"/{user_name}/{app_name}/"
+        # Copy the template env (default to empty) without mutating the caller's
+        # list, dropping any pre-existing BASE_PATH so ours is authoritative.
+        result: List[Dict[str, Any]] = [
+            dict(entry)
+            for entry in (environment or [])
+            if not (isinstance(entry, dict) and entry.get("name") == BASE_PATH_ENV_VAR)
+        ]
+        result.append({"name": BASE_PATH_ENV_VAR, "value": base_path})
+        return result
+
     @staticmethod
     def _build_orchestrator_ports(ports_spec, app_ports) -> Dict[str, int]:
         """Map the template's container ports to the allocated host ports.

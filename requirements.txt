@@ -8,3 +8,6 @@ gunicorn
 psycopg2-binary
 python-dotenv
 pyotp
+PyYAML
+pytest
+hypothesis
