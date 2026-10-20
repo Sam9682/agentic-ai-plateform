@@ -78,6 +78,15 @@ PLTF_FOLDER=${PLTF_FOLDER:-"agentic-ai-plateform"}
 PLTF_NAME=${PLTF_NAME:-"agentic-ai-plateform"}
 LINUX_USER_INSTALLATION=${LINUX_USER_INSTALLATION:-"ubuntu"}
 
+# Traefik host-process settings (used only in "locally" mode, where Traefik runs
+# as a native Linux process instead of a container). In "docker" mode Traefik
+# runs as the `traefik` service from docker-compose.yml and these are unused.
+TRAEFIK_VERSION=${TRAEFIK_VERSION:-"v3.1.4"}
+TRAEFIK_BIN=${TRAEFIK_BIN:-"/usr/local/bin/traefik"}
+TRAEFIK_PID_FILE=${TRAEFIK_PID_FILE:-"./conf/traefik.pid"}
+TRAEFIK_STATIC_CONFIG=${TRAEFIK_STATIC_CONFIG:-"./conf/traefik.yml"}
+TRAEFIK_LOG_FILE=${TRAEFIK_LOG_FILE:-"./logs/traefik.log"}
+
 # Global Parameters (command line args override config)
 COMMAND=${1:-help}
 LOCAL_MODE=${2:-0}
@@ -296,11 +305,36 @@ check_flask_status() {
 }
 
 check_traefik_status() {
-    local traefik_container="${PLTF_FOLDER:-agentic-ai-plateform}-traefik"
-    if docker ps --filter "name=${traefik_container}" --filter "status=running" --format '{{.Names}}' 2>/dev/null | grep -q "${traefik_container}"; then
-        echo -e "  $OK Traefik: Running (container ${traefik_container})"
+    # In docker mode Traefik runs as a container; otherwise (locally / default)
+    # it runs as a native host process tracked by a PID file.
+    if [ "$LOCAL_MODE" = "docker" ]; then
+        local traefik_container="${PLTF_FOLDER:-agentic-ai-plateform}-traefik"
+        if docker ps --filter "name=${traefik_container}" --filter "status=running" --format '{{.Names}}' 2>/dev/null | grep -q "${traefik_container}"; then
+            echo -e "  $OK Traefik: Running (container ${traefik_container})"
+        else
+            echo -e "  $ERROR Traefik: Not running (container ${traefik_container})"
+        fi
+        return
+    fi
+
+    # Host-process mode (locally / default).
+    if [ -f "$TRAEFIK_PID_FILE" ]; then
+        local pid
+        pid=$(cat "$TRAEFIK_PID_FILE")
+        if kill -0 "$pid" 2>/dev/null; then
+            echo -e "  $OK Traefik: Running (host process, PID: $pid)"
+        else
+            echo -e "  $ERROR Traefik: Not running (stale PID: $pid)"
+        fi
     else
-        echo -e "  $ERROR Traefik: Not running (container ${traefik_container})"
+        # Fallback: look for a running traefik process even without a PID file.
+        local traefik_pids
+        traefik_pids=$(pgrep -f "traefik.*--configfile" 2>/dev/null || true)
+        if [ -n "$traefik_pids" ]; then
+            echo -e "  $OK Traefik: Running (host process, PID: $traefik_pids)"
+        else
+            echo -e "  $ERROR Traefik: Not running (host process)"
+        fi
     fi
 }
 
@@ -841,11 +875,13 @@ stop_services() {
 
     if [ "$LOCAL_MODE" = "locally" ]; then
         stop_flask_service || CLEANUP_NEEDED=true
+        stop_traefik
         confirm_gitea_stop
     elif [ "$LOCAL_MODE" = "docker" ]; then
         stop_docker_services
     else
         stop_flask_service || CLEANUP_NEEDED=true
+        stop_traefik
         confirm_gitea_stop
         stop_docker_services
     fi
@@ -1036,6 +1072,96 @@ stop_docker_services() {
     docker-compose down
 }
 
+# Stop Traefik. In "locally" (default) mode Traefik runs as a native host
+# process and is stopped via its PID file; in "docker" mode it runs as a
+# container and is stopped via docker-compose. Best-effort: a missing
+# process/container or missing docker-compose is non-fatal.
+stop_traefik() {
+    if [ "$LOCAL_MODE" = "docker" ]; then
+        stop_traefik_container
+    else
+        stop_traefik_process
+    fi
+}
+
+# Stop the host-run Traefik process (locally / default mode).
+stop_traefik_process() {
+    echo "🚦 Stopping Traefik reverse proxy (host process)..."
+
+    local stopped=false
+
+    if [ -f "$TRAEFIK_PID_FILE" ]; then
+        local pid
+        pid=$(cat "$TRAEFIK_PID_FILE")
+        if kill -0 "$pid" 2>/dev/null; then
+            if kill "$pid" 2>/dev/null; then
+                sleep 2
+                if kill -0 "$pid" 2>/dev/null; then
+                    kill -9 "$pid" 2>/dev/null || true
+                fi
+                echo "  ✅ Traefik process stopped (PID: $pid)"
+                stopped=true
+            else
+                echo "  ⚠️ Could not stop Traefik process (PID: $pid) - permission denied"
+                echo "  💡 Try: sudo kill $pid"
+            fi
+        else
+            echo "  ℹ️ Traefik process not running (stale PID: $pid)"
+        fi
+        rm -f "$TRAEFIK_PID_FILE"
+    fi
+
+    # Belt-and-braces: clean up any remaining host traefik process we started.
+    local remaining
+    remaining=$(pgrep -f "traefik.*--configfile" 2>/dev/null || true)
+    if [ -n "$remaining" ]; then
+        echo "  🔥 Stopping remaining Traefik process(es): $remaining"
+        pkill -f "traefik.*--configfile" 2>/dev/null || true
+        sleep 1
+        remaining=$(pgrep -f "traefik.*--configfile" 2>/dev/null || true)
+        if [ -n "$remaining" ]; then
+            pkill -9 -f "traefik.*--configfile" 2>/dev/null || true
+        fi
+        stopped=true
+    fi
+
+    if [ "$stopped" = "false" ]; then
+        echo "  ℹ️ Traefik host process was not running"
+    fi
+}
+
+# Stop the Traefik reverse-proxy container (docker mode). Best-effort: a missing
+# container or docker-compose is non-fatal.
+stop_traefik_container() {
+    echo "🚦 Stopping Traefik reverse proxy container..."
+
+    if ! command -v docker >/dev/null 2>&1; then
+        echo "  ℹ️ Docker not installed - nothing to stop"
+        return 0
+    fi
+
+    local compose_cmd=""
+    if command -v docker-compose >/dev/null 2>&1; then
+        compose_cmd="docker-compose"
+    elif docker compose version >/dev/null 2>&1; then
+        compose_cmd="docker compose"
+    fi
+
+    if [ -n "$compose_cmd" ]; then
+        # Stop/remove only the traefik service, leaving host-run services and
+        # per-app containers untouched.
+        $compose_cmd rm -sf traefik 2>/dev/null \
+            && echo "  ✅ Traefik container stopped" \
+            || echo "  ℹ️ Traefik container was not running"
+    else
+        # Fallback: stop by container name if docker-compose is unavailable.
+        local traefik_container="${PLTF_FOLDER:-agentic-ai-plateform}-traefik"
+        docker rm -f "$traefik_container" 2>/dev/null \
+            && echo "  ✅ Traefik container stopped" \
+            || echo "  ℹ️ Traefik container was not running"
+    fi
+}
+
 # Show logs
 show_logs() {
     echo "📋 $NAME_OF_APPLICATION Service Logs:"
@@ -1089,10 +1215,12 @@ restart_services() {
 
     if [ "$LOCAL_MODE" = "locally" ]; then
         restart_flask_service
+        start_traefik
     elif [ "$LOCAL_MODE" = "docker" ]; then
         restart_docker_services
     else
         restart_flask_service
+        start_traefik
         restart_docker_services
     fi
 
@@ -1242,6 +1370,7 @@ start_local_deployment() {
     echo "🚀 Starting core services..."
     start_flask_application
     configure_traefik
+    start_traefik
     configure_firewall
 
     # Sync Traefik dynamic routes as the final startup step
@@ -1634,6 +1763,20 @@ configure_traefik() {
     # Ensure the watched dynamic-config directory exists.
     mkdir -p "${TRAEFIK_DYNAMIC_DIR:-./traefik/dynamic}"
 
+    # In host-process (locally / default) mode Traefik reads the TLS
+    # certificates directly from the host ``ssl/`` directory, so the generated
+    # tls.yml must reference real host paths. Export TRAEFIK_SSL_DIR to the
+    # absolute host ssl/ path for the Python config writer. In docker mode we
+    # leave it unset so nginx_manager uses the in-container default
+    # (/etc/traefik/ssl), matching the docker-compose ./ssl mount.
+    if [ "$LOCAL_MODE" != "docker" ]; then
+        local host_ssl_dir
+        host_ssl_dir=$(cd ./ssl 2>/dev/null && pwd)
+        host_ssl_dir=${host_ssl_dir:-"$(pwd)/ssl"}
+        export TRAEFIK_SSL_DIR="$host_ssl_dir"
+        echo "  🔐 Traefik (host process) will read certificates from $TRAEFIK_SSL_DIR"
+    fi
+
     # Prefer the venv python; fall back to python3 (mirrors sync_traefik_locations).
     local traefik_python="python3"
     if [ -x ".venv/bin/python" ]; then
@@ -1646,6 +1789,267 @@ configure_traefik() {
         echo "  ✅ Traefik TLS and secondary-domain config written"
     else
         echo "  ⚠️ Traefik dynamic config generation failed (exit non-zero) - continuing"
+    fi
+}
+
+# Free the platform entrypoint ports (:80/:443) from any stale *host* proxy.
+#
+# The platform migrated from a host nginx to a Traefik container that owns
+# :80/:443. On machines provisioned before the migration a host `nginx`
+# systemd service is often still running and squatting on those ports, so the
+# Traefik container cannot bind them (and visitors hit the old nginx default
+# page instead of Traefik). This stops/disables that host nginx so Traefik can
+# take over. It intentionally only touches the *host* nginx service/binary; it
+# never stops the per-app nginx *containers* that front deployed applications.
+free_proxy_ports() {
+    echo "🧹 Freeing platform entrypoint ports (:80/:443) from stale host proxy..."
+
+    # Stop and disable the host nginx systemd service if present and active.
+    if systemctl list-unit-files 2>/dev/null | grep -q '^nginx\.service'; then
+        if systemctl is-active --quiet nginx 2>/dev/null; then
+            echo "  ⚠️ Stale host nginx service is running - stopping it so Traefik can bind :80/:443"
+            sudo systemctl stop nginx 2>/dev/null || true
+        fi
+        # Disable so it does not reclaim the ports after a reboot.
+        sudo systemctl disable nginx 2>/dev/null || true
+    fi
+
+    # Belt-and-braces: kill any remaining *host* nginx master process still
+    # holding the ports (a manually started nginx has no systemd unit). This
+    # matches only the system nginx binary (/usr/sbin/nginx, "nginx -g"), not
+    # the containerized nginx:alpine processes that serve individual apps.
+    HOST_NGINX_PIDS=$(pgrep -f "nginx: master process (/usr/sbin/nginx|nginx -g daemon on)" 2>/dev/null || true)
+    if [ -n "$HOST_NGINX_PIDS" ]; then
+        echo "  🔥 Stopping remaining host nginx master process(es): $HOST_NGINX_PIDS"
+        for pid in $HOST_NGINX_PIDS; do
+            sudo kill "$pid" 2>/dev/null || true
+        done
+        sleep 1
+    fi
+
+    # Report whether the ports are now free (informational; non-fatal).
+    if ss -tlnp 2>/dev/null | grep -qE ':80 |:443 '; then
+        echo "  ⚠️ Ports :80/:443 still appear occupied - Traefik may fail to bind:"
+        ss -tlnp 2>/dev/null | grep -E ':80 |:443 ' | sed 's/^/      /'
+    else
+        echo "  ✅ Ports :80/:443 are free for Traefik"
+    fi
+}
+
+# Start Traefik (the single :80/:443 entrypoint).
+#
+# Launch type is driven by LOCAL_MODE:
+#   * "docker"            -> Traefik runs as the `traefik` container from the
+#                            root docker-compose.yml.
+#   * "locally" / default -> Traefik runs as a native Linux host process. This
+#                            is the behaviour when deployControlPlan.sh is run
+#                            without an explicit container ("docker") option.
+start_traefik() {
+    if [ "$LOCAL_MODE" = "docker" ]; then
+        start_traefik_container
+    else
+        start_traefik_process
+    fi
+}
+
+# Ensure the Traefik binary is installed on the host (locally mode). Downloads
+# the pinned release to TRAEFIK_BIN if it is missing. Returns non-zero if the
+# binary could not be made available.
+install_traefik_binary() {
+    if [ -x "$TRAEFIK_BIN" ] || command -v traefik >/dev/null 2>&1; then
+        return 0
+    fi
+
+    echo "  📦 Installing Traefik ${TRAEFIK_VERSION} host binary..."
+
+    # Map uname arch to Traefik release arch naming.
+    local arch
+    case "$(uname -m)" in
+        x86_64|amd64) arch="amd64" ;;
+        aarch64|arm64) arch="arm64" ;;
+        armv7l) arch="armv7" ;;
+        *) echo "  ❌ Unsupported architecture: $(uname -m)"; return 1 ;;
+    esac
+
+    local tarball="traefik_${TRAEFIK_VERSION}_linux_${arch}.tar.gz"
+    local url="https://github.com/traefik/traefik/releases/download/${TRAEFIK_VERSION}/${tarball}"
+    local workdir
+    workdir=$(mktemp -d "$TMP_DIR/traefik-install-XXXXXX")
+
+    if ! curl -fsSL -o "$workdir/$tarball" "$url"; then
+        echo "  ❌ Failed to download Traefik from $url"
+        rm -rf "$workdir"
+        return 1
+    fi
+
+    if ! tar -xzf "$workdir/$tarball" -C "$workdir" traefik 2>/dev/null; then
+        echo "  ❌ Failed to extract Traefik binary"
+        rm -rf "$workdir"
+        return 1
+    fi
+
+    # Install to TRAEFIK_BIN (use sudo only when the target dir is not writable).
+    if [ -w "$(dirname "$TRAEFIK_BIN")" ]; then
+        mv "$workdir/traefik" "$TRAEFIK_BIN" && chmod +x "$TRAEFIK_BIN"
+    else
+        sudo mv "$workdir/traefik" "$TRAEFIK_BIN" && sudo chmod +x "$TRAEFIK_BIN"
+    fi
+
+    rm -rf "$workdir"
+
+    if [ -x "$TRAEFIK_BIN" ] || command -v traefik >/dev/null 2>&1; then
+        echo "  ✅ Traefik ${TRAEFIK_VERSION} installed"
+        return 0
+    fi
+
+    echo "  ❌ Traefik installation failed"
+    return 1
+}
+
+# Generate the Traefik static configuration for host-process mode. Mirrors the
+# docker-compose `traefik` service command flags, but points the file provider
+# at the host dynamic directory and reads the host Docker socket directly.
+generate_traefik_static_config() {
+    local dynamic_dir
+    dynamic_dir=$(cd "${TRAEFIK_DYNAMIC_DIR:-./traefik/dynamic}" 2>/dev/null && pwd)
+    dynamic_dir=${dynamic_dir:-"$(pwd)/traefik/dynamic"}
+
+    mkdir -p "$(dirname "$TRAEFIK_STATIC_CONFIG")"
+
+    cat > "$TRAEFIK_STATIC_CONFIG" << EOF
+# Auto-generated by deployControlPlan.sh for host-process (locally) Traefik.
+# Do not edit by hand; regenerated on each start.
+entryPoints:
+  web:
+    address: ":80"
+  websecure:
+    address: ":443"
+    transport:
+      respondingTimeouts:
+        readTimeout: 60s
+        writeTimeout: 60s
+
+providers:
+  docker:
+    exposedByDefault: false
+    network: swautomorph-shared
+  file:
+    directory: "${dynamic_dir}"
+    watch: true
+EOF
+    echo "  ✅ Traefik static config written to $TRAEFIK_STATIC_CONFIG"
+}
+
+# Start Traefik as a native host process (locally / default mode). Flask runs on
+# the host and per-app containers are discovered via the Docker provider using
+# the host Docker socket; the file provider watches the host dynamic directory.
+start_traefik_process() {
+    echo "🚦 Starting Traefik reverse proxy (host process)..."
+
+    # Ensure the binary is present.
+    if ! install_traefik_binary; then
+        echo "  ❌ Cannot start Traefik - binary unavailable"
+        return 1
+    fi
+
+    local traefik_cmd="$TRAEFIK_BIN"
+    if [ ! -x "$TRAEFIK_BIN" ] && command -v traefik >/dev/null 2>&1; then
+        traefik_cmd="$(command -v traefik)"
+    fi
+
+    # Free the host ports first so Traefik can bind :80/:443.
+    free_proxy_ports
+
+    # The shared network must exist so the Docker provider can resolve app
+    # containers attached to it (configure_traefik also creates it).
+    docker network create swautomorph-shared 2>/dev/null || true
+
+    # Generate the static config pointing at host paths.
+    generate_traefik_static_config
+
+    mkdir -p logs conf
+
+    # Stop any previous host Traefik before starting a fresh one.
+    if [ -f "$TRAEFIK_PID_FILE" ]; then
+        local old_pid
+        old_pid=$(cat "$TRAEFIK_PID_FILE")
+        if kill -0 "$old_pid" 2>/dev/null; then
+            echo "  🛑 Stopping previous Traefik process (PID: $old_pid)"
+            kill "$old_pid" 2>/dev/null || true
+            sleep 1
+        fi
+        rm -f "$TRAEFIK_PID_FILE"
+    fi
+
+    # Binding :80/:443 requires privilege. Use sudo when not already root; the
+    # process must be able to read the host Docker socket too.
+    local runner=""
+    if [ "$(id -u)" != "0" ]; then
+        runner="sudo"
+    fi
+
+    echo "  🚀 Launching Traefik (binding :80/:443)..."
+    $runner nohup "$traefik_cmd" --configfile "$TRAEFIK_STATIC_CONFIG" \
+        >> "$TRAEFIK_LOG_FILE" 2>&1 &
+    local launch_pid=$!
+
+    # When launched via sudo, $! is the sudo PID; resolve the real traefik PID.
+    sleep 2
+    local traefik_pid
+    traefik_pid=$(pgrep -f "traefik.*--configfile ${TRAEFIK_STATIC_CONFIG}" 2>/dev/null | head -n1)
+    traefik_pid=${traefik_pid:-$launch_pid}
+    echo "$traefik_pid" > "$TRAEFIK_PID_FILE"
+
+    if kill -0 "$traefik_pid" 2>/dev/null; then
+        echo "  ✅ Traefik is running (host process, PID: $traefik_pid) on :80/:443"
+    else
+        echo "  ⚠️ Traefik did not stay running - check: $TRAEFIK_LOG_FILE"
+        return 1
+    fi
+}
+
+# Start the Traefik reverse-proxy container (docker mode only). Brings up ONLY
+# the `traefik` service from the root docker-compose.yml. Requires
+# docker-compose; a failure is reported but non-fatal to the deploy.
+start_traefik_container() {
+    echo "🚦 Starting Traefik reverse proxy container..."
+
+    if ! command -v docker >/dev/null 2>&1; then
+        echo "  ❌ Docker is not installed - cannot start Traefik container"
+        return 1
+    fi
+
+    local compose_cmd=""
+    if command -v docker-compose >/dev/null 2>&1; then
+        compose_cmd="docker-compose"
+    elif docker compose version >/dev/null 2>&1; then
+        compose_cmd="docker compose"
+    else
+        echo "  ❌ docker-compose not found - cannot start Traefik container"
+        return 1
+    fi
+
+    # Free the host ports first so Traefik can bind :80/:443.
+    free_proxy_ports
+
+    # The shared network must exist before Traefik (configure_traefik creates
+    # it, but create here too so start_traefik is safe to call independently).
+    docker network create swautomorph-shared 2>/dev/null || true
+
+    # Bring up only the Traefik service. --no-deps avoids pulling up the whole
+    # stack (postgres/app/gitea) which in locally mode run on the host instead.
+    if $compose_cmd up -d --no-deps traefik; then
+        sleep 2
+        local traefik_container="${PLTF_FOLDER:-agentic-ai-plateform}-traefik"
+        if docker ps --filter "name=${traefik_container}" --filter "status=running" --format '{{.Names}}' 2>/dev/null | grep -q "${traefik_container}"; then
+            echo "  ✅ Traefik is running (container ${traefik_container}) on :80/:443"
+        else
+            echo "  ⚠️ Traefik container did not stay running - check: docker logs ${traefik_container}"
+            return 1
+        fi
+    else
+        echo "  ❌ Failed to start Traefik container (docker-compose up traefik)"
+        return 1
     fi
 }
 

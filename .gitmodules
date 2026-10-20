@@ -1,0 +1,3 @@
+[submodule "agentic-ai-plateform--skills"]
+	path = agentic-ai-plateform--skills
+	url = git@github.com:Sam9682/agentic-ai-plateform--skills.git

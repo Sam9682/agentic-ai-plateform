@@ -22,15 +22,29 @@ logger = logging.getLogger(__name__)
 # ``/etc/traefik/dynamic``, so the dynamic directory is anchored there.
 _INSTALL_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# Per-app Traefik dynamic config directory (matches the compose mount
-# ``./traefik/dynamic:/etc/traefik/dynamic``).
-TRAEFIK_DYNAMIC_DIR = os.path.join(_INSTALL_ROOT, "traefik", "dynamic")
+# Per-app Traefik dynamic config directory. In container (docker) mode this is
+# the host side of the compose mount ``./traefik/dynamic:/etc/traefik/dynamic``;
+# the generated files are written to this host path and seen by the container at
+# the mount point. The default matches the repo layout; it can be overridden via
+# ``TRAEFIK_DYNAMIC_DIR`` for host-process deployments.
+TRAEFIK_DYNAMIC_DIR = os.environ.get(
+    "TRAEFIK_DYNAMIC_DIR", os.path.join(_INSTALL_ROOT, "traefik", "dynamic")
+)
 
-# Certificate path prefix *inside the Traefik container*. The root
-# docker-compose.yml mounts the host ``./ssl`` directory read-only at
-# ``/etc/traefik/ssl``, so every certFile/keyFile reference in the generated
-# TLS dynamic config is anchored here (not at the host path).
-TRAEFIK_SSL_DIR = "/etc/traefik/ssl"
+# Certificate path prefix referenced from the generated TLS dynamic config.
+#
+# The value depends on how Traefik runs:
+#   * container (docker) mode  -> the path *inside* the Traefik container. The
+#     root docker-compose.yml mounts the host ``./ssl`` directory read-only at
+#     ``/etc/traefik/ssl``, so certFile/keyFile are anchored there.
+#   * host-process (locally) mode -> Traefik runs as a native Linux process and
+#     reads the certificates directly from the host ``ssl/`` directory, so the
+#     paths must be real host paths.
+#
+# deployControlPlan.sh exports ``TRAEFIK_SSL_DIR`` to the host ``ssl/`` directory
+# when starting Traefik as a host process; the default preserves the container
+# path so docker-mode behaviour is unchanged.
+TRAEFIK_SSL_DIR = os.environ.get("TRAEFIK_SSL_DIR", "/etc/traefik/ssl")
 
 # Carried-forward proxy timeouts (previously nginx proxy_connect_timeout 30s /
 # proxy_read_timeout 60s). Applied via a shared serversTransport.
@@ -295,6 +309,15 @@ def sync_all_locations(db_manager) -> bool:
 
         all_ok = True
 
+        # Always (re)write the control-plane route so the bare domain resolves
+        # to the Flask control plane. Without it, requests to ``https://<domain>/``
+        # match no router and Traefik returns "404 page not found". This file is
+        # named ``control-plane.yml`` (not ``app-*.yml``) so the stale-file
+        # cleanup below never removes it.
+        if not write_control_plane_config():
+            logger.error("Failed to sync Traefik control-plane route")
+            all_ok = False
+
         # Desired set of per-app route files (one per DB app). Write/overwrite
         # each one; isolate per-app failures so a single bad app does not abort
         # the whole reconciliation.
@@ -332,6 +355,94 @@ def sync_all_locations(db_manager) -> bool:
 
     except Exception as e:
         logger.error(f"Failed to sync Traefik routes: {e}")
+        return False
+
+
+# ---------------------------------------------------------------------------
+# Control-plane routing (Proxy_Manager, file provider)
+# ---------------------------------------------------------------------------
+# The platform's own Flask control plane (dashboard, /api, /register, /login,
+# static assets, ...) runs as a host process behind gunicorn, bound to
+# ``127.0.0.1:5000`` (see gunicorn.conf.py). Unlike deployed user applications
+# it is NOT a container on ``swautomorph-shared`` and has no per-app route file,
+# so without a dedicated router a request to the bare domain (e.g.
+# ``https://<domain>/``) matches nothing and Traefik answers "404 page not
+# found".
+#
+# This router matches ``Host(<DOMAIN>)`` with no path constraint and forwards
+# everything to the control plane. Traefik ranks router priority by rule length,
+# so the per-app ``Host(...) && PathPrefix(/{user}/{app})`` routers are always
+# preferred for their own paths; this bare-Host router only catches the
+# remaining traffic (the dashboard, API, auth and static routes). The backend
+# host/port are overridable via ``CONTROL_PLANE_HOST`` / ``CONTROL_PLANE_PORT``
+# for non-default deployments.
+
+CONTROL_PLANE_HOST = os.environ.get("CONTROL_PLANE_HOST", "127.0.0.1")
+CONTROL_PLANE_PORT = int(os.environ.get("CONTROL_PLANE_PORT", "5000"))
+
+# Fixed, deterministic router/service identifier so the file is overwritten
+# idempotently on every sync.
+_CONTROL_PLANE_NAME = "control-plane"
+
+
+def _control_plane_file_path() -> str:
+    """Return the path of the control-plane Traefik dynamic config file."""
+    return os.path.join(TRAEFIK_DYNAMIC_DIR, "control-plane.yml")
+
+
+def build_control_plane_config(domain: str, host: str = None, port: int = None) -> dict:
+    """Build the Traefik dynamic-config dict for the control-plane route.
+
+    Produces a single router matching ``Host(<domain>)`` (no PathPrefix) on the
+    ``websecure`` entrypoint with TLS enabled, and a service whose load balancer
+    points at ``http://<host>:<port>`` (the gunicorn control plane). The bare
+    ``Host`` rule is intentionally shorter than the per-app
+    ``Host && PathPrefix`` rules so Traefik's length-based priority keeps app
+    routes ahead of the control-plane catch-all.
+    """
+    backend_host = host or CONTROL_PLANE_HOST
+    backend_port = port or CONTROL_PLANE_PORT
+    name = _CONTROL_PLANE_NAME
+
+    return {
+        "http": {
+            "routers": {
+                name: {
+                    "rule": f"Host(`{domain}`)",
+                    "entryPoints": ["websecure"],
+                    "service": name,
+                    "tls": {},
+                }
+            },
+            "services": {
+                name: {
+                    "loadBalancer": {
+                        "servers": [
+                            {"url": f"http://{backend_host}:{backend_port}"}
+                        ],
+                    }
+                }
+            },
+        }
+    }
+
+
+def write_control_plane_config(domain: str = None, host: str = None,
+                               port: int = None, path: str = None) -> bool:
+    """Render the control-plane route to ``traefik/dynamic/control-plane.yml``.
+
+    When ``domain`` is omitted the platform ``DOMAIN`` is used. Writes the
+    config atomically (temp file + ``os.replace``) via the shared route-file
+    writer so Traefik's file watcher never sees a half-written file. Returns
+    ``True`` on success, ``False`` on any failure (logged), matching the
+    Proxy_Manager error-handling contract.
+    """
+    target = path or _control_plane_file_path()
+    try:
+        config = build_control_plane_config(domain or DOMAIN, host, port)
+        return _write_route_file(target, config)
+    except Exception as e:
+        logger.error("Failed to write control-plane config to %s: %s", target, e)
         return False
 
 
@@ -447,14 +558,15 @@ def build_secondary_domains_config(entries: list) -> dict:
             }
         }
 
-    http: dict = {
-        "routers": routers,
-        "services": services,
-    }
+    http: dict = {}
 
-    # Only declare the redirect middleware when there is at least one router to
-    # apply it to, keeping an empty config genuinely empty.
+    # Only declare routers/services/middlewares when there is at least one
+    # entry. Traefik's file provider rejects a document that declares
+    # ``http.routers``/``http.services`` as empty maps ("routers cannot be a
+    # standalone element"), so an empty config must omit these keys entirely.
     if routers:
+        http["routers"] = routers
+        http["services"] = services
         http["middlewares"] = {
             _REDIRECT_MIDDLEWARE: {
                 "redirectScheme": {
@@ -485,6 +597,19 @@ def write_secondary_domains_config(raw: Optional[str], path: Optional[str] = Non
     target = path or _secondary_domains_file_path()
     try:
         entries = parse_secondary_domains(raw)
+
+        # No secondary domains: Traefik's file provider rejects an empty/standalone
+        # document (both an empty ``http`` map and empty ``routers`` map raise
+        # "cannot be a standalone element"). The correct representation of "no
+        # secondary routes" is therefore the *absence* of the file, so remove it
+        # idempotently and report success.
+        if not entries:
+            try:
+                os.remove(target)
+            except FileNotFoundError:
+                pass
+            return True
+
         config = build_secondary_domains_config(entries)
 
         writer = globals().get("_write_route_file")
