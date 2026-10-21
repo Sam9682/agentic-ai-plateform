@@ -55,3 +55,4 @@ traefik/dynamic/control-plane.yml
 traefik/dynamic/tls.yml
 traefik/dynamic/secondary-domains.yml
 
+conf/traefik.yml

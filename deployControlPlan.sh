@@ -86,6 +86,12 @@ TRAEFIK_BIN=${TRAEFIK_BIN:-"/usr/local/bin/traefik"}
 TRAEFIK_PID_FILE=${TRAEFIK_PID_FILE:-"./conf/traefik.pid"}
 TRAEFIK_STATIC_CONFIG=${TRAEFIK_STATIC_CONFIG:-"./conf/traefik.yml"}
 TRAEFIK_LOG_FILE=${TRAEFIK_LOG_FILE:-"./logs/traefik.log"}
+# Docker API version Traefik's Docker provider negotiates with the daemon.
+# Without this, the provider defaults to client API 1.24, which modern daemons
+# reject ("client version 1.24 is too old. Minimum supported API version is
+# 1.40"). 1.44 is within the daemon's supported range and compatible with
+# Traefik v3.1. Mirrors DOCKER_API_VERSION on the compose `traefik` service.
+TRAEFIK_DOCKER_API_VERSION=${TRAEFIK_DOCKER_API_VERSION:-"1.44"}
 
 # Global Parameters (command line args override config)
 COMMAND=${1:-help}
@@ -1982,14 +1988,19 @@ start_traefik_process() {
     fi
 
     # Binding :80/:443 requires privilege. Use sudo when not already root; the
-    # process must be able to read the host Docker socket too.
+    # process must be able to read the host Docker socket too. Pass
+    # DOCKER_API_VERSION via `env` so it survives the sudo boundary (plain
+    # exported vars are stripped by sudo's default env reset) and reaches the
+    # Docker provider; otherwise it defaults to API 1.24 which the daemon
+    # rejects.
     local runner=""
     if [ "$(id -u)" != "0" ]; then
         runner="sudo"
     fi
 
     echo "  🚀 Launching Traefik (binding :80/:443)..."
-    $runner nohup "$traefik_cmd" --configfile "$TRAEFIK_STATIC_CONFIG" \
+    $runner env DOCKER_API_VERSION="$TRAEFIK_DOCKER_API_VERSION" \
+        nohup "$traefik_cmd" --configfile "$TRAEFIK_STATIC_CONFIG" \
         >> "$TRAEFIK_LOG_FILE" 2>&1 &
     local launch_pid=$!
 
