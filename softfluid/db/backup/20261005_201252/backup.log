@@ -1,0 +1,665 @@
+pg_dump: executing SELECT pg_catalog.set_config('search_path', '', false);
+pg_dump: last built-in OID is 16383
+pg_dump: reading extensions
+pg_dump: identifying extension members
+pg_dump: reading schemas
+pg_dump: reading user-defined tables
+pg_dump: reading user-defined functions
+pg_dump: reading user-defined types
+pg_dump: reading procedural languages
+pg_dump: reading user-defined aggregate functions
+pg_dump: reading user-defined operators
+pg_dump: reading user-defined access methods
+pg_dump: reading user-defined operator classes
+pg_dump: reading user-defined operator families
+pg_dump: reading user-defined text search parsers
+pg_dump: reading user-defined text search templates
+pg_dump: reading user-defined text search dictionaries
+pg_dump: reading user-defined text search configurations
+pg_dump: reading user-defined foreign-data wrappers
+pg_dump: reading user-defined foreign servers
+pg_dump: reading default privileges
+pg_dump: reading user-defined collations
+pg_dump: reading user-defined conversions
+pg_dump: reading type casts
+pg_dump: reading transforms
+pg_dump: reading table inheritance information
+pg_dump: reading event triggers
+pg_dump: finding extension tables
+pg_dump: finding inheritance relationships
+pg_dump: reading column info for interesting tables
+pg_dump: finding table default expressions
+pg_dump: finding table check constraints
+pg_dump: flagging inherited columns in subtables
+pg_dump: reading partitioning data
+pg_dump: reading indexes
+pg_dump: flagging indexes in partitioned tables
+pg_dump: reading extended statistics
+pg_dump: reading constraints
+pg_dump: reading triggers
+pg_dump: reading rewrite rules
+pg_dump: reading policies
+pg_dump: reading row-level security policies
+pg_dump: reading publications
+pg_dump: reading publication membership of tables
+pg_dump: reading publication membership of schemas
+pg_dump: reading subscriptions
+pg_dump: reading subscription membership of tables
+pg_dump: reading large objects
+pg_dump: reading dependency data
+pg_dump: saving encoding = UTF8
+pg_dump: saving "standard_conforming_strings = on"
+pg_dump: saving "search_path = "
+pg_dump: saving database definition
+pg_dump: dropping DATABASE ai_swautomorph
+pg_dump: creating DATABASE "ai_swautomorph"
+pg_dump: connecting to new database "ai_swautomorph"
+pg_dump: creating EXTENSION "uuid-ossp"
+pg_dump: creating COMMENT "EXTENSION "uuid-ossp""
+pg_dump: creating FUNCTION "public.update_updated_at_column()"
+pg_dump: creating TABLE "public.application_costs"
+pg_dump: creating SEQUENCE "public.application_costs_id_seq"
+pg_dump: creating SEQUENCE OWNED BY "public.application_costs_id_seq"
+pg_dump: creating TABLE "public.applications"
+pg_dump: creating SEQUENCE "public.applications_id_seq"
+pg_dump: creating SEQUENCE OWNED BY "public.applications_id_seq"
+pg_dump: creating TABLE "public.auth_tokens"
+pg_dump: creating SEQUENCE "public.auth_tokens_id_seq"
+pg_dump: creating SEQUENCE OWNED BY "public.auth_tokens_id_seq"
+pg_dump: creating TABLE "public.billing_activities"
+pg_dump: creating SEQUENCE "public.billing_activities_id_seq"
+pg_dump: creating SEQUENCE OWNED BY "public.billing_activities_id_seq"
+pg_dump: creating TABLE "public.configuration"
+pg_dump: creating SEQUENCE "public.configuration_param_id_seq"
+pg_dump: creating SEQUENCE OWNED BY "public.configuration_param_id_seq"
+pg_dump: creating TABLE "public.deploy_templates"
+pg_dump: creating SEQUENCE "public.deploy_templates_id_seq"
+pg_dump: creating SEQUENCE OWNED BY "public.deploy_templates_id_seq"
+pg_dump: creating TABLE "public.deployments"
+pg_dump: creating COMMENT "public.COLUMN deployments.modification_history"
+pg_dump: creating COMMENT "public.COLUMN deployments.backups_history"
+pg_dump: creating SEQUENCE "public.deployments_id_seq"
+pg_dump: creating SEQUENCE OWNED BY "public.deployments_id_seq"
+pg_dump: creating TABLE "public.instances"
+pg_dump: creating SEQUENCE "public.instances_id_seq"
+pg_dump: creating SEQUENCE OWNED BY "public.instances_id_seq"
+pg_dump: creating TABLE "public.invoicing"
+pg_dump: creating SEQUENCE "public.invoicing_id_seq"
+pg_dump: creating SEQUENCE OWNED BY "public.invoicing_id_seq"
+pg_dump: creating TABLE "public.mig_instances"
+pg_dump: creating SEQUENCE "public.mig_instances_id_seq"
+pg_dump: creating SEQUENCE OWNED BY "public.mig_instances_id_seq"
+pg_dump: creating TABLE "public.mig_profiles"
+pg_dump: creating SEQUENCE "public.mig_profiles_id_seq"
+pg_dump: creating SEQUENCE OWNED BY "public.mig_profiles_id_seq"
+pg_dump: creating TABLE "public.password_reset_tokens"
+pg_dump: creating SEQUENCE "public.password_reset_tokens_id_seq"
+pg_dump: creating SEQUENCE OWNED BY "public.password_reset_tokens_id_seq"
+pg_dump: creating TABLE "public.payment_modes"
+pg_dump: creating SEQUENCE "public.payment_modes_id_seq"
+pg_dump: creating SEQUENCE OWNED BY "public.payment_modes_id_seq"
+pg_dump: creating TABLE "public.serverless_job_logs"
+pg_dump: creating SEQUENCE "public.serverless_job_logs_id_seq"
+pg_dump: creating SEQUENCE OWNED BY "public.serverless_job_logs_id_seq"
+pg_dump: creating TABLE "public.serverless_job_results"
+pg_dump: creating TABLE "public.serverless_jobs"
+pg_dump: creating COMMENT "public.COLUMN serverless_jobs.target_link"
+pg_dump: creating TABLE "public.servers"
+pg_dump: creating SEQUENCE "public.servers_id_seq"
+pg_dump: creating SEQUENCE OWNED BY "public.servers_id_seq"
+pg_dump: creating TABLE "public.services"
+pg_dump: creating SEQUENCE "public.services_id_seq"
+pg_dump: creating SEQUENCE OWNED BY "public.services_id_seq"
+pg_dump: creating TABLE "public.twofa_email_codes"
+pg_dump: creating SEQUENCE "public.twofa_email_codes_id_seq"
+pg_dump: creating SEQUENCE OWNED BY "public.twofa_email_codes_id_seq"
+pg_dump: creating TABLE "public.user_applications"
+pg_dump: creating COMMENT "public.COLUMN user_applications.http_port3"
+pg_dump: creating COMMENT "public.COLUMN user_applications.https_port3"
+pg_dump: creating COMMENT "public.COLUMN user_applications.http_port4"
+pg_dump: creating COMMENT "public.COLUMN user_applications.https_port4"
+pg_dump: creating COMMENT "public.COLUMN user_applications.http_port5"
+pg_dump: creating COMMENT "public.COLUMN user_applications.https_port5"
+pg_dump: creating COMMENT "public.COLUMN user_applications.http_port6"
+pg_dump: creating COMMENT "public.COLUMN user_applications.https_port6"
+pg_dump: creating SEQUENCE "public.user_applications_id_seq"
+pg_dump: creating SEQUENCE OWNED BY "public.user_applications_id_seq"
+pg_dump: creating TABLE "public.users"
+pg_dump: creating SEQUENCE "public.users_id_seq"
+pg_dump: creating SEQUENCE OWNED BY "public.users_id_seq"
+pg_dump: creating TABLE "public.users_logs"
+pg_dump: creating SEQUENCE "public.users_logs_id_seq"
+pg_dump: creating SEQUENCE OWNED BY "public.users_logs_id_seq"
+pg_dump: creating DEFAULT "public.application_costs id"
+pg_dump: creating DEFAULT "public.applications id"
+pg_dump: creating DEFAULT "public.auth_tokens id"
+pg_dump: creating DEFAULT "public.billing_activities id"
+pg_dump: creating DEFAULT "public.configuration param_id"
+pg_dump: creating DEFAULT "public.deploy_templates id"
+pg_dump: creating DEFAULT "public.deployments id"
+pg_dump: creating DEFAULT "public.instances id"
+pg_dump: creating DEFAULT "public.invoicing id"
+pg_dump: creating DEFAULT "public.mig_instances id"
+pg_dump: creating DEFAULT "public.mig_profiles id"
+pg_dump: creating DEFAULT "public.password_reset_tokens id"
+pg_dump: creating DEFAULT "public.payment_modes id"
+pg_dump: creating DEFAULT "public.serverless_job_logs id"
+pg_dump: creating DEFAULT "public.servers id"
+pg_dump: creating DEFAULT "public.services id"
+pg_dump: creating DEFAULT "public.twofa_email_codes id"
+pg_dump: creating DEFAULT "public.user_applications id"
+pg_dump: creating DEFAULT "public.users id"
+pg_dump: creating DEFAULT "public.users_logs id"
+pg_dump: processing data for table "public.application_costs"
+pg_dump: dumping contents of table "public.application_costs"
+pg_dump: processing data for table "public.applications"
+pg_dump: dumping contents of table "public.applications"
+pg_dump: processing data for table "public.auth_tokens"
+pg_dump: dumping contents of table "public.auth_tokens"
+pg_dump: processing data for table "public.billing_activities"
+pg_dump: dumping contents of table "public.billing_activities"
+pg_dump: processing data for table "public.configuration"
+pg_dump: dumping contents of table "public.configuration"
+pg_dump: processing data for table "public.deploy_templates"
+pg_dump: dumping contents of table "public.deploy_templates"
+pg_dump: processing data for table "public.deployments"
+pg_dump: dumping contents of table "public.deployments"
+pg_dump: processing data for table "public.instances"
+pg_dump: dumping contents of table "public.instances"
+pg_dump: processing data for table "public.invoicing"
+pg_dump: dumping contents of table "public.invoicing"
+pg_dump: processing data for table "public.mig_instances"
+pg_dump: dumping contents of table "public.mig_instances"
+pg_dump: processing data for table "public.mig_profiles"
+pg_dump: dumping contents of table "public.mig_profiles"
+pg_dump: processing data for table "public.password_reset_tokens"
+pg_dump: dumping contents of table "public.password_reset_tokens"
+pg_dump: processing data for table "public.payment_modes"
+pg_dump: dumping contents of table "public.payment_modes"
+pg_dump: processing data for table "public.serverless_job_logs"
+pg_dump: dumping contents of table "public.serverless_job_logs"
+pg_dump: processing data for table "public.serverless_job_results"
+pg_dump: dumping contents of table "public.serverless_job_results"
+pg_dump: processing data for table "public.serverless_jobs"
+pg_dump: dumping contents of table "public.serverless_jobs"
+pg_dump: processing data for table "public.servers"
+pg_dump: dumping contents of table "public.servers"
+pg_dump: processing data for table "public.services"
+pg_dump: dumping contents of table "public.services"
+pg_dump: processing data for table "public.twofa_email_codes"
+pg_dump: dumping contents of table "public.twofa_email_codes"
+pg_dump: processing data for table "public.user_applications"
+pg_dump: dumping contents of table "public.user_applications"
+pg_dump: processing data for table "public.users"
+pg_dump: dumping contents of table "public.users"
+pg_dump: processing data for table "public.users_logs"
+pg_dump: dumping contents of table "public.users_logs"
+pg_dump: executing SEQUENCE SET application_costs_id_seq
+pg_dump: executing SEQUENCE SET applications_id_seq
+pg_dump: executing SEQUENCE SET auth_tokens_id_seq
+pg_dump: executing SEQUENCE SET billing_activities_id_seq
+pg_dump: executing SEQUENCE SET configuration_param_id_seq
+pg_dump: executing SEQUENCE SET deploy_templates_id_seq
+pg_dump: executing SEQUENCE SET deployments_id_seq
+pg_dump: executing SEQUENCE SET instances_id_seq
+pg_dump: executing SEQUENCE SET invoicing_id_seq
+pg_dump: executing SEQUENCE SET mig_instances_id_seq
+pg_dump: executing SEQUENCE SET mig_profiles_id_seq
+pg_dump: executing SEQUENCE SET password_reset_tokens_id_seq
+pg_dump: executing SEQUENCE SET payment_modes_id_seq
+pg_dump: executing SEQUENCE SET serverless_job_logs_id_seq
+pg_dump: executing SEQUENCE SET servers_id_seq
+pg_dump: executing SEQUENCE SET services_id_seq
+pg_dump: executing SEQUENCE SET twofa_email_codes_id_seq
+pg_dump: executing SEQUENCE SET user_applications_id_seq
+pg_dump: executing SEQUENCE SET users_id_seq
+pg_dump: executing SEQUENCE SET users_logs_id_seq
+pg_dump: creating CONSTRAINT "public.application_costs application_costs_pkey"
+pg_dump: creating CONSTRAINT "public.applications applications_name_key"
+pg_dump: creating CONSTRAINT "public.applications applications_pkey"
+pg_dump: creating CONSTRAINT "public.auth_tokens auth_tokens_pkey"
+pg_dump: creating CONSTRAINT "public.auth_tokens auth_tokens_token_hash_key"
+pg_dump: creating CONSTRAINT "public.billing_activities billing_activities_pkey"
+pg_dump: creating CONSTRAINT "public.configuration configuration_pkey"
+pg_dump: creating CONSTRAINT "public.deploy_templates deploy_templates_pkey"
+pg_dump: creating CONSTRAINT "public.deploy_templates deploy_templates_template_id_key"
+pg_dump: creating CONSTRAINT "public.deployments deployments_pkey"
+pg_dump: creating CONSTRAINT "public.instances instances_pkey"
+pg_dump: creating CONSTRAINT "public.instances instances_service_id_instance_id_key"
+pg_dump: creating CONSTRAINT "public.invoicing invoicing_pkey"
+pg_dump: creating CONSTRAINT "public.mig_instances mig_instances_pkey"
+pg_dump: creating CONSTRAINT "public.mig_instances mig_instances_server_id_instance_uuid_key"
+pg_dump: creating CONSTRAINT "public.mig_profiles mig_profiles_pkey"
+pg_dump: creating CONSTRAINT "public.mig_profiles mig_profiles_server_id_profile_name_key"
+pg_dump: creating CONSTRAINT "public.password_reset_tokens password_reset_tokens_pkey"
+pg_dump: creating CONSTRAINT "public.password_reset_tokens password_reset_tokens_token_hash_key"
+pg_dump: creating CONSTRAINT "public.payment_modes payment_modes_pkey"
+pg_dump: creating CONSTRAINT "public.serverless_job_logs serverless_job_logs_pkey"
+pg_dump: creating CONSTRAINT "public.serverless_job_results serverless_job_results_pkey"
+pg_dump: creating CONSTRAINT "public.serverless_jobs serverless_jobs_pkey"
+pg_dump: creating CONSTRAINT "public.servers servers_pkey"
+pg_dump: creating CONSTRAINT "public.servers servers_server_ip_key"
+pg_dump: creating CONSTRAINT "public.services services_name_user_id_key"
+pg_dump: creating CONSTRAINT "public.services services_pkey"
+pg_dump: creating CONSTRAINT "public.twofa_email_codes twofa_email_codes_pkey"
+pg_dump: creating CONSTRAINT "public.user_applications user_applications_pkey"
+pg_dump: creating CONSTRAINT "public.user_applications user_applications_user_id_application_id_key"
+pg_dump: creating CONSTRAINT "public.users users_email_key"
+pg_dump: creating CONSTRAINT "public.users_logs users_logs_pkey"
+pg_dump: creating CONSTRAINT "public.users users_pkey"
+pg_dump: creating CONSTRAINT "public.users users_username_key"
+pg_dump: creating INDEX "public.idx_applications_url"
+pg_dump: creating INDEX "public.idx_auth_tokens_expires_at"
+pg_dump: creating INDEX "public.idx_auth_tokens_user_id"
+pg_dump: creating INDEX "public.idx_billing_activities_application_id"
+pg_dump: creating INDEX "public.idx_billing_activities_created_at"
+pg_dump: creating INDEX "public.idx_billing_activities_user_id"
+pg_dump: creating INDEX "public.idx_deploy_templates_type"
+pg_dump: creating INDEX "public.idx_deployments_application_id"
+pg_dump: creating INDEX "public.idx_deployments_backups_history"
+pg_dump: creating INDEX "public.idx_deployments_server_id"
+pg_dump: creating INDEX "public.idx_deployments_status"
+pg_dump: creating INDEX "public.idx_deployments_user_id"
+pg_dump: creating INDEX "public.idx_instances_server_id"
+pg_dump: creating INDEX "public.idx_instances_service_id"
+pg_dump: creating INDEX "public.idx_instances_status"
+pg_dump: creating INDEX "public.idx_mig_instances_server_id"
+pg_dump: creating INDEX "public.idx_mig_profiles_server_id"
+pg_dump: creating INDEX "public.idx_password_reset_tokens_expires_at"
+pg_dump: creating INDEX "public.idx_password_reset_tokens_user_id"
+pg_dump: creating INDEX "public.idx_serverless_job_logs_job_id"
+pg_dump: creating INDEX "public.idx_serverless_jobs_pending"
+pg_dump: creating INDEX "public.idx_serverless_jobs_status"
+pg_dump: creating INDEX "public.idx_serverless_jobs_user_id"
+pg_dump: creating INDEX "public.idx_services_name"
+pg_dump: creating INDEX "public.idx_twofa_email_codes_expires_at"
+pg_dump: creating INDEX "public.idx_twofa_email_codes_user_id"
+pg_dump: creating INDEX "public.idx_user_applications_application_id"
+pg_dump: creating INDEX "public.idx_user_applications_user_id"
+pg_dump: creating INDEX "public.idx_users_email"
+pg_dump: creating INDEX "public.idx_users_logs_datetime"
+pg_dump: creating INDEX "public.idx_users_logs_user_id"
+pg_dump: creating INDEX "public.idx_users_username"
+pg_dump: creating TRIGGER "public.application_costs update_application_costs_updated_at"
+pg_dump: creating TRIGGER "public.deployments update_deployments_updated_at"
+pg_dump: creating TRIGGER "public.instances update_instances_updated_at"
+pg_dump: creating TRIGGER "public.services update_services_updated_at"
+pg_dump: creating FK CONSTRAINT "public.application_costs application_costs_application_id_fkey"
+pg_dump: creating FK CONSTRAINT "public.auth_tokens auth_tokens_user_id_fkey"
+pg_dump: creating FK CONSTRAINT "public.billing_activities billing_activities_application_id_fkey"
+pg_dump: creating FK CONSTRAINT "public.billing_activities billing_activities_user_id_fkey"
+pg_dump: creating FK CONSTRAINT "public.deployments deployments_application_id_fkey"
+pg_dump: creating FK CONSTRAINT "public.deployments deployments_server_id_fkey"
+pg_dump: creating FK CONSTRAINT "public.deployments deployments_user_id_fkey"
+pg_dump: creating FK CONSTRAINT "public.serverless_jobs fk_user"
+pg_dump: creating FK CONSTRAINT "public.instances instances_server_id_fkey"
+pg_dump: creating FK CONSTRAINT "public.instances instances_service_id_fkey"
+pg_dump: creating FK CONSTRAINT "public.invoicing invoicing_payment_mode_id_fkey"
+pg_dump: creating FK CONSTRAINT "public.invoicing invoicing_user_id_fkey"
+pg_dump: creating FK CONSTRAINT "public.mig_instances mig_instances_server_id_fkey"
+pg_dump: creating FK CONSTRAINT "public.mig_profiles mig_profiles_server_id_fkey"
+pg_dump: creating FK CONSTRAINT "public.password_reset_tokens password_reset_tokens_user_id_fkey"
+pg_dump: creating FK CONSTRAINT "public.payment_modes payment_modes_user_id_fkey"
+pg_dump: creating FK CONSTRAINT "public.serverless_job_logs serverless_job_logs_job_id_fkey"
+pg_dump: creating FK CONSTRAINT "public.serverless_job_results serverless_job_results_job_id_fkey"
+pg_dump: creating FK CONSTRAINT "public.serverless_jobs serverless_jobs_user_id_fkey"
+pg_dump: creating FK CONSTRAINT "public.services services_user_id_fkey"
+pg_dump: creating FK CONSTRAINT "public.twofa_email_codes twofa_email_codes_user_id_fkey"
+pg_dump: creating FK CONSTRAINT "public.user_applications user_applications_application_id_fkey"
+pg_dump: creating FK CONSTRAINT "public.user_applications user_applications_user_id_fkey"
+pg_dump: creating FK CONSTRAINT "public.users_logs users_logs_user_id_fkey"
+pg_dump: executing SELECT pg_catalog.set_config('search_path', '', false);
+pg_dump: last built-in OID is 16383
+pg_dump: reading extensions
+pg_dump: identifying extension members
+pg_dump: reading schemas
+pg_dump: reading user-defined tables
+pg_dump: reading user-defined functions
+pg_dump: reading user-defined types
+pg_dump: reading procedural languages
+pg_dump: reading user-defined aggregate functions
+pg_dump: reading user-defined operators
+pg_dump: reading user-defined access methods
+pg_dump: reading user-defined operator classes
+pg_dump: reading user-defined operator families
+pg_dump: reading user-defined text search parsers
+pg_dump: reading user-defined text search templates
+pg_dump: reading user-defined text search dictionaries
+pg_dump: reading user-defined text search configurations
+pg_dump: reading user-defined foreign-data wrappers
+pg_dump: reading user-defined foreign servers
+pg_dump: reading default privileges
+pg_dump: reading user-defined collations
+pg_dump: reading user-defined conversions
+pg_dump: reading type casts
+pg_dump: reading transforms
+pg_dump: reading table inheritance information
+pg_dump: reading event triggers
+pg_dump: finding extension tables
+pg_dump: finding inheritance relationships
+pg_dump: reading column info for interesting tables
+pg_dump: flagging inherited columns in subtables
+pg_dump: reading partitioning data
+pg_dump: reading indexes
+pg_dump: flagging indexes in partitioned tables
+pg_dump: reading extended statistics
+pg_dump: reading constraints
+pg_dump: reading triggers
+pg_dump: reading rewrite rules
+pg_dump: reading policies
+pg_dump: reading row-level security policies
+pg_dump: reading publications
+pg_dump: reading publication membership of tables
+pg_dump: reading publication membership of schemas
+pg_dump: reading subscriptions
+pg_dump: reading subscription membership of tables
+pg_dump: reading large objects
+pg_dump: reading dependency data
+pg_dump: saving encoding = UTF8
+pg_dump: saving "standard_conforming_strings = on"
+pg_dump: saving "search_path = "
+pg_dump: processing data for table "public.applications"
+pg_dump: dumping contents of table "public.applications"
+pg_dump: processing data for table "public.application_costs"
+pg_dump: dumping contents of table "public.application_costs"
+pg_dump: processing data for table "public.users"
+pg_dump: dumping contents of table "public.users"
+pg_dump: processing data for table "public.auth_tokens"
+pg_dump: dumping contents of table "public.auth_tokens"
+pg_dump: processing data for table "public.billing_activities"
+pg_dump: dumping contents of table "public.billing_activities"
+pg_dump: processing data for table "public.configuration"
+pg_dump: dumping contents of table "public.configuration"
+pg_dump: processing data for table "public.deploy_templates"
+pg_dump: dumping contents of table "public.deploy_templates"
+pg_dump: processing data for table "public.servers"
+pg_dump: dumping contents of table "public.servers"
+pg_dump: processing data for table "public.deployments"
+pg_dump: dumping contents of table "public.deployments"
+pg_dump: processing data for table "public.services"
+pg_dump: dumping contents of table "public.services"
+pg_dump: processing data for table "public.instances"
+pg_dump: dumping contents of table "public.instances"
+pg_dump: processing data for table "public.payment_modes"
+pg_dump: dumping contents of table "public.payment_modes"
+pg_dump: processing data for table "public.invoicing"
+pg_dump: dumping contents of table "public.invoicing"
+pg_dump: processing data for table "public.mig_instances"
+pg_dump: dumping contents of table "public.mig_instances"
+pg_dump: processing data for table "public.mig_profiles"
+pg_dump: dumping contents of table "public.mig_profiles"
+pg_dump: processing data for table "public.password_reset_tokens"
+pg_dump: dumping contents of table "public.password_reset_tokens"
+pg_dump: processing data for table "public.serverless_jobs"
+pg_dump: dumping contents of table "public.serverless_jobs"
+pg_dump: processing data for table "public.serverless_job_logs"
+pg_dump: dumping contents of table "public.serverless_job_logs"
+pg_dump: processing data for table "public.serverless_job_results"
+pg_dump: dumping contents of table "public.serverless_job_results"
+pg_dump: processing data for table "public.twofa_email_codes"
+pg_dump: dumping contents of table "public.twofa_email_codes"
+pg_dump: processing data for table "public.user_applications"
+pg_dump: dumping contents of table "public.user_applications"
+pg_dump: processing data for table "public.users_logs"
+pg_dump: dumping contents of table "public.users_logs"
+pg_dump: executing SEQUENCE SET application_costs_id_seq
+pg_dump: executing SEQUENCE SET applications_id_seq
+pg_dump: executing SEQUENCE SET auth_tokens_id_seq
+pg_dump: executing SEQUENCE SET billing_activities_id_seq
+pg_dump: executing SEQUENCE SET configuration_param_id_seq
+pg_dump: executing SEQUENCE SET deploy_templates_id_seq
+pg_dump: executing SEQUENCE SET deployments_id_seq
+pg_dump: executing SEQUENCE SET instances_id_seq
+pg_dump: executing SEQUENCE SET invoicing_id_seq
+pg_dump: executing SEQUENCE SET mig_instances_id_seq
+pg_dump: executing SEQUENCE SET mig_profiles_id_seq
+pg_dump: executing SEQUENCE SET password_reset_tokens_id_seq
+pg_dump: executing SEQUENCE SET payment_modes_id_seq
+pg_dump: executing SEQUENCE SET serverless_job_logs_id_seq
+pg_dump: executing SEQUENCE SET servers_id_seq
+pg_dump: executing SEQUENCE SET services_id_seq
+pg_dump: executing SEQUENCE SET twofa_email_codes_id_seq
+pg_dump: executing SEQUENCE SET user_applications_id_seq
+pg_dump: executing SEQUENCE SET users_id_seq
+pg_dump: executing SEQUENCE SET users_logs_id_seq
+pg_dump: executing SELECT pg_catalog.set_config('search_path', '', false);
+pg_dump: last built-in OID is 16383
+pg_dump: reading extensions
+pg_dump: identifying extension members
+pg_dump: reading schemas
+pg_dump: reading user-defined tables
+pg_dump: reading user-defined functions
+pg_dump: reading user-defined types
+pg_dump: reading procedural languages
+pg_dump: reading user-defined aggregate functions
+pg_dump: reading user-defined operators
+pg_dump: reading user-defined access methods
+pg_dump: reading user-defined operator classes
+pg_dump: reading user-defined operator families
+pg_dump: reading user-defined text search parsers
+pg_dump: reading user-defined text search templates
+pg_dump: reading user-defined text search dictionaries
+pg_dump: reading user-defined text search configurations
+pg_dump: reading user-defined foreign-data wrappers
+pg_dump: reading user-defined foreign servers
+pg_dump: reading default privileges
+pg_dump: reading user-defined collations
+pg_dump: reading user-defined conversions
+pg_dump: reading type casts
+pg_dump: reading transforms
+pg_dump: reading table inheritance information
+pg_dump: reading event triggers
+pg_dump: finding extension tables
+pg_dump: finding inheritance relationships
+pg_dump: reading column info for interesting tables
+pg_dump: finding table default expressions
+pg_dump: finding table check constraints
+pg_dump: flagging inherited columns in subtables
+pg_dump: reading partitioning data
+pg_dump: reading indexes
+pg_dump: flagging indexes in partitioned tables
+pg_dump: reading extended statistics
+pg_dump: reading constraints
+pg_dump: reading triggers
+pg_dump: reading rewrite rules
+pg_dump: reading policies
+pg_dump: reading row-level security policies
+pg_dump: reading publications
+pg_dump: reading publication membership of tables
+pg_dump: reading publication membership of schemas
+pg_dump: reading subscriptions
+pg_dump: reading subscription membership of tables
+pg_dump: reading dependency data
+pg_dump: saving encoding = UTF8
+pg_dump: saving "standard_conforming_strings = on"
+pg_dump: saving "search_path = "
+pg_dump: creating EXTENSION "uuid-ossp"
+pg_dump: creating COMMENT "EXTENSION "uuid-ossp""
+pg_dump: creating FUNCTION "public.update_updated_at_column()"
+pg_dump: creating TABLE "public.application_costs"
+pg_dump: creating SEQUENCE "public.application_costs_id_seq"
+pg_dump: creating SEQUENCE OWNED BY "public.application_costs_id_seq"
+pg_dump: creating TABLE "public.applications"
+pg_dump: creating SEQUENCE "public.applications_id_seq"
+pg_dump: creating SEQUENCE OWNED BY "public.applications_id_seq"
+pg_dump: creating TABLE "public.auth_tokens"
+pg_dump: creating SEQUENCE "public.auth_tokens_id_seq"
+pg_dump: creating SEQUENCE OWNED BY "public.auth_tokens_id_seq"
+pg_dump: creating TABLE "public.billing_activities"
+pg_dump: creating SEQUENCE "public.billing_activities_id_seq"
+pg_dump: creating SEQUENCE OWNED BY "public.billing_activities_id_seq"
+pg_dump: creating TABLE "public.configuration"
+pg_dump: creating SEQUENCE "public.configuration_param_id_seq"
+pg_dump: creating SEQUENCE OWNED BY "public.configuration_param_id_seq"
+pg_dump: creating TABLE "public.deploy_templates"
+pg_dump: creating SEQUENCE "public.deploy_templates_id_seq"
+pg_dump: creating SEQUENCE OWNED BY "public.deploy_templates_id_seq"
+pg_dump: creating TABLE "public.deployments"
+pg_dump: creating COMMENT "public.COLUMN deployments.modification_history"
+pg_dump: creating COMMENT "public.COLUMN deployments.backups_history"
+pg_dump: creating SEQUENCE "public.deployments_id_seq"
+pg_dump: creating SEQUENCE OWNED BY "public.deployments_id_seq"
+pg_dump: creating TABLE "public.instances"
+pg_dump: creating SEQUENCE "public.instances_id_seq"
+pg_dump: creating SEQUENCE OWNED BY "public.instances_id_seq"
+pg_dump: creating TABLE "public.invoicing"
+pg_dump: creating SEQUENCE "public.invoicing_id_seq"
+pg_dump: creating SEQUENCE OWNED BY "public.invoicing_id_seq"
+pg_dump: creating TABLE "public.mig_instances"
+pg_dump: creating SEQUENCE "public.mig_instances_id_seq"
+pg_dump: creating SEQUENCE OWNED BY "public.mig_instances_id_seq"
+pg_dump: creating TABLE "public.mig_profiles"
+pg_dump: creating SEQUENCE "public.mig_profiles_id_seq"
+pg_dump: creating SEQUENCE OWNED BY "public.mig_profiles_id_seq"
+pg_dump: creating TABLE "public.password_reset_tokens"
+pg_dump: creating SEQUENCE "public.password_reset_tokens_id_seq"
+pg_dump: creating SEQUENCE OWNED BY "public.password_reset_tokens_id_seq"
+pg_dump: creating TABLE "public.payment_modes"
+pg_dump: creating SEQUENCE "public.payment_modes_id_seq"
+pg_dump: creating SEQUENCE OWNED BY "public.payment_modes_id_seq"
+pg_dump: creating TABLE "public.serverless_job_logs"
+pg_dump: creating SEQUENCE "public.serverless_job_logs_id_seq"
+pg_dump: creating SEQUENCE OWNED BY "public.serverless_job_logs_id_seq"
+pg_dump: creating TABLE "public.serverless_job_results"
+pg_dump: creating TABLE "public.serverless_jobs"
+pg_dump: creating COMMENT "public.COLUMN serverless_jobs.target_link"
+pg_dump: creating TABLE "public.servers"
+pg_dump: creating SEQUENCE "public.servers_id_seq"
+pg_dump: creating SEQUENCE OWNED BY "public.servers_id_seq"
+pg_dump: creating TABLE "public.services"
+pg_dump: creating SEQUENCE "public.services_id_seq"
+pg_dump: creating SEQUENCE OWNED BY "public.services_id_seq"
+pg_dump: creating TABLE "public.twofa_email_codes"
+pg_dump: creating SEQUENCE "public.twofa_email_codes_id_seq"
+pg_dump: creating SEQUENCE OWNED BY "public.twofa_email_codes_id_seq"
+pg_dump: creating TABLE "public.user_applications"
+pg_dump: creating COMMENT "public.COLUMN user_applications.http_port3"
+pg_dump: creating COMMENT "public.COLUMN user_applications.https_port3"
+pg_dump: creating COMMENT "public.COLUMN user_applications.http_port4"
+pg_dump: creating COMMENT "public.COLUMN user_applications.https_port4"
+pg_dump: creating COMMENT "public.COLUMN user_applications.http_port5"
+pg_dump: creating COMMENT "public.COLUMN user_applications.https_port5"
+pg_dump: creating COMMENT "public.COLUMN user_applications.http_port6"
+pg_dump: creating COMMENT "public.COLUMN user_applications.https_port6"
+pg_dump: creating SEQUENCE "public.user_applications_id_seq"
+pg_dump: creating SEQUENCE OWNED BY "public.user_applications_id_seq"
+pg_dump: creating TABLE "public.users"
+pg_dump: creating SEQUENCE "public.users_id_seq"
+pg_dump: creating SEQUENCE OWNED BY "public.users_id_seq"
+pg_dump: creating TABLE "public.users_logs"
+pg_dump: creating SEQUENCE "public.users_logs_id_seq"
+pg_dump: creating SEQUENCE OWNED BY "public.users_logs_id_seq"
+pg_dump: creating DEFAULT "public.application_costs id"
+pg_dump: creating DEFAULT "public.applications id"
+pg_dump: creating DEFAULT "public.auth_tokens id"
+pg_dump: creating DEFAULT "public.billing_activities id"
+pg_dump: creating DEFAULT "public.configuration param_id"
+pg_dump: creating DEFAULT "public.deploy_templates id"
+pg_dump: creating DEFAULT "public.deployments id"
+pg_dump: creating DEFAULT "public.instances id"
+pg_dump: creating DEFAULT "public.invoicing id"
+pg_dump: creating DEFAULT "public.mig_instances id"
+pg_dump: creating DEFAULT "public.mig_profiles id"
+pg_dump: creating DEFAULT "public.password_reset_tokens id"
+pg_dump: creating DEFAULT "public.payment_modes id"
+pg_dump: creating DEFAULT "public.serverless_job_logs id"
+pg_dump: creating DEFAULT "public.servers id"
+pg_dump: creating DEFAULT "public.services id"
+pg_dump: creating DEFAULT "public.twofa_email_codes id"
+pg_dump: creating DEFAULT "public.user_applications id"
+pg_dump: creating DEFAULT "public.users id"
+pg_dump: creating DEFAULT "public.users_logs id"
+pg_dump: creating CONSTRAINT "public.application_costs application_costs_pkey"
+pg_dump: creating CONSTRAINT "public.applications applications_name_key"
+pg_dump: creating CONSTRAINT "public.applications applications_pkey"
+pg_dump: creating CONSTRAINT "public.auth_tokens auth_tokens_pkey"
+pg_dump: creating CONSTRAINT "public.auth_tokens auth_tokens_token_hash_key"
+pg_dump: creating CONSTRAINT "public.billing_activities billing_activities_pkey"
+pg_dump: creating CONSTRAINT "public.configuration configuration_pkey"
+pg_dump: creating CONSTRAINT "public.deploy_templates deploy_templates_pkey"
+pg_dump: creating CONSTRAINT "public.deploy_templates deploy_templates_template_id_key"
+pg_dump: creating CONSTRAINT "public.deployments deployments_pkey"
+pg_dump: creating CONSTRAINT "public.instances instances_pkey"
+pg_dump: creating CONSTRAINT "public.instances instances_service_id_instance_id_key"
+pg_dump: creating CONSTRAINT "public.invoicing invoicing_pkey"
+pg_dump: creating CONSTRAINT "public.mig_instances mig_instances_pkey"
+pg_dump: creating CONSTRAINT "public.mig_instances mig_instances_server_id_instance_uuid_key"
+pg_dump: creating CONSTRAINT "public.mig_profiles mig_profiles_pkey"
+pg_dump: creating CONSTRAINT "public.mig_profiles mig_profiles_server_id_profile_name_key"
+pg_dump: creating CONSTRAINT "public.password_reset_tokens password_reset_tokens_pkey"
+pg_dump: creating CONSTRAINT "public.password_reset_tokens password_reset_tokens_token_hash_key"
+pg_dump: creating CONSTRAINT "public.payment_modes payment_modes_pkey"
+pg_dump: creating CONSTRAINT "public.serverless_job_logs serverless_job_logs_pkey"
+pg_dump: creating CONSTRAINT "public.serverless_job_results serverless_job_results_pkey"
+pg_dump: creating CONSTRAINT "public.serverless_jobs serverless_jobs_pkey"
+pg_dump: creating CONSTRAINT "public.servers servers_pkey"
+pg_dump: creating CONSTRAINT "public.servers servers_server_ip_key"
+pg_dump: creating CONSTRAINT "public.services services_name_user_id_key"
+pg_dump: creating CONSTRAINT "public.services services_pkey"
+pg_dump: creating CONSTRAINT "public.twofa_email_codes twofa_email_codes_pkey"
+pg_dump: creating CONSTRAINT "public.user_applications user_applications_pkey"
+pg_dump: creating CONSTRAINT "public.user_applications user_applications_user_id_application_id_key"
+pg_dump: creating CONSTRAINT "public.users users_email_key"
+pg_dump: creating CONSTRAINT "public.users_logs users_logs_pkey"
+pg_dump: creating CONSTRAINT "public.users users_pkey"
+pg_dump: creating CONSTRAINT "public.users users_username_key"
+pg_dump: creating INDEX "public.idx_applications_url"
+pg_dump: creating INDEX "public.idx_auth_tokens_expires_at"
+pg_dump: creating INDEX "public.idx_auth_tokens_user_id"
+pg_dump: creating INDEX "public.idx_billing_activities_application_id"
+pg_dump: creating INDEX "public.idx_billing_activities_created_at"
+pg_dump: creating INDEX "public.idx_billing_activities_user_id"
+pg_dump: creating INDEX "public.idx_deploy_templates_type"
+pg_dump: creating INDEX "public.idx_deployments_application_id"
+pg_dump: creating INDEX "public.idx_deployments_backups_history"
+pg_dump: creating INDEX "public.idx_deployments_server_id"
+pg_dump: creating INDEX "public.idx_deployments_status"
+pg_dump: creating INDEX "public.idx_deployments_user_id"
+pg_dump: creating INDEX "public.idx_instances_server_id"
+pg_dump: creating INDEX "public.idx_instances_service_id"
+pg_dump: creating INDEX "public.idx_instances_status"
+pg_dump: creating INDEX "public.idx_mig_instances_server_id"
+pg_dump: creating INDEX "public.idx_mig_profiles_server_id"
+pg_dump: creating INDEX "public.idx_password_reset_tokens_expires_at"
+pg_dump: creating INDEX "public.idx_password_reset_tokens_user_id"
+pg_dump: creating INDEX "public.idx_serverless_job_logs_job_id"
+pg_dump: creating INDEX "public.idx_serverless_jobs_pending"
+pg_dump: creating INDEX "public.idx_serverless_jobs_status"
+pg_dump: creating INDEX "public.idx_serverless_jobs_user_id"
+pg_dump: creating INDEX "public.idx_services_name"
+pg_dump: creating INDEX "public.idx_twofa_email_codes_expires_at"
+pg_dump: creating INDEX "public.idx_twofa_email_codes_user_id"
+pg_dump: creating INDEX "public.idx_user_applications_application_id"
+pg_dump: creating INDEX "public.idx_user_applications_user_id"
+pg_dump: creating INDEX "public.idx_users_email"
+pg_dump: creating INDEX "public.idx_users_logs_datetime"
+pg_dump: creating INDEX "public.idx_users_logs_user_id"
+pg_dump: creating INDEX "public.idx_users_username"
+pg_dump: creating TRIGGER "public.application_costs update_application_costs_updated_at"
+pg_dump: creating TRIGGER "public.deployments update_deployments_updated_at"
+pg_dump: creating TRIGGER "public.instances update_instances_updated_at"
+pg_dump: creating TRIGGER "public.services update_services_updated_at"
+pg_dump: creating FK CONSTRAINT "public.application_costs application_costs_application_id_fkey"
+pg_dump: creating FK CONSTRAINT "public.auth_tokens auth_tokens_user_id_fkey"
+pg_dump: creating FK CONSTRAINT "public.billing_activities billing_activities_application_id_fkey"
+pg_dump: creating FK CONSTRAINT "public.billing_activities billing_activities_user_id_fkey"
+pg_dump: creating FK CONSTRAINT "public.deployments deployments_application_id_fkey"
+pg_dump: creating FK CONSTRAINT "public.deployments deployments_server_id_fkey"
+pg_dump: creating FK CONSTRAINT "public.deployments deployments_user_id_fkey"
+pg_dump: creating FK CONSTRAINT "public.serverless_jobs fk_user"
+pg_dump: creating FK CONSTRAINT "public.instances instances_server_id_fkey"
+pg_dump: creating FK CONSTRAINT "public.instances instances_service_id_fkey"
+pg_dump: creating FK CONSTRAINT "public.invoicing invoicing_payment_mode_id_fkey"
+pg_dump: creating FK CONSTRAINT "public.invoicing invoicing_user_id_fkey"
+pg_dump: creating FK CONSTRAINT "public.mig_instances mig_instances_server_id_fkey"
+pg_dump: creating FK CONSTRAINT "public.mig_profiles mig_profiles_server_id_fkey"
+pg_dump: creating FK CONSTRAINT "public.password_reset_tokens password_reset_tokens_user_id_fkey"
+pg_dump: creating FK CONSTRAINT "public.payment_modes payment_modes_user_id_fkey"
+pg_dump: creating FK CONSTRAINT "public.serverless_job_logs serverless_job_logs_job_id_fkey"
+pg_dump: creating FK CONSTRAINT "public.serverless_job_results serverless_job_results_job_id_fkey"
+pg_dump: creating FK CONSTRAINT "public.serverless_jobs serverless_jobs_user_id_fkey"
+pg_dump: creating FK CONSTRAINT "public.services services_user_id_fkey"
+pg_dump: creating FK CONSTRAINT "public.twofa_email_codes twofa_email_codes_user_id_fkey"
+pg_dump: creating FK CONSTRAINT "public.user_applications user_applications_application_id_fkey"
+pg_dump: creating FK CONSTRAINT "public.user_applications user_applications_user_id_fkey"
+pg_dump: creating FK CONSTRAINT "public.users_logs users_logs_user_id_fkey"

@@ -1,0 +1,13 @@
+http:
+  routers:
+    control-plane:
+      rule: Host(`agentic-ai-plateform.com`)
+      entryPoints:
+      - websecure
+      service: control-plane
+      tls: {}
+  services:
+    control-plane:
+      loadBalancer:
+        servers:
+        - url: http://127.0.0.1:5000
