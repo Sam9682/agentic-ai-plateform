@@ -1,6 +1,0 @@
-tls:
-  certificates:
-  - certFile: /home/partipolia/agentic-ai-plateform/ssl/agentic-ai-plateform.com/fullchain_domain.crt
-    keyFile: /home/partipolia/agentic-ai-plateform/ssl/agentic-ai-plateform.com/privateKey_domain.key
-  stores:
-    default: {}
