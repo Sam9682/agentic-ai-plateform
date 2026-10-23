@@ -7,12 +7,21 @@ from datetime import datetime
 from ..config_postgres import TIMEOUT_SUBPROCESS_RUN, TIMEOUT_request_dev_ai_for_app_RUN, TIMEOUT_CLEAN_SHUTDOWN, TIMEOUT_QCHAT_OPERATOR_RUN, AI_ENGINE, PLTF_FOLDER, LINUX_USER_INSTALLATION
 
 # Path configuration functions
+def get_install_root():
+    """Return the platform install root (the repository root directory).
+
+    Derived from this module's location: ``src/routes/genai_routes.py`` sits two
+    directories below the install root, so ``dirname`` three times yields the
+    root. This is independent of ``PLTF_FOLDER`` in conf/deploy.ini, so it keeps
+    working even when that config value does not match the actual on-disk folder
+    name (which is exactly the mismatch that broke the skills-folder lookup).
+    """
+    return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
 def get_logs_dir():
     """Get logs directory path"""
-    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    # retreive the parent folder of base_dir
-    base_dir = os.path.dirname(base_dir)
-    return os.path.join(base_dir, 'logs')
+    return os.path.join(get_install_root(), 'logs')
 
 # Configure logging for genai activities
 logger = logging.getLogger(__name__)
@@ -44,6 +53,60 @@ from ..database_postgres import db_manager
 
 genai_bp = Blueprint('genai', __name__, url_prefix='/api')
 
+# Skills/context directory names, newest first. The skills content was renamed
+# from the legacy ``shared/`` folder to ``agentic-ai-plateform--skills/`` (git
+# submodule). Deployed installs created before the rename still carry the
+# content under ``shared/``, so the resolver below checks the new name first and
+# transparently falls back to the legacy name. This keeps START/STOP/LOGS and
+# the other recognized actions working on both old and new installs.
+SKILLS_DIR_CANDIDATES = ('agentic-ai-plateform--skills', 'shared')
+
+
+def _skills_base_dirs():
+    """Candidate base directories that may contain a skills/context folder.
+
+    Ordered by reliability:
+      1. The actual install root derived from this file's location
+         (``get_install_root()``) — correct even when ``PLTF_FOLDER`` is stale.
+      2. The ``/home/{LINUX_USER_INSTALLATION}/{PLTF_FOLDER}`` path built from
+         conf/deploy.ini — kept as a fallback for non-standard layouts.
+    Duplicates are removed while preserving order.
+    """
+    bases = [
+        get_install_root(),
+        f"/home/{LINUX_USER_INSTALLATION}/{PLTF_FOLDER}",
+    ]
+    seen = set()
+    ordered = []
+    for b in bases:
+        if b and b not in seen:
+            seen.add(b)
+            ordered.append(b)
+    return ordered
+
+
+def _candidate_context_paths(safe_action):
+    """Yield every path where ``{SAFE_ACTION}_context.md`` might live, in order."""
+    for base in _skills_base_dirs():
+        for skills_dir in SKILLS_DIR_CANDIDATES:
+            yield f"{base}/{skills_dir}/{safe_action}_context.md"
+
+
+def resolve_context_file(safe_action):
+    """Resolve the on-disk path of a ``{SAFE_ACTION}_context.md`` skills file.
+
+    Searches, in order: the install-root-relative skills folder (new name, then
+    legacy ``shared/``) and the ``PLTF_FOLDER``-based skills folder (new name,
+    then legacy ``shared/``). Returns the first existing file path, or ``None``
+    when no candidate exists. ``safe_action`` must already be sanitized by the
+    caller.
+    """
+    for candidate in _candidate_context_paths(safe_action):
+        if os.path.exists(candidate):
+            return candidate
+    return None
+
+
 def return_prompt_for_developer(detected_action, application_name, application_folder, user_name, user_email, repo_gitea_url='', branch_name='', repo_github_url='', message='', version='default'):
     l_prompt = ''
 
@@ -52,7 +115,7 @@ def return_prompt_for_developer(detected_action, application_name, application_f
         if not detected_action or not isinstance(detected_action, str):
             logger.warning(f'AI Chat Developer - Security: Invalid detected_action input rejected: {repr(detected_action)}')
             return ''
-        
+
         # Remove any path traversal characters and limit to alphanumeric + underscore
         original_action = detected_action
         safe_action = ''.join(c for c in detected_action.upper() if c.isalnum() or c == '_')[:50]
@@ -60,20 +123,20 @@ def return_prompt_for_developer(detected_action, application_name, application_f
             logger.warning(f'AI Chat Developer - Security: Potentially malicious detected_action sanitized from "{original_action}" to "{safe_action}"')
             if not safe_action:
                 return ''
-        
-        context_file = f"/home/{LINUX_USER_INSTALLATION}/{PLTF_FOLDER}/agentic-ai-plateform--skills/{safe_action}_context.md"
-        
-        if os.path.exists(context_file):
+
+        context_file = resolve_context_file(safe_action)
+
+        if context_file:
             logger.info(f'AI Chat Developer - Loading context from {detected_action.upper()}_context.md')
 
             with open(context_file, 'r') as f:
                 context_template = f.read()
-            
+
             # Get application ID from database for APPLICATION_IDENTITY_NUMBER
             application_id = 0  # Default fallback
             if application_name:
                 app_data = db_manager.execute_query(
-                    'SELECT id FROM applications WHERE name = %s', 
+                    'SELECT id FROM applications WHERE name = %s',
                     (application_name,), fetch_one=True
                 )
                 if app_data:
@@ -81,11 +144,11 @@ def return_prompt_for_developer(detected_action, application_name, application_f
                     logger.info(f"Found application ID: {application_id} for {application_name}")
                 else:
                     logger.warning(f"Application {application_name} not found in database, using ID 0")
-            
+
             # Load configuration values from database_postgres.py (unused but required for context)
             from ..database_postgres import load_deploy_config
             _ = load_deploy_config()  # Load but don't unpack unused variables
-            
+
             # Replace placeholders
             try:
                 l_prompt = context_template.replace('{{USER_ID}}', str(session.get('user_id', 0)))
@@ -146,26 +209,26 @@ def return_prompt_for_operator(detected_action, application_name, application_fo
         if not detected_action or not isinstance(detected_action, str):
             logger.warning('AI Chat Operator - Context file not found: invalid action, using default Q&A mode')
             return _create_fallback_prompt(detected_action), False
-        
+
         # Remove any path traversal characters and limit to alphanumeric + underscore
         safe_action = ''.join(c for c in detected_action.upper() if c.isalnum() or c == '_')[:50]
         if not safe_action:
             logger.warning('AI Chat Operator - Context file not found: invalid action, using default Q&A mode')
             return _create_fallback_prompt(detected_action), False
-        
-        context_file = f"/home/{LINUX_USER_INSTALLATION}/{PLTF_FOLDER}/agentic-ai-plateform--skills/{safe_action}_context.md"
-                
-        if os.path.exists(context_file):
+
+        context_file = resolve_context_file(safe_action)
+
+        if context_file:
             logger.info(f'AI Chat Operator - Loading context from {detected_action.upper()}_context.md')
-            
+
             with open(context_file, 'r') as f:
                 context_template = f.read()
-            
+
             # Get application ID from database for APPLICATION_IDENTITY_NUMBER
             application_id = 0  # Default fallback
             if application_name:
                 app_data = db_manager.execute_query(
-                    'SELECT id FROM applications WHERE name = %s', 
+                    'SELECT id FROM applications WHERE name = %s',
                     (application_name,), fetch_one=True
                 )
                 if app_data:
@@ -177,7 +240,7 @@ def return_prompt_for_operator(detected_action, application_name, application_fo
             # Load configuration values from database_postgres.py (unused but required for context)
             from ..database_postgres import load_deploy_config
             _ = load_deploy_config()  # Load but don't unpack unused variables
-            
+
             # Replace placeholders
             try:
                 l_prompt = context_template.replace('{{USER_ID}}', str(session.get('user_id', 0)))
@@ -194,16 +257,17 @@ def return_prompt_for_operator(detected_action, application_name, application_fo
             # Context file is missing. Distinguish a recognized executable
             # operator action (missing context is an error, not a reason to
             # chat) from a genuinely invalid/empty action.
+            searched = ', '.join(_candidate_context_paths(safe_action))
             if _is_recognized_operator_action(safe_action):
                 logger.error(
                     f'AI Chat Operator - Missing context file for recognized action '
-                    f'{safe_action}: {context_file}. Refusing to degrade to advisor '
-                    f'mode; reporting explicit failure.'
+                    f'{safe_action} (searched: {searched}). Refusing to degrade to '
+                    f'advisor mode; reporting explicit failure.'
                 )
                 return None, False
-            logger.warning(f'AI Chat Operator - Context file not found: {context_file}, using default Q&A mode')
+            logger.warning(f'AI Chat Operator - Context file not found (searched: {searched}), using default Q&A mode')
             l_prompt = _create_fallback_prompt(detected_action)
-            logger.info(f'AI Chat Operator - (Context {context_file} not found) Prompt : {l_prompt[:120]}')
+            logger.info(f'AI Chat Operator - (Context not found) Prompt : {l_prompt[:120]}')
             return l_prompt, False
 
     return l_prompt, False
@@ -213,43 +277,43 @@ def api_deployment_logs(deployment_id):
     # Log API call
     user_id = session.get('user_id', 'anonymous')
     remote_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
-    
+
     logger.info(f"[DEPLOYMENT LOGS] GET /api/deployments/{deployment_id}/logs - User: {user_id}, IP: {remote_ip}")
-    
+
     if 'user_id' not in session:
         logger.warning(f"[DEPLOYMENT LOGS] FAILED - Authentication required from {remote_ip}")
         return jsonify({'error': 'Authentication required'}), 401
-    
-    deployment = db_manager.execute_query('''SELECT deployment_path FROM deployments 
+
+    deployment = db_manager.execute_query('''SELECT deployment_path FROM deployments
         WHERE id = %s AND user_id = %s
     ''', (deployment_id, session['user_id']), fetch_one=True)
-    
+
     if not deployment:
         logger.warning(f"[DEPLOYMENT LOGS] FAILED - Deployment {deployment_id} not found for user {user_id}")
         return jsonify({'error': 'Deployment not found'}), 404
-    
+
     # Extract deployment path safely
     deploy_path = str(deployment[0] if isinstance(deployment, (list, tuple)) else deployment)
-    
+
     # Validate deployment path to prevent path traversal
     if not deploy_path or '..' in deploy_path or not deploy_path.startswith(f'/home/{LINUX_USER_INSTALLATION}/deployments/'):
         logger.warning(f"[DEPLOYMENT LOGS] SECURITY - Invalid deployment path: {deploy_path} for user {user_id}")
         return jsonify({'error': 'Invalid deployment path'}), 400
-    
+
     log_file = os.path.join(deploy_path, 'deployment.log')
-    
+
     # Additional security check for log file path
     if not log_file.startswith(f'/home/{LINUX_USER_INSTALLATION}/deployments/') or '..' in log_file:
         logger.warning(f"[DEPLOYMENT LOGS] SECURITY - Invalid log file path: {log_file} for user {user_id}")
         return jsonify({'error': 'Invalid log file path'}), 400
-    
+
     try:
         if os.path.exists(log_file):
             with open(log_file, 'r') as f:
                 logs = f.read()
         else:
             logs = 'No logs available'
-        
+
         logger.info(f"[DEPLOYMENT LOGS] SUCCESS - Returned logs for deployment {deployment_id} to user {user_id}")
         return jsonify({'logs': logs})
     except Exception as e:
@@ -261,12 +325,12 @@ def api_request_dev_ai_for_app():
     from flask import Response, stream_with_context
     import subprocess
     import re
-    
+
     user_id = session.get('user_id', '0')
-    
+
     if 'user_id' not in session:
         return jsonify({'error': 'Authentication required'}), 401
-    
+
     data = request.get_json()
     message = data.get('message', '').strip()
     application_name = data.get('application_name', '')
@@ -280,7 +344,7 @@ def api_request_dev_ai_for_app():
             ('agentic_engine',), fetch_one=True
         )
         agentic_engine = config_result[0] if config_result else AI_ENGINE
-    
+
     agentic_command = data.get('agentic_command')
     if not agentic_command:
         # Get from PostgreSQL database
@@ -292,12 +356,12 @@ def api_request_dev_ai_for_app():
 
     if not message:
         return jsonify({'error': 'Message required'}), 400
-    
+
     user_details = db_manager.execute_query(
-        'SELECT username, email, first_name, last_name FROM users WHERE id = %s', 
+        'SELECT username, email, first_name, last_name FROM users WHERE id = %s',
         (session['user_id'],), fetch_one=True
     )
-    
+
     username = user_details[0] if user_details else 'user'
     user_email = user_details[1] if user_details else 'user@example.com'
     user_name = f"{user_details[2] or ''} {user_details[3] or ''}" if user_details else 'User'
@@ -309,7 +373,7 @@ def api_request_dev_ai_for_app():
     def generate():
         try:
             yield f"data: {json.dumps({'chunk': 'Starting Agentic AI Developer session...'})}\n\n"
-            
+
             # Build prompt directly here
             timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
             branch_name = f"{session['user_id']}-automorph-{application_name}-{timestamp}"
@@ -321,9 +385,9 @@ def api_request_dev_ai_for_app():
             repo_dir = application_folder if application_folder else f"/home/{LINUX_USER_INSTALLATION}/deployments/"
             repo_github_url = f"git@github.com:Sam9682/{application_name}" if application_name else "git@github.com:Sam9682/"
             repo_gitea_url = f"http://gitadmin:password@localhost:3000/gitadmin/{branch_name}"
-            
+
             yield f"data: {json.dumps({'chunk': f'App: {application_name}, Folder: {repo_gitea_url}'})}\n\n"
-            
+
             # 🧠 Prompt complet envoyé à Agentic AI
             l_prompt = return_prompt_for_developer(detected_action, application_name, application_folder, user_name, user_email,  repo_gitea_url, branch_name, repo_github_url, message)
 
@@ -348,7 +412,7 @@ def api_request_dev_ai_for_app():
                 # Find engine command
                 from ..config_postgres import get_shai_paths
                 engine_cmd = get_shai_paths()
-                
+
                 if not engine_cmd:
                     yield f"data: {json.dumps({'error': f'{agentic_engine} not found for SHAI '})}\n\n"
                     return
@@ -360,7 +424,7 @@ def api_request_dev_ai_for_app():
                 # Default to qchat
                 from ..config_postgres import get_qchat_paths
                 engine_cmd = get_qchat_paths()
-                
+
                 if not engine_cmd:
                     yield f"data: {json.dumps({'error': f'{agentic_engine} not found for Q/Kiro-cli '})}\n\n"
                     return
@@ -371,28 +435,28 @@ def api_request_dev_ai_for_app():
 
             # Start process with longer timeout and better error handling
             try:
-                process = subprocess.Popen(cmd_args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, 
+                process = subprocess.Popen(cmd_args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                           text=True, bufsize=1, env=engine_env, preexec_fn=os.setsid)
             except (OSError, subprocess.SubprocessError) as e:
                 yield f"data: {json.dumps({'error': f'Failed to start Agentic AI process: {str(e)}'})}\n\n"
                 return
-            
+
             ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
-            
+
             import signal
             import time
-            
+
             # Set a longer timeout for Agentic AI operations (30 minutes)
             timeout_seconds = TIMEOUT_request_dev_ai_for_app_RUN
             start_time = time.time()
-            
+
             try:
                 for line in iter(process.stdout.readline, ''):
                     if line:
                         clean_line = ansi_escape.sub('', line.rstrip())
                         if clean_line and 'Thinking...' not in clean_line:
                             yield f"data: {json.dumps({'chunk': clean_line})}\n\n"
-                    
+
                     # Check timeout
                     if time.time() - start_time > timeout_seconds:
                         yield f"data: {json.dumps({'chunk': 'WARNING: Agentic AI operation timeout reached (30 minutes), terminating...'})}\n\n"
@@ -401,28 +465,28 @@ def api_request_dev_ai_for_app():
                         if process.poll() is None:
                             os.killpg(os.getpgid(process.pid), signal.SIGKILL)
                         break
-                
+
                 process.wait(timeout=TIMEOUT_CLEAN_SHUTDOWN)  # Wait up to 1 minute for clean shutdown
-                
+
             except subprocess.TimeoutExpired:
                 yield f"data: {json.dumps({'chunk': 'Agentic AI process cleanup timeout, forcing termination...'})}\n\n"
                 os.killpg(os.getpgid(process.pid), signal.SIGKILL)
                 process.returncode = -1
-            
+
             # After MODIFY_CODE completion, create Gitea branch and update database
             if process.returncode == 0 and detected_action == 'MODIFY_CODE' and application_name:
                 try:
                     yield f"data: {json.dumps({'chunk': 'Creating Gitea branch and updating database...'})}\n\n"
-                    
+
                     # Get deployment record
                     deployment = db_manager.execute_query(
                         'SELECT id, modification_history FROM deployments WHERE user_id = %s AND application_name = %s ORDER BY created_at DESC LIMIT 1',
                         (session['user_id'], application_name), fetch_one=True
                     )
-                    
+
                     if deployment:
                         deployment_id, history = deployment[0], deployment[1] or []
-                        
+
                         # Add new modification to history
                         new_mod = {
                             'timestamp': datetime.now().isoformat(),
@@ -432,7 +496,7 @@ def api_request_dev_ai_for_app():
                             'message': message[:200]
                         }
                         history.append(new_mod)
-                        
+
                         # Update deployment with Gitea URL and history
                         db_manager.execute_query(
                             'UPDATE deployments SET gitea_branch_url = %s, modification_history = %s::jsonb WHERE id = %s',
@@ -441,15 +505,15 @@ def api_request_dev_ai_for_app():
                         yield f"data: {json.dumps({'chunk': f'Database updated with Gitea branch: {branch_name}'})}\n\n"
                     else:
                         yield f"data: {json.dumps({'chunk': 'Warning: Deployment record not found'})}\n\n"
-                        
+
                 except Exception as e:
                     yield f"data: {json.dumps({'chunk': f'Warning: Failed to update Gitea/database: {str(e)}'})}\n\n"
-            
+
             yield f"data: {json.dumps({'done': True, 'success': process.returncode == 0, 'returncode': process.returncode})}\n\n"
-            
+
         except Exception as e:
             yield f"data: {json.dumps({'error': f'Exception in generate(): {str(e)}'})}\n\n"
-    
+
     return Response(stream_with_context(generate()), mimetype='text/event-stream',
                    headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
 
@@ -458,12 +522,12 @@ def api_request_ops_ai_for_app():
     from flask import Response, stream_with_context
     import subprocess
     import re
-    
+
     user_id = session.get('user_id', 'anonymous')
-    
+
     if 'user_id' not in session:
         return jsonify({'error': 'Authentication required'}), 401
-    
+
     data = request.get_json()
     message = data.get('message', '').strip()
     application_name = data.get('application_name', '')
@@ -477,7 +541,7 @@ def api_request_ops_ai_for_app():
             ('agentic_engine',), fetch_one=True
         )
         agentic_engine = config_result[0] if config_result else AI_ENGINE
-    
+
     agentic_command = data.get('agentic_command')
     if not agentic_command:
         # Get from PostgreSQL database
@@ -486,15 +550,15 @@ def api_request_ops_ai_for_app():
             ('agentic_command',), fetch_one=True
         )
         agentic_command = config_result[0] if config_result else ''
-    
+
     if not message:
         return jsonify({'error': 'Message required'}), 400
-    
+
     user_details = db_manager.execute_query(
-        'SELECT username, email, first_name, last_name FROM users WHERE id = %s', 
+        'SELECT username, email, first_name, last_name FROM users WHERE id = %s',
         (session['user_id'],), fetch_one=True
     )
-    
+
     username = user_details[0] if user_details else 'user'
     user_email = user_details[1] if user_details else 'user@example.com'
     user_name = f"{user_details[2] or ''} {user_details[3] or ''}" if user_details else 'User'
@@ -505,13 +569,13 @@ def api_request_ops_ai_for_app():
 
     def generate():
         import os
-        
+
         try:
             yield f"data: {json.dumps({'chunk': 'Starting agentic AI DevOps session...'})}\n\n"
-            
+
             # Build prompt directly here instead of calling process_qchat_devops
             # Detect application management actions
-            
+
             if detected_action:
                 # Map complete sentences to actions
                 if 'MODIFY_CODE' in detected_action:
@@ -582,7 +646,7 @@ User Question: {message}. Provide a helpful and informative response."""
                 # Find engine command
                 from ..config_postgres import get_shai_paths
                 engine_cmd = get_shai_paths()
-                
+
                 if not engine_cmd:
                     yield f"data: {json.dumps({'error': f'{agentic_engine} not found for SHAI '})}\n\n"
                     return
@@ -594,7 +658,7 @@ User Question: {message}. Provide a helpful and informative response."""
                 # Default to qchat
                 from ..config_postgres import get_qchat_paths
                 engine_cmd = get_qchat_paths()
-                
+
                 if not engine_cmd:
                     yield f"data: {json.dumps({'error': f'{agentic_engine} not found for Q/Kiro-cli '})}\n\n"
                     return
@@ -602,31 +666,31 @@ User Question: {message}. Provide a helpful and informative response."""
                 cmd_args = [engine_cmd, 'chat', '--trust-all-tools', l_prompt]
 
             yield f"data: {json.dumps({'chunk': f'Found {agentic_engine} at: {engine_cmd}'})}\n\n"
-            
+
             # Start process with longer timeout and better error handling
             try:
-                process = subprocess.Popen(cmd_args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, 
+                process = subprocess.Popen(cmd_args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                           text=True, bufsize=1, env=engine_env, preexec_fn=os.setsid)
             except (OSError, subprocess.SubprocessError) as e:
                 yield f"data: {json.dumps({'error': f'Failed to start Agentic AI process: {str(e)}'})}\n\n"
                 return
-            
+
             ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
-            
+
             import signal
             import time
-            
+
             # Set a longer timeout for Agentic AI operations (30 minutes)
             timeout_seconds = TIMEOUT_QCHAT_OPERATOR_RUN
             start_time = time.time()
-            
+
             try:
                 for line in iter(process.stdout.readline, ''):
                     if line:
                         clean_line = ansi_escape.sub('', line.rstrip())
                         if clean_line and 'Thinking...' not in clean_line:
                             yield f"data: {json.dumps({'chunk': clean_line})}\n\n"
-                    
+
                     # Check timeout
                     if time.time() - start_time > timeout_seconds:
                         yield f"data: {json.dumps({'chunk': 'WARNING: Agentic AI operation timeout reached (30 minutes), terminating...'})}\n\n"
@@ -635,14 +699,14 @@ User Question: {message}. Provide a helpful and informative response."""
                         if process.poll() is None:
                             os.killpg(os.getpgid(process.pid), signal.SIGKILL)
                         break
-                
+
                 process.wait(timeout=TIMEOUT_CLEAN_SHUTDOWN)  # Wait up to 1 minute for clean shutdown
-                
+
             except subprocess.TimeoutExpired:
                 yield f"data: {json.dumps({'chunk': 'Agentic AI process cleanup timeout, forcing termination...'})}\n\n"
                 os.killpg(os.getpgid(process.pid), signal.SIGKILL)
                 process.returncode = -1
-            
+
             # Record billing activity for START and STOP actions only when the
             # action was genuinely executed (an executing prompt built from a
             # real context file), the engine exited cleanly, and an application
@@ -656,12 +720,12 @@ User Question: {message}. Provide a helpful and informative response."""
                     yield f"data: {json.dumps({'chunk': f'Billing activity recorded for {detected_action} action on {application_name}'})}\n\n"
                 except Exception as billing_error:
                     yield f"data: {json.dumps({'chunk': f'Warning: Failed to record billing activity: {str(billing_error)}'})}\n\n"
-            
+
             yield f"data: {json.dumps({'chunk': f'=== Agentic AI Session Completed ==='})}\n\n"
             yield f"data: {json.dumps({'done': True, 'success': process.returncode == 0, 'returncode': process.returncode})}\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'error': f'Exception in generate(): {str(e)}'})}\n\n"
-    
+
     return Response(stream_with_context(generate()), mimetype='text/event-stream',
                    headers={
                        'Cache-Control': 'no-cache',
