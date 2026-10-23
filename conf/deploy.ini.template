@@ -37,3 +37,8 @@ SECONDARY_DOMAINS=
 
 # Name of the S3 bucket used for object storage.
 S3_BUCKET_NAME=opcp-s3
+
+# AWS CLI profile name used for S3 operations (backups, logs, recovery).
+# Values are refined in ~/.aws/credentials & config files. 
+# Application will add --profile $AWS_S3_AGENTIC_AI_PLATEFORM to launch s3 commands
+AWS_S3_AGENTIC_AI_PLATEFORM=aws-s3-agentic-ai-plateform

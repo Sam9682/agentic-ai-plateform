@@ -73,6 +73,9 @@ APPLICATION_IDENTITY_NUMBER=${APPLICATION_IDENTITY_NUMBER:-0}
 RANGE_START_CONTROLPLAN=${RANGE_START_CONTROLPLAN:-80}
 RANGE_RESERVED_CONTROLPLAN=${RANGE_RESERVED_CONTROLPLAN:-0}
 S3_BUCKET_NAME=${S3_BUCKET_NAME:-"agentic-ai-plateform-s3"}
+# AWS CLI profile name used for S3 operations (read from
+# AWS_S3_AGENTIC_AI_PLATEFORM in conf/deploy.ini).
+AWS_S3_AGENTIC_AI_PLATEFORM=${AWS_S3_AGENTIC_AI_PLATEFORM:-"aws-s3-agentic-ai-plateform"}
 PLTF_FOLDER=${PLTF_FOLDER:-"agentic-ai-plateform"}
 # Display name shown in banners/usage; read from PLTF_NAME in deploy.ini.
 PLTF_NAME=${PLTF_NAME:-"agentic-ai-plateform"}
@@ -452,7 +455,7 @@ backup_database() {
     echo "    📍 Server IP: $SERVER_IP"
 
     # Sync the specific backup to S3 with IP-based path structure
-    if aws s3 sync "$BACKUP_DIR" "s3://${S3_BUCKET_NAME}/${NAME_OF_APPLICATION}/db/backup/$SERVER_IP/$DATETIME/" --profile OVH-SWAUTOMORPH; then
+    if aws s3 sync "$BACKUP_DIR" "s3://${S3_BUCKET_NAME}/${NAME_OF_APPLICATION}/db/backup/$SERVER_IP/$DATETIME/" --profile "$AWS_S3_AGENTIC_AI_PLATEFORM"; then
         echo -e "  $OK Backup synced to s3://${S3_BUCKET_NAME}/${NAME_OF_APPLICATION}/db/backup/$SERVER_IP/$DATETIME/"
     else
         echo "  ⚠️ S3 sync failed or not configured"
@@ -465,7 +468,7 @@ backup_logs() {
 
     if [ -d "logs" ] && [ "$(ls -A logs 2>/dev/null)" ]; then
         echo "  📄 Synchronizing logs to S3..."
-        if aws s3 sync ./logs s3://${S3_BUCKET_NAME}/${NAME_OF_APPLICATION}/logs --profile OVH-SWAUTOMORPH; then
+        if aws s3 sync ./logs s3://${S3_BUCKET_NAME}/${NAME_OF_APPLICATION}/logs --profile "$AWS_S3_AGENTIC_AI_PLATEFORM"; then
             echo -e "  $OK Logs backup completed"
         else
             echo -e "  ⚠️ Logs S3 sync failed or not configured - continuing"
@@ -568,11 +571,11 @@ EOF
         echo "📡 Select backup server:"
 
         # List all available server IPs in S3
-        S3_SERVERS=$(aws s3 ls s3://${S3_BUCKET_NAME}/${NAME_OF_APPLICATION}/db/backup/ --profile OVH-SWAUTOMORPH 2>/dev/null | grep "PRE" | awk '{print $2}' | sed 's/\///' | sort)
+        S3_SERVERS=$(aws s3 ls s3://${S3_BUCKET_NAME}/${NAME_OF_APPLICATION}/db/backup/ --profile "$AWS_S3_AGENTIC_AI_PLATEFORM" 2>/dev/null | grep "PRE" | awk '{print $2}' | sed 's/\///' | sort)
 
         if [ -z "$S3_SERVERS" ]; then
             echo -e "  $ERROR No server backups found in S3 bucket"
-            echo "    💡 Check S3 connection: aws s3 ls s3://${S3_BUCKET_NAME}/${NAME_OF_APPLICATION}/db/backup/ --profile OVH-SWAUTOMORPH"
+            echo "    💡 Check S3 connection: aws s3 ls s3://${S3_BUCKET_NAME}/${NAME_OF_APPLICATION}/db/backup/ --profile $AWS_S3_AGENTIC_AI_PLATEFORM"
             exit 1
         fi
 
@@ -657,11 +660,11 @@ EOF
         echo "  ✅ Selected server: $SELECTED_SERVER"
 
         # List S3 backup directories for the selected server
-        S3_BACKUPS=$(aws s3 ls "s3://${S3_BUCKET_NAME}/${NAME_OF_APPLICATION}/db/backup/$SELECTED_SERVER/" --profile OVH-SWAUTOMORPH 2>/dev/null | grep "PRE" | awk '{print $2}' | sed 's/\///' | sort -r)
+        S3_BACKUPS=$(aws s3 ls "s3://${S3_BUCKET_NAME}/${NAME_OF_APPLICATION}/db/backup/$SELECTED_SERVER/" --profile "$AWS_S3_AGENTIC_AI_PLATEFORM" 2>/dev/null | grep "PRE" | awk '{print $2}' | sed 's/\///' | sort -r)
 
         if [ -z "$S3_BACKUPS" ]; then
             echo -e "  $ERROR No backups found for server $SELECTED_SERVER in S3 bucket"
-            echo "    💡 Check S3 path: aws s3 ls s3://${S3_BUCKET_NAME}/${NAME_OF_APPLICATION}/db/backup/$SELECTED_SERVER/ --profile OVH-SWAUTOMORPH"
+            echo "    💡 Check S3 path: aws s3 ls s3://${S3_BUCKET_NAME}/${NAME_OF_APPLICATION}/db/backup/$SELECTED_SERVER/ --profile $AWS_S3_AGENTIC_AI_PLATEFORM"
             exit 1
         fi
 
@@ -746,7 +749,7 @@ EOF
 
         # Download the selected backup from S3
         echo "  📥 Syncing from s3://${S3_BUCKET_NAME}/${NAME_OF_APPLICATION}/db/backup/$SELECTED_SERVER/$SELECTED_BACKUP/ ..."
-        if aws s3 sync "s3://${S3_BUCKET_NAME}/${NAME_OF_APPLICATION}/db/backup/$SELECTED_SERVER/$SELECTED_BACKUP/" "$BACKUP_DIR/" --profile OVH-SWAUTOMORPH; then
+        if aws s3 sync "s3://${S3_BUCKET_NAME}/${NAME_OF_APPLICATION}/db/backup/$SELECTED_SERVER/$SELECTED_BACKUP/" "$BACKUP_DIR/" --profile "$AWS_S3_AGENTIC_AI_PLATEFORM"; then
             echo -e "  $OK Backup downloaded successfully"
         else
             echo -e "  $ERROR Failed to download backup from S3"
@@ -2372,7 +2375,7 @@ help() {
     echo "              • Creates timestamped backup in ./softfluid/db/backup/"
     echo "              • Dumps all database tables individually"
     echo "              • Creates complete database dump"
-    echo "              • Syncs backup to S3 using OVH-SWAUTOMORPH profile"
+    echo "              • Syncs backup to S3 using \$AWS_S3_AGENTIC_AI_PLATEFORM profile"
     echo ""
     echo "  help      - Show this help menu"
     echo "  --help    - Show this help menu (alias for help)"
