@@ -132,7 +132,7 @@ curl -X POST https://<DOMAIN>/api/nginx/sync \
 
 Or via CLI:
 ```bash
-python3 ./scripts/sync_nginx_locations.py
+python3 ./scripts/sync_reverse_proxy.py
 ```
 
 `sync_all_locations` reconciles the dynamic directory to **exactly** match the
@@ -166,7 +166,7 @@ tail -f logs/api_routes.log
 
 ### Re-sync all routes
 ```bash
-python3 ./scripts/sync_nginx_locations.py
+python3 ./scripts/sync_reverse_proxy.py
 ```
 
 There is no reload/validate command to run: Traefik's file watcher hot-applies

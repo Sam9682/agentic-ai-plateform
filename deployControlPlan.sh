@@ -2083,7 +2083,7 @@ configure_firewall() {
 # deploy complete (guarded against set -e).
 sync_traefik_locations() {
     echo "🔁 Syncing Traefik routes from database..."
-    if [ ! -f "./scripts/sync_nginx_locations.py" ]; then
+    if [ ! -f "./scripts/sync_reverse_proxy.py" ]; then
         echo -e "  $WARN sync script not found - skipping Traefik route sync"
         return 0
     fi
@@ -2093,7 +2093,7 @@ sync_traefik_locations() {
     if [ -x ".venv/bin/python" ]; then
         sync_python=".venv/bin/python"
     fi
-    if "$sync_python" ./scripts/sync_nginx_locations.py; then
+    if "$sync_python" ./scripts/sync_reverse_proxy.py; then
         echo -e "  $OK Traefik routes synced from database"
     else
         echo -e "  $WARN Traefik route sync failed (exit non-zero) - continuing deploy"

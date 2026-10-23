@@ -53,7 +53,7 @@ labels guarantee a correct route even before `insert_location_block` runs.
 > been retired.
 
 ### Scripts
-- **`scripts/sync_nginx_locations.py`** — CLI tool to sync all routes from the database
+- **`scripts/sync_reverse_proxy.py`** — CLI tool to sync all routes from the database
 - **`scripts/test_nginx_locations.py`** — smoke test for the route lifecycle (now asserts Traefik output)
 
 ### Traefik configuration
@@ -85,7 +85,7 @@ curl -X POST https://<DOMAIN>/api/nginx/sync \
 
 **Via CLI:**
 ```bash
-python3 ./scripts/sync_nginx_locations.py
+python3 ./scripts/sync_reverse_proxy.py
 ```
 
 `sync_all_locations` writes a route file for every DB app and deletes any
@@ -190,7 +190,7 @@ tail -f logs/api_routes.log
 
 ### Re-sync all routes
 ```bash
-python3 ./scripts/sync_nginx_locations.py
+python3 ./scripts/sync_reverse_proxy.py
 ```
 
 ## Future Enhancements

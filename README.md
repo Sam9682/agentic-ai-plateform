@@ -355,7 +355,7 @@ curl -X POST https://www.swautomorph.com/api/nginx/sync \
   -H "Cookie: session=your-session-cookie"
 
 # Or via CLI
-python3 ./scripts/sync_nginx_locations.py
+python3 ./scripts/sync_reverse_proxy.py
 ```
 
 ### Virtual AI Agents Integration
@@ -552,7 +552,7 @@ python3 ./scripts/controller_cli.py db-health
 │   ├── controller_cli.py         # Command-line interface (click)
 │   ├── orchestrator_cli.py       # Orchestrator CLI
 │   ├── mcp_server.py             # Model Context Protocol server
-│   ├── sync_nginx_locations.py   # Sync Traefik routes from database
+│   ├── sync_reverse_proxy.py   # Sync Traefik routes from database
 │   ├── mount_s3fs.py             # Mount S3 storage for backups
 │   ├── controlplan_service.py    # systemd service wrapper
 │   ├── generate_ssl.sh           # Self-signed SSL certificate generator

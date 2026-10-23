@@ -138,7 +138,7 @@ python3 ./scripts/orchestrator_cli.py delete my-app
 ```bash
 # Réconcilie les fichiers de configuration dynamique Traefik (traefik/dynamic/)
 # à partir de la base de données
-python3 ./scripts/sync_nginx_locations.py
+python3 ./scripts/sync_reverse_proxy.py
 ```
 
 ### API REST
