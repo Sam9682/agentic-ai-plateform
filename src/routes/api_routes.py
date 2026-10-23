@@ -478,28 +478,11 @@ def api_user_id_by_username():
 
     Usage: GET /api/users/id?username=<username>
 
-    Authentication: this endpoint is accessible with a Bearer token passed in
-    the Authorization header (`Authorization: Bearer <token>`). The token is
-    validated against the auth_tokens store via validate_sso_token. For
-    convenience, an already-authenticated browser session is also accepted.
+    Authentication: this endpoint is intentionally public and does NOT require
+    a Bearer token or an authenticated session. It only exposes the numeric id
+    for a given username. All other API endpoints retain their authentication
+    requirements.
     """
-    from ..auth import validate_sso_token
-
-    # Primary auth path: Bearer token in the Authorization header.
-    authorized = False
-    auth_header = request.headers.get('Authorization', '')
-    if auth_header.startswith('Bearer '):
-        token = auth_header[len('Bearer '):].strip()
-        if token and validate_sso_token(token):
-            authorized = True
-
-    # Fallback: an authenticated session (e.g. the admin UI).
-    if not authorized and 'user_id' in session:
-        authorized = True
-
-    if not authorized:
-        return jsonify({'error': 'Authentication required'}), 401
-
     try:
         username = request.args.get('username')
         if not username or not username.strip():
