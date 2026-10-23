@@ -9,7 +9,7 @@ fails, the function returns ``False`` and leaves no partially written route file
 
 Validates: Requirements 8.6
 
-These tests inject write/delete failures into ``src/nginx_manager.py`` and assert
+These tests inject write/delete failures into ``src/frontend_manager.py`` and assert
 that:
   * ``insert_location_block`` returns ``False`` on a write failure and leaves no
     ``app-{user}-{app}.yml`` target file and no leftover ``*.tmp`` artifact; and
@@ -30,7 +30,7 @@ sys.path.insert(0, PROJECT_ROOT)
 
 from hypothesis import given, settings, strategies as st
 
-from src import nginx_manager
+from src import frontend_manager
 
 
 # ---------------------------------------------------------------------------
@@ -98,10 +98,10 @@ def test_property_8_insert_write_failure_no_partial_write(
     # Save originals so we can restore after each example (hypothesis re-runs
     # this function many times in the same process; a MonkeyPatch fixture is
     # not available inside @given, so patch/restore manually in finally).
-    orig_dir = nginx_manager.TRAEFIK_DYNAMIC_DIR
-    orig_safe_dump = nginx_manager.yaml.safe_dump
-    orig_makedirs = nginx_manager.os.makedirs
-    orig_replace = nginx_manager.os.replace
+    orig_dir = frontend_manager.TRAEFIK_DYNAMIC_DIR
+    orig_safe_dump = frontend_manager.yaml.safe_dump
+    orig_makedirs = frontend_manager.os.makedirs
+    orig_replace = frontend_manager.os.replace
 
     if fail_mode == "makedirs":
         # Point the dynamic dir at a path whose parent is a regular file so
@@ -113,19 +113,19 @@ def test_property_8_insert_write_failure_no_partial_write(
         dynamic_dir = str(base / "dynamic")
         os.makedirs(dynamic_dir, exist_ok=True)
 
-    nginx_manager.TRAEFIK_DYNAMIC_DIR = dynamic_dir
+    frontend_manager.TRAEFIK_DYNAMIC_DIR = dynamic_dir
 
     def _boom(*args, **kwargs):
         raise OSError("injected write failure")
 
     try:
         if fail_mode == "yaml":
-            nginx_manager.yaml.safe_dump = _boom
+            frontend_manager.yaml.safe_dump = _boom
         elif fail_mode == "replace":
-            nginx_manager.os.replace = _boom
+            frontend_manager.os.replace = _boom
         # makedirs mode needs no monkeypatch; the bad path makes it fail.
 
-        result = nginx_manager.insert_location_block(
+        result = frontend_manager.insert_location_block(
             user_name, app_name, url, url
         )
 
@@ -141,10 +141,10 @@ def test_property_8_insert_write_failure_no_partial_write(
                 f"{os.listdir(dynamic_dir)}"
             )
     finally:
-        nginx_manager.TRAEFIK_DYNAMIC_DIR = orig_dir
-        nginx_manager.yaml.safe_dump = orig_safe_dump
-        nginx_manager.os.makedirs = orig_makedirs
-        nginx_manager.os.replace = orig_replace
+        frontend_manager.TRAEFIK_DYNAMIC_DIR = orig_dir
+        frontend_manager.yaml.safe_dump = orig_safe_dump
+        frontend_manager.os.makedirs = orig_makedirs
+        frontend_manager.os.replace = orig_replace
 
 
 # ---------------------------------------------------------------------------
@@ -172,9 +172,9 @@ def test_property_8_remove_delete_failure_returns_false(
     dynamic_dir = str(base / "dynamic")
     os.makedirs(dynamic_dir, exist_ok=True)
 
-    orig_dir = nginx_manager.TRAEFIK_DYNAMIC_DIR
-    orig_remove = nginx_manager.os.remove
-    nginx_manager.TRAEFIK_DYNAMIC_DIR = dynamic_dir
+    orig_dir = frontend_manager.TRAEFIK_DYNAMIC_DIR
+    orig_remove = frontend_manager.os.remove
+    frontend_manager.TRAEFIK_DYNAMIC_DIR = dynamic_dir
 
     target = os.path.join(dynamic_dir, f"app-{user_name}-{app_name}.yml")
     if file_exists:
@@ -186,9 +186,9 @@ def test_property_8_remove_delete_failure_returns_false(
         raise OSError("injected delete failure")
 
     try:
-        nginx_manager.os.remove = _boom
+        frontend_manager.os.remove = _boom
 
-        result = nginx_manager.remove_location_block(user_name, app_name)
+        result = frontend_manager.remove_location_block(user_name, app_name)
 
         assert result is False, (
             "remove_location_block must return False when delete raises OSError"
@@ -202,8 +202,8 @@ def test_property_8_remove_delete_failure_returns_false(
             f"delete failure left temp artifacts behind: {leftover_tmp}"
         )
     finally:
-        nginx_manager.TRAEFIK_DYNAMIC_DIR = orig_dir
-        nginx_manager.os.remove = orig_remove
+        frontend_manager.TRAEFIK_DYNAMIC_DIR = orig_dir
+        frontend_manager.os.remove = orig_remove
 
 
 if __name__ == "__main__":

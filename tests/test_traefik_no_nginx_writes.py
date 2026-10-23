@@ -27,7 +27,7 @@ absolute paths begins with either forbidden nginx directory prefix.
 
 Isolation
 ---------
-``nginx_manager.TRAEFIK_DYNAMIC_DIR`` is monkeypatched to a throwaway temp
+``frontend_manager.TRAEFIK_DYNAMIC_DIR`` is monkeypatched to a throwaway temp
 directory so the real ``traefik/dynamic`` tree is never touched and the
 reconcile step of ``sync_all_locations`` only ever operates inside the temp
 dir.
@@ -51,7 +51,7 @@ from hypothesis import given, settings, strategies as st
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT_ROOT)
 
-import src.nginx_manager as nginx_manager  # noqa: E402
+import src.frontend_manager as frontend_manager  # noqa: E402
 
 
 # --- forbidden nginx locations --------------------------------------------
@@ -193,13 +193,13 @@ def _run_operation(op):
     kind = op[0]
     if kind == "insert":
         _, user, app, url = op
-        nginx_manager.insert_location_block(user, app, url, url)
+        frontend_manager.insert_location_block(user, app, url, url)
     elif kind == "remove":
         _, user, app = op
-        nginx_manager.remove_location_block(user, app)
+        frontend_manager.remove_location_block(user, app)
     elif kind == "sync":
         _, rows = op
-        nginx_manager.sync_all_locations(_StubDbManager(rows))
+        frontend_manager.sync_all_locations(_StubDbManager(rows))
 
 
 @contextlib.contextmanager
@@ -212,13 +212,13 @@ def _isolated_dynamic_dir():
     generated operation sequence a fresh, isolated dynamic directory and always
     restores the original attribute.
     """
-    original = nginx_manager.TRAEFIK_DYNAMIC_DIR
+    original = frontend_manager.TRAEFIK_DYNAMIC_DIR
     dynamic_dir = tempfile.mkdtemp(prefix="traefik_dynamic_")
-    nginx_manager.TRAEFIK_DYNAMIC_DIR = dynamic_dir
+    frontend_manager.TRAEFIK_DYNAMIC_DIR = dynamic_dir
     try:
         yield dynamic_dir
     finally:
-        nginx_manager.TRAEFIK_DYNAMIC_DIR = original
+        frontend_manager.TRAEFIK_DYNAMIC_DIR = original
         shutil.rmtree(dynamic_dir, ignore_errors=True)
 
 
@@ -247,7 +247,7 @@ def test_module_source_has_no_nginx_shellouts():
     guards against a regression that reintroduces an nginx reload/subprocess
     path that a pure write monitor on this process might not exercise.
     """
-    source_path = os.path.join(PROJECT_ROOT, "src", "nginx_manager.py")
+    source_path = os.path.join(PROJECT_ROOT, "src", "frontend_manager.py")
     with open(source_path, "r", encoding="utf-8") as f:
         source = f.read()
 

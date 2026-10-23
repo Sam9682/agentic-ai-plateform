@@ -4,8 +4,9 @@
 > blocks**. The platform now uses **Traefik v3.1** as its single HTTP/HTTPS
 > entrypoint. nginx, the per-app nginx sidecar, `sub_filter` response rewriting,
 > `docker ps` host-port discovery, and the ModSecurity WAF are gone. The module
-> `src/nginx_manager.py` keeps its name and public API (it is the
-> **Proxy_Manager**) but now writes Traefik dynamic configuration.
+> (formerly `src/nginx_manager.py`, now `src/frontend_manager.py`) keeps its
+> public API (it is the **Proxy_Manager**) but now writes Traefik dynamic
+> configuration.
 
 ## Overview
 
@@ -27,7 +28,7 @@ Routing is **hybrid**, using two equivalent Traefik providers:
 1. **Docker label provider (static baseline).** The generated per-app
    `docker-compose.yml` carries Traefik labels on the app container at create
    time. Traefik discovers the route as soon as the container starts.
-2. **Traefik file provider (programmatic path).** `src/nginx_manager.py` writes
+2. **Traefik file provider (programmatic path).** `src/frontend_manager.py` writes
    and deletes per-app dynamic config files under
    `${PLTF_FOLDER}/traefik/dynamic/app-{user}-{app}.yml`, hot-reloaded with no
    restart and no validation command. This is the path used by the deploy /
@@ -39,7 +40,7 @@ labels guarantee a correct route even before `insert_location_block` runs.
 ## Files
 
 ### Core Module
-- **`src/nginx_manager.py`** — the Proxy_Manager (Traefik dynamic config management)
+- **`src/frontend_manager.py`** — the Proxy_Manager (Traefik dynamic config management)
   - `insert_location_block()` — write the app's Traefik route file
   - `remove_location_block()` — delete the app's route file (missing = success)
   - `sync_all_locations()` — reconcile the dynamic directory to match the database

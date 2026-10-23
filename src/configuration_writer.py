@@ -10,7 +10,7 @@ Persists validated wizard output to ``conf/deploy.ini`` safely:
 * The new content is written atomically: a temp file in ``conf/`` is
   flushed and ``fsync``-ed, then ``os.replace``-d onto ``deploy.ini`` so the
   rename is atomic on POSIX. This mirrors the temp-file-then-rename pattern
-  in ``src/nginx_manager.write_nginx_config`` (Req 6.1).
+  in ``src/frontend_manager.write_nginx_config`` (Req 6.1).
 * If the write fails after a backup was created, the previous configuration
   is restored from the backup and a write failure is reported (Req 6.4).
 * ``deploy.ini`` and any credential file are ``chmod 0600`` so only the

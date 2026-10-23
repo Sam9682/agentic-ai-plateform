@@ -7,7 +7,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.database_postgres import db_manager
-from src.nginx_manager import sync_all_locations
+from src.frontend_manager import sync_all_locations
 
 def main():
     print("Synchronizing Traefik routes from database...")

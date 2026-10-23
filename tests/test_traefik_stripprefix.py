@@ -19,7 +19,7 @@ sys.path.insert(0, PROJECT_ROOT)
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from src.nginx_manager import _build_route_config, _prefix_path, _router_name
+from src.frontend_manager import _build_route_config, _prefix_path, _router_name
 
 
 # user/app are DNS/label-safe identifiers: lowercase alphanumerics and hyphens.

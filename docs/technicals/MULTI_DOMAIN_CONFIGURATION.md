@@ -6,7 +6,7 @@ The AI-SwAutoMorph platform supports multiple domains through Traefik routers an
 
 Traefik is the single HTTP/HTTPS entrypoint for the platform. It owns ports `:80` (entrypoint `web`) and `:443` (entrypoint `websecure`), terminates TLS, and routes requests to backends based on the request host. Multi-domain routing is expressed as Traefik **routers** (host-matching rules) and **services** (backend URLs) emitted into a file-provider dynamic config rather than nginx `server` blocks.
 
-> Terminology note: `src/nginx_manager.py` keeps its module name for compatibility, but it now acts as the **Proxy_Manager** and writes Traefik dynamic configuration. There is no nginx or ModSecurity WAF in the platform.
+> Terminology note: the module (formerly `src/nginx_manager.py`, now `src/frontend_manager.py`) keeps its public API for compatibility, but it now acts as the **Proxy_Manager** and writes Traefik dynamic configuration. There is no nginx or ModSecurity WAF in the platform.
 
 ## Configuration File: `conf/deploy.ini`
 

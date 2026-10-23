@@ -6,7 +6,7 @@ Validates: Requirements 2.3, 3.4
 
 For any valid deploy input (user_name, app_name, backend_host, backend_port,
 domain), the Traefik dynamic-config produced by
-``src.nginx_manager._build_route_config`` — once serialized to YAML with
+``src.frontend_manager._build_route_config`` — once serialized to YAML with
 ``yaml.safe_dump`` — must contain NONE of the nginx-specific constructs the
 migration retires: nginx ``location`` blocks, ``proxy_pass``, ``sub_filter``
 response-body rewriting, and the surrounding nginx proxy directives.
@@ -50,7 +50,7 @@ from hypothesis import given, settings, strategies as st
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT_ROOT)
 
-from src.nginx_manager import _build_route_config  # noqa: E402
+from src.frontend_manager import _build_route_config  # noqa: E402
 
 
 # --- Generators -----------------------------------------------------------

@@ -1,4 +1,4 @@
-"""API routes"""
+﻿"""API routes"""
 from flask import Blueprint, request, jsonify, session, Response, stream_with_context
 from werkzeug.security import generate_password_hash
 # import sqlite3  # COMMENTED OUT - Using PostgreSQL now
@@ -68,9 +68,9 @@ except Exception as e:
 api_bp = Blueprint('api', __name__, url_prefix='/api')
 
 from ..db_health import check_database_health, get_database_stats
-# The reverse proxy is now Traefik; the module keeps the nginx_manager import
+# The reverse proxy is now Traefik; the module keeps the frontend_manager import
 # path and the three preserved public functions (Proxy_Manager, Req 8.1).
-from ..nginx_manager import insert_location_block, remove_location_block, sync_all_locations
+from ..frontend_manager import insert_location_block, remove_location_block, sync_all_locations
 from ..platform_discovery import get_current_server_ip, check_remote_platform, determine_role, update_server_role
 
 def create_gitea_user(username, email, password, first_name='', last_name=''):
@@ -471,6 +471,55 @@ def api_users():
     except Exception as e:
         logger.error(f"Warning: Failed to GET/POST user {user_id} in DB: {str(e)}")
         return jsonify({'error': f'Server error: {str(e)}'}), 500
+
+@api_bp.route('/users/id', methods=['GET'])
+def api_user_id_by_username():
+    """Retrieve a user ID based on username.
+
+    Usage: GET /api/users/id?username=<username>
+
+    Authentication: this endpoint is accessible with a Bearer token passed in
+    the Authorization header (`Authorization: Bearer <token>`). The token is
+    validated against the auth_tokens store via validate_sso_token. For
+    convenience, an already-authenticated browser session is also accepted.
+    """
+    from ..auth import validate_sso_token
+
+    # Primary auth path: Bearer token in the Authorization header.
+    authorized = False
+    auth_header = request.headers.get('Authorization', '')
+    if auth_header.startswith('Bearer '):
+        token = auth_header[len('Bearer '):].strip()
+        if token and validate_sso_token(token):
+            authorized = True
+
+    # Fallback: an authenticated session (e.g. the admin UI).
+    if not authorized and 'user_id' in session:
+        authorized = True
+
+    if not authorized:
+        return jsonify({'error': 'Authentication required'}), 401
+
+    try:
+        username = request.args.get('username')
+        if not username or not username.strip():
+            return jsonify({'error': 'username query parameter is required'}), 400
+        username = username.strip()
+
+        result = db_manager.execute_query(
+            'SELECT id FROM users WHERE username = %s',
+            (username,), fetch_one=True
+        )
+
+        if not result:
+            logger.info(f"User lookup by username failed: '{username}' not found")
+            return jsonify({'error': 'User not found'}), 404
+
+        return jsonify({'id': result[0], 'username': username})
+
+    except Exception as e:
+        logger.error(f"Error resolving user id by username: {str(e)}")
+        return jsonify({'error': 'Server error'}), 500
 
 @api_bp.route('/users/<int:user_id>', methods=['PUT', 'DELETE'])
 def api_user_actions(user_id):

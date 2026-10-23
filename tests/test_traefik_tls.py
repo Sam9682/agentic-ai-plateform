@@ -6,7 +6,7 @@ Property 9: TLS config references the existing certificate files for every domai
 Validates: Requirements 4.1
 
 Over generated configured-domain sets (lists of hostname-ish domain names), the
-dict produced by ``src.nginx_manager.build_tls_config`` must contain exactly one
+dict produced by ``src.frontend_manager.build_tls_config`` must contain exactly one
 ``tls.certificates`` entry per *unique* domain (duplicates collapsed, first-seen
 order preserved), each entry referencing that domain's existing certificate pair
 inside the Traefik container
@@ -23,7 +23,7 @@ from hypothesis import strategies as st
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT_ROOT)
 
-from src.nginx_manager import build_tls_config, TRAEFIK_SSL_DIR  # noqa: E402
+from src.frontend_manager import build_tls_config, TRAEFIK_SSL_DIR  # noqa: E402
 
 # A single DNS label: lowercase alnum + hyphen, non-empty.
 _LABEL = st.text(

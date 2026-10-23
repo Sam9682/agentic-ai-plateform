@@ -445,7 +445,7 @@ def update_nginx_locations():
     """Sync Traefik routes from database"""
     try:
         from src.database_postgres import db_manager
-        from src.nginx_manager import sync_all_locations
+        from src.frontend_manager import sync_all_locations
         
         click.echo('Synchronizing Traefik routes from database...')
         

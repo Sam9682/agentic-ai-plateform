@@ -33,7 +33,7 @@ from typing import Optional, List, Dict, Any
 
 from werkzeug.security import generate_password_hash
 
-from . import nginx_manager
+from . import frontend_manager
 from .database_postgres import db_manager as default_db_manager
 from .database_postgres import DOMAIN
 from .template_catalog import TemplateCatalog
@@ -112,10 +112,10 @@ class SandboxManager:
         :param deploy_service: the shared :class:`TemplateDeployService`. When
             omitted one is constructed from ``catalog``/``orchestrator``.
         :param db_manager: PostgreSQL manager; defaults to the shared singleton.
-        :param nginx: nginx manager module/object; defaults to ``src.nginx_manager``.
+        :param nginx: nginx manager module/object; defaults to ``src.frontend_manager``.
         """
         self.db_manager = db_manager or default_db_manager
-        self.nginx = nginx or nginx_manager
+        self.nginx = nginx or frontend_manager
         self.orchestrator = orchestrator
 
         if catalog is None:

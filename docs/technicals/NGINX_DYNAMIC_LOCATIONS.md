@@ -4,9 +4,10 @@
 > blocks**. The platform now uses **Traefik v3.1** as its single HTTP/HTTPS
 > entrypoint. nginx, the per-app nginx sidecar, `sub_filter` response rewriting,
 > `docker ps` host-port discovery, and the ModSecurity WAF have all been removed.
-> The module `src/nginx_manager.py` keeps its name and public API for backward
-> compatibility, but it now writes **Traefik dynamic configuration** instead of
-> nginx config. Think of it as the **Proxy_Manager**.
+> The module (formerly `src/nginx_manager.py`, now `src/frontend_manager.py`)
+> keeps its public API for backward compatibility, but it now writes **Traefik
+> dynamic configuration** instead of nginx config. Think of it as the
+> **Proxy_Manager**.
 
 ## Overview
 
@@ -41,7 +42,7 @@ involvement, self-healing on restart. Labels define:
 
 ### 2. Traefik file provider (programmatic path)
 
-`src/nginx_manager.py` (the Proxy_Manager) writes and deletes a **per-app
+`src/frontend_manager.py` (the Proxy_Manager) writes and deletes a **per-app
 dynamic config file** under a watched directory:
 ```
 ${PLTF_FOLDER}/traefik/dynamic/app-{user}-{app}.yml
@@ -145,7 +146,7 @@ because ports come from the deploy-time contract rather than live containers.
 - **Per-app routes:** `${PLTF_FOLDER}/traefik/dynamic/app-{user}-{app}.yml`
 - **TLS config:** `${PLTF_FOLDER}/traefik/dynamic/tls.yml`
 - **Secondary domains:** `${PLTF_FOLDER}/traefik/dynamic/secondary-domains.yml`
-- **Manager module:** `src/nginx_manager.py` (the Proxy_Manager)
+- **Manager module:** `src/frontend_manager.py` (the Proxy_Manager)
 - **Certificates:** `ssl/<DOMAIN>/fullchain_domain.crt` and `ssl/<DOMAIN>/privateKey_domain.key`
   (mounted read-only into Traefik at `/etc/traefik/ssl`)
 
@@ -183,7 +184,7 @@ Traefik keeps serving the last valid config.
 
 ## Implementation Details
 
-### Module: `src/nginx_manager.py` (Proxy_Manager)
+### Module: `src/frontend_manager.py` (Proxy_Manager)
 
 **Preserved public functions (signatures unchanged):**
 - `insert_location_block(user_name, app_name, deployment_url, user_appli_url)` — write the app's Traefik route file

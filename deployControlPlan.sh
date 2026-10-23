@@ -1753,7 +1753,7 @@ start_flask_application() {
 # container via the root docker-compose.yml (the `traefik` service). This
 # step only ensures the shared Docker network and the watched dynamic-config
 # directory exist, then writes the TLS + secondary-domain dynamic config by
-# invoking the venv Python against src.nginx_manager (the Proxy_Manager).
+# invoking the venv Python against src.frontend_manager (the Proxy_Manager).
 configure_traefik() {
     echo "🌐 Configuring Traefik..."
 
@@ -1767,7 +1767,7 @@ configure_traefik() {
     # certificates directly from the host ``ssl/`` directory, so the generated
     # tls.yml must reference real host paths. Export TRAEFIK_SSL_DIR to the
     # absolute host ssl/ path for the Python config writer. In docker mode we
-    # leave it unset so nginx_manager uses the in-container default
+    # leave it unset so frontend_manager uses the in-container default
     # (/etc/traefik/ssl), matching the docker-compose ./ssl mount.
     if [ "$LOCAL_MODE" != "docker" ]; then
         local host_ssl_dir
@@ -1785,7 +1785,7 @@ configure_traefik() {
 
     # Write the TLS store and the secondary-domain routers/services into the
     # Traefik dynamic directory. A failure here is non-fatal to the deploy.
-    if "$traefik_python" -c "from src.nginx_manager import write_tls_config, write_secondary_domains_config; import os; write_tls_config(); write_secondary_domains_config(os.environ.get('SECONDARY_DOMAINS', ''))"; then
+    if "$traefik_python" -c "from src.frontend_manager import write_tls_config, write_secondary_domains_config; import os; write_tls_config(); write_secondary_domains_config(os.environ.get('SECONDARY_DOMAINS', ''))"; then
         echo "  ✅ Traefik TLS and secondary-domain config written"
     else
         echo "  ⚠️ Traefik dynamic config generation failed (exit non-zero) - continuing"
@@ -2063,7 +2063,7 @@ configure_firewall() {
 }
 
 # Sync Traefik dynamic routes from the database (final startup step).
-# Runs with the activated .venv Python so src.nginx_manager (the Proxy_Manager)
+# Runs with the activated .venv Python so src.frontend_manager (the Proxy_Manager)
 # and src.database_postgres import correctly; sync_all_locations now writes
 # Traefik dynamic files. A sync failure is non-fatal: it warns and lets the
 # deploy complete (guarded against set -e).

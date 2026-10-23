@@ -7,13 +7,13 @@ Validates: Requirements 8.2, 8.3
 
 Against a temporary dynamic directory, for any ``user_name``/``app_name`` and a
 valid ``user_appli_url`` (host + port), calling
-``src.nginx_manager.insert_location_block`` followed by
-``src.nginx_manager.remove_location_block`` must leave the set of route files
+``src.frontend_manager.insert_location_block`` followed by
+``src.frontend_manager.remove_location_block`` must leave the set of route files
 identical to the pre-insert state, and both calls must report success.
 
 The module-level ``TRAEFIK_DYNAMIC_DIR`` is redirected to a fresh temporary
 directory per example. ``_route_file_path`` reads that module global at call
-time, so setting ``nginx_manager.TRAEFIK_DYNAMIC_DIR`` is sufficient to redirect
+time, so setting ``frontend_manager.TRAEFIK_DYNAMIC_DIR`` is sufficient to redirect
 every filesystem write/delete performed by insert/remove.
 """
 import os
@@ -26,7 +26,7 @@ from hypothesis import strategies as st
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT_ROOT)
 
-from src import nginx_manager  # noqa: E402
+from src import frontend_manager  # noqa: E402
 
 # DNS-label-ish fragments for user/app names: lowercase alnum + hyphen.
 _NAME = st.text(
@@ -51,15 +51,15 @@ def test_insert_then_remove_is_identity_on_route_set(user_name, app_name, port):
     """
     url = f"https://{user_name}-{app_name}:{port}"
 
-    original_dir = nginx_manager.TRAEFIK_DYNAMIC_DIR
+    original_dir = frontend_manager.TRAEFIK_DYNAMIC_DIR
     tmp_dir = tempfile.mkdtemp(prefix="traefik-roundtrip-")
-    nginx_manager.TRAEFIK_DYNAMIC_DIR = tmp_dir
+    frontend_manager.TRAEFIK_DYNAMIC_DIR = tmp_dir
     try:
         # Pre-insert state of the dynamic directory.
         before = _dir_file_set(tmp_dir)
 
         # Insert must succeed and create exactly the per-app route file.
-        inserted = nginx_manager.insert_location_block(
+        inserted = frontend_manager.insert_location_block(
             user_name, app_name, url, url
         )
         assert inserted is True, "insert_location_block should return True"
@@ -72,7 +72,7 @@ def test_insert_then_remove_is_identity_on_route_set(user_name, app_name, port):
         )
 
         # Remove must succeed and restore the original route set exactly.
-        removed = nginx_manager.remove_location_block(user_name, app_name)
+        removed = frontend_manager.remove_location_block(user_name, app_name)
         assert removed is True, "remove_location_block should return True"
 
         after_remove = _dir_file_set(tmp_dir)
@@ -81,7 +81,7 @@ def test_insert_then_remove_is_identity_on_route_set(user_name, app_name, port):
             f"before={sorted(before)} after={sorted(after_remove)}"
         )
     finally:
-        nginx_manager.TRAEFIK_DYNAMIC_DIR = original_dir
+        frontend_manager.TRAEFIK_DYNAMIC_DIR = original_dir
         # Best-effort cleanup of the temporary directory.
         for name in os.listdir(tmp_dir):
             try:

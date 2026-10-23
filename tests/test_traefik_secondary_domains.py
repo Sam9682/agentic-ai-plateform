@@ -34,7 +34,7 @@ sys.path.insert(0, PROJECT_ROOT)
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from src.nginx_manager import (
+from src.frontend_manager import (
     _secondary_router_name,
     build_secondary_domains_config,
     parse_secondary_domains,

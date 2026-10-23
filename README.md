@@ -525,7 +525,7 @@ python3 ./scripts/controller_cli.py db-health
 │   ├── query_converter.py        # SQL dialect conversion helper
 │   ├── db_sync.py                # Database sync helpers for replication
 │   ├── db_health.py              # Database health & statistics
-│   ├── nginx_manager.py          # Proxy_Manager: writes Traefik dynamic route config (preserved module path/API)
+│   ├── frontend_manager.py       # Proxy_Manager: writes Traefik dynamic route config (formerly nginx_manager.py)
 │   ├── orchestrator.py           # Application orchestration & reconciliation
 │   ├── replication_manager.py    # Peer-to-peer database replication
 │   ├── platform_discovery.py     # Platform capability discovery

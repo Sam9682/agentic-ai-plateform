@@ -3,7 +3,7 @@
 
 Feature: nginx-to-traefik-migration
 
-These tests exercise the pure route-building core in ``src/nginx_manager.py``
+These tests exercise the pure route-building core in ``src/frontend_manager.py``
 (the Proxy_Manager) with no runtime dependencies. They import the module
 directly and assert universal properties of the generated Traefik dynamic
 configuration dict across many generated inputs.
@@ -21,7 +21,7 @@ sys.path.insert(0, PROJECT_ROOT)
 
 from hypothesis import given, settings, strategies as st
 
-from src.nginx_manager import _build_route_config
+from src.frontend_manager import _build_route_config
 
 
 # ---------------------------------------------------------------------------

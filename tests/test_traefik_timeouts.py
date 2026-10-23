@@ -6,7 +6,7 @@ Property 11: Application routes carry the carried-forward timeouts.
 Validates: Requirements 6.2
 
 Over generated application route inputs, the config produced by
-``src.nginx_manager._build_route_config`` must declare the nginx-equivalent
+``src.frontend_manager._build_route_config`` must declare the nginx-equivalent
 proxy timeouts on its shared ``serversTransports.app-transport`` forwarding
 timeouts: a connect/dial timeout of ``30s`` and a read/response-header timeout
 of ``60s``.
@@ -20,7 +20,7 @@ from hypothesis import strategies as st
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT_ROOT)
 
-from src.nginx_manager import _build_route_config  # noqa: E402
+from src.frontend_manager import _build_route_config  # noqa: E402
 
 # DNS-label-ish fragments for user/app names: lowercase alnum + hyphen.
 _NAME = st.text(alphabet="abcdefghijklmnopqrstuvwxyz0123456789-", min_size=1, max_size=20)

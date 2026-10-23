@@ -24,8 +24,8 @@ import yaml
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT_ROOT)
 
-from src import nginx_manager as nm
-from src.nginx_manager import build_control_plane_config, write_control_plane_config
+from src import frontend_manager as nm
+from src.frontend_manager import build_control_plane_config, write_control_plane_config
 
 
 def test_control_plane_router_is_bare_host_no_pathprefix():

@@ -16,8 +16,8 @@ import yaml
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src import nginx_manager
-from src.nginx_manager import (
+from src import frontend_manager
+from src.frontend_manager import (
     insert_location_block,
     remove_location_block,
     _build_route_config,
@@ -70,13 +70,13 @@ def test_insert_location():
     url = f"https://{DOMAIN}:6217"
     with tempfile.TemporaryDirectory() as tmp_dir:
         # Point the module's dynamic dir at a temp directory for the test.
-        original_dir = nginx_manager.TRAEFIK_DYNAMIC_DIR
-        nginx_manager.TRAEFIK_DYNAMIC_DIR = tmp_dir
+        original_dir = frontend_manager.TRAEFIK_DYNAMIC_DIR
+        frontend_manager.TRAEFIK_DYNAMIC_DIR = tmp_dir
         try:
             result = insert_location_block("admin", "ai-hypervisia", url, url)
             assert result, "insert_location_block should report success"
 
-            route_file = nginx_manager._route_file_path("admin", "ai-hypervisia")
+            route_file = frontend_manager._route_file_path("admin", "ai-hypervisia")
             assert os.path.exists(route_file), f"route file missing: {route_file}"
 
             with open(route_file, "r", encoding="utf-8") as f:
@@ -91,7 +91,7 @@ def test_insert_location():
             print("✓ Traefik route inserted and dynamic file written")
             print(contents)
         finally:
-            nginx_manager.TRAEFIK_DYNAMIC_DIR = original_dir
+            frontend_manager.TRAEFIK_DYNAMIC_DIR = original_dir
 
 
 def test_remove_location():
@@ -100,12 +100,12 @@ def test_remove_location():
 
     url = f"https://{DOMAIN}:6217"
     with tempfile.TemporaryDirectory() as tmp_dir:
-        original_dir = nginx_manager.TRAEFIK_DYNAMIC_DIR
-        nginx_manager.TRAEFIK_DYNAMIC_DIR = tmp_dir
+        original_dir = frontend_manager.TRAEFIK_DYNAMIC_DIR
+        frontend_manager.TRAEFIK_DYNAMIC_DIR = tmp_dir
         try:
             # Seed a route to remove.
             assert insert_location_block("admin", "ai-hypervisia", url, url)
-            route_file = nginx_manager._route_file_path("admin", "ai-hypervisia")
+            route_file = frontend_manager._route_file_path("admin", "ai-hypervisia")
             assert os.path.exists(route_file)
 
             result = remove_location_block("admin", "ai-hypervisia")
@@ -114,7 +114,7 @@ def test_remove_location():
 
             print("✓ Traefik route removed and dynamic file deleted")
         finally:
-            nginx_manager.TRAEFIK_DYNAMIC_DIR = original_dir
+            frontend_manager.TRAEFIK_DYNAMIC_DIR = original_dir
 
 
 def main():

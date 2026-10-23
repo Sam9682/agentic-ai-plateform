@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 # The repo/install root. config_postgres.py has no exported path constant
 # (PLTF_FOLDER is a folder *name*, not a path), so we derive the project root
 # the same way config_postgres does internally: this module lives at
-# <root>/src/nginx_manager.py, so two dirnames up is the install root. The root
+# <root>/src/frontend_manager.py, so two dirnames up is the install root. The root
 # docker-compose.yml mounts ``./traefik/dynamic`` into the Traefik container at
 # ``/etc/traefik/dynamic``, so the dynamic directory is anchored there.
 _INSTALL_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

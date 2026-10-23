@@ -10,7 +10,7 @@ reinventing them:
 - :class:`~src.template_catalog.TemplateCatalog` is the single source of truth
   for blueprint definitions (Req 7).
 - ``LightOrchestrator`` (``src/orchestrator.py``) creates the service/containers.
-- ``nginx_manager`` (``src/nginx_manager.py``) exposes the app at
+- ``frontend_manager`` (``src/frontend_manager.py``) exposes the app at
   ``https://{domain}/{USER_ID}/{APPLICATION_NAME}``.
 - ``db_manager`` and ``calculate_app_ports`` (``src/database_postgres.py``)
   provide transactional PostgreSQL access and the 12-consecutive-port
@@ -24,7 +24,7 @@ Deploy guard order (each maps to an error code so surfaces can return
   3. name unique for ``user_id``           -> 409 name in use           (Req 10.5)
   4. allocate ``application_id`` + ports via ``calculate_app_ports``    (Req 3.4)
   5. ``orchestrator.create_service(...)``  -> 502 on failure            (Req 10.7, 8.4)
-  6. ``nginx_manager.insert_location_block(...)``                       (Req 8.3)
+  6. ``frontend_manager.insert_location_block(...)``                       (Req 8.3)
   7. record deployment (status running)
 
 On any failure after allocation (step 4), the partial records are rolled back
@@ -37,7 +37,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Optional, Dict, Any, List
 
-from . import nginx_manager
+from . import frontend_manager
 from .database_postgres import db_manager as default_db_manager
 from .database_postgres import (
     calculate_app_ports,
@@ -140,13 +140,13 @@ class TemplateDeployService:
         :param catalog: a loaded :class:`TemplateCatalog` (single source of truth).
         :param orchestrator: the ``LightOrchestrator`` instance.
         :param db_manager: PostgreSQL manager; defaults to the shared singleton.
-        :param nginx: nginx manager module/object; defaults to ``src.nginx_manager``
+        :param nginx: nginx manager module/object; defaults to ``src.frontend_manager``
             (injectable so tests can supply a stub).
         """
         self.catalog = catalog
         self.orchestrator = orchestrator
         self.db_manager = db_manager or default_db_manager
-        self.nginx = nginx or nginx_manager
+        self.nginx = nginx or frontend_manager
 
     # ------------------------------------------------------------------
     # Name validation (Req 10.6, 10.2)

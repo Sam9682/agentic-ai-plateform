@@ -24,7 +24,7 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT_ROOT)
 
 # The functions must be importable via this exact path/names (Req 8.1).
-from src.nginx_manager import (
+from src.frontend_manager import (
     insert_location_block,
     remove_location_block,
     sync_all_locations,

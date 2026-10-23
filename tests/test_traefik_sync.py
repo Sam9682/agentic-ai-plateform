@@ -5,7 +5,7 @@ Feature: nginx-to-traefik-migration, Property 7: Sync reconciles the route set
 to exactly the database, idempotently.
 
 For any set of applications recorded in the database, after
-``src.nginx_manager.sync_all_locations(db_manager)`` the set of active per-app
+``src.frontend_manager.sync_all_locations(db_manager)`` the set of active per-app
 route files (``app-*.yml``) equals exactly that DB set (one
 ``app-{user}-{app}.yml`` per DB app, and none for non-DB apps), and running
 ``sync_all_locations`` a second time against the same database produces the same
@@ -32,7 +32,7 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from src import nginx_manager  # noqa: E402
+from src import frontend_manager  # noqa: E402
 
 
 class StubDbManager:
@@ -106,9 +106,9 @@ def test_sync_reconciles_to_db_and_is_idempotent(rows):
     # Monkeypatch the module-level dynamic directory. sync_all_locations and the
     # helpers it calls read TRAEFIK_DYNAMIC_DIR at call time, so reassigning the
     # module attribute redirects all writes/deletes/listing to the temp dir.
-    original_dir = nginx_manager.TRAEFIK_DYNAMIC_DIR
+    original_dir = frontend_manager.TRAEFIK_DYNAMIC_DIR
     try:
-        nginx_manager.TRAEFIK_DYNAMIC_DIR = dynamic_dir_str
+        frontend_manager.TRAEFIK_DYNAMIC_DIR = dynamic_dir_str
 
         # Seed: a stale per-app route file that is NOT in the DB (must be
         # removed), plus two non-app dynamic files (must be left untouched).
@@ -127,7 +127,7 @@ def test_sync_reconciles_to_db_and_is_idempotent(rows):
         db = StubDbManager(rows)
 
         # First sync.
-        assert nginx_manager.sync_all_locations(db) is True
+        assert frontend_manager.sync_all_locations(db) is True
 
         expected = _expected_app_files(rows)
         active = _active_app_files(dynamic_dir_str)
@@ -147,7 +147,7 @@ def test_sync_reconciles_to_db_and_is_idempotent(rows):
             assert f.read() == secondary_marker
 
         # Second sync against the same DB is idempotent: same route set.
-        assert nginx_manager.sync_all_locations(db) is True
+        assert frontend_manager.sync_all_locations(db) is True
         active_again = _active_app_files(dynamic_dir_str)
         assert active_again == expected
 
@@ -159,7 +159,7 @@ def test_sync_reconciles_to_db_and_is_idempotent(rows):
         with open(secondary_file) as f:
             assert f.read() == secondary_marker
     finally:
-        nginx_manager.TRAEFIK_DYNAMIC_DIR = original_dir
+        frontend_manager.TRAEFIK_DYNAMIC_DIR = original_dir
         shutil.rmtree(dynamic_dir_str, ignore_errors=True)
 
 

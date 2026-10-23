@@ -34,3 +34,6 @@ LINUX_USER_INSTALLATION=psmc
 # Format: "domain1:server_names:proxy_pass,domain2:server_names:proxy_pass"
 # Example: "agentic-ai-plateform.com:agentic-ai-plateform.com www.agentic-ai-plateform.com:www.agentic-ai-plateformf.com"
 SECONDARY_DOMAINS=
+
+# Name of the S3 bucket used for object storage.
+S3_BUCKET_NAME=opcp-s3
