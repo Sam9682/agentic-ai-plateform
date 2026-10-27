@@ -28,6 +28,7 @@ from .routes.gpu_routes import gpu_bp
 from .routes.templates_routes import templates_bp
 from .routes.wizard_routes import wizard_bp
 from .routes.sandbox_routes import sandbox_bp
+from .routes.agent_control_routes import agent_control_bp
 
 # Redirect all print() statements to log files
 class PrintLogger:
@@ -116,5 +117,6 @@ def create_app():
     app.register_blueprint(templates_bp)
     app.register_blueprint(wizard_bp)
     app.register_blueprint(sandbox_bp)
+    app.register_blueprint(agent_control_bp)
     
     return app

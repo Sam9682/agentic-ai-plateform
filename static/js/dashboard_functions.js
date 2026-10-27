@@ -932,6 +932,115 @@ function renderSandboxApps(apps) {
 }
 
 /**
+ * Normalize an Agent Control API container list into display rows. Pure: no DOM
+ * and no I/O, so the jsdom harness can assert the rendered set (mirrors
+ * {@link renderSandboxApps}). Produces one row per input container, in input
+ * order, each carrying the six required display fields with safe defaults for
+ * missing/odd values (Req 5.1).
+ *
+ * @param {Array<Object>} containers - discovered containers; each may carry
+ *        name, image, server_name, server_id, state, classification,
+ *        confidence_score.
+ * @returns {Array<{name: string, image: string, server: (string|number), state: string, classification: string, confidence: number}>}
+ *          one row per input container, in input order.
+ */
+function renderAgentRows(containers) {
+    const list = Array.isArray(containers) ? containers : [];
+    return list.map(function (container) {
+        const c = (container && typeof container === 'object') ? container : {};
+        return {
+            name: c.name || '(unnamed)',
+            image: c.image || '',
+            server: c.server_name || c.server_id || '',
+            state: c.state || 'unknown',
+            classification: c.classification || 'unclassified',
+            confidence: typeof c.confidence_score === 'number' ? c.confidence_score : 0,
+        };
+    });
+}
+
+/**
+ * Fetch the discovered-container inventory from GET /api/agent-control/containers
+ * and render the Control of Agents panel (Req 5.1, 5.3, 5.4, 5.5, 5.6, 4.6).
+ *
+ * Owns fetch + DOM writes (mirrors {@link loadSandboxStatus} / {@link loadTemplates});
+ * the pure {@link renderAgentRows} helper produces the row data. Shows a loading
+ * indicator before awaiting (Req 5.4), handles 401 / non-ok / thrown errors with a
+ * message while leaving the refresh control usable (Req 5.5), renders an empty-state
+ * message when there are no rows (Req 5.6), surfaces a per-server error banner from
+ * the payload's `errors` array (Req 4.6), and full-replaces `#agentControlContent`
+ * so a refresh wipes the prior render (Req 5.3).
+ */
+async function loadAgentControl() {
+    const content = document.getElementById('agentControlContent');
+    if (!content) return;
+    // Loading indicator before awaiting the request (Req 5.4).
+    content.innerHTML = '<p>Loading agents...</p>';
+
+    try {
+        const response = await fetch('/api/agent-control/containers', {
+            method: 'GET',
+            credentials: 'same-origin'
+        });
+
+        if (response.status === 401) {
+            content.innerHTML = '<p style="color:orange;">Authentication is required. Please sign in.</p>';
+            return;
+        }
+        if (!response.ok) {
+            // Error message; the refresh control in the section header remains usable (Req 5.5).
+            content.innerHTML = '<p style="color:red;">Failed to load agents.</p>';
+            return;
+        }
+
+        const data = await response.json();
+        const rows = renderAgentRows(data && data.containers);
+
+        // Per-server error banner surfacing unreachable servers (Req 4.6).
+        let banner = '';
+        if (data && Array.isArray(data.errors) && data.errors.length) {
+            const ids = data.errors.map(function (e) { return (e && e.server_id != null) ? e.server_id : '?'; });
+            banner = '<p style="color:#b26a00;">⚠️ ' + escapeHtml(
+                data.errors.length + ' server(s) unreachable: ' + ids.join(', ')) + '</p>';
+        }
+
+        if (rows.length === 0) {
+            // Empty-state message (Req 5.6).
+            content.innerHTML = banner + '<p style="color:orange;">No agents were discovered.</p>';
+            return;
+        }
+
+        let html = banner + '<table style="width:100%; border-collapse:collapse;">';
+        html += '<tr style="border-bottom:1px solid #ddd;">'
+            + '<th style="text-align:left; padding:5px;">Name</th>'
+            + '<th style="text-align:left; padding:5px;">Image</th>'
+            + '<th style="text-align:left; padding:5px;">Server</th>'
+            + '<th style="text-align:left; padding:5px;">State</th>'
+            + '<th style="text-align:left; padding:5px;">Classification</th>'
+            + '<th style="text-align:left; padding:5px;">Confidence</th></tr>';
+        for (const r of rows) {
+            const badge = r.classification === 'probable_agent'
+                ? '<span style="background:#28a745; color:#fff; padding:2px 8px; border-radius:3px; font-size:12px;">probable agent</span>'
+                : '<span style="background:#6c757d; color:#fff; padding:2px 8px; border-radius:3px; font-size:12px;">unclassified</span>';
+            html += '<tr style="border-bottom:1px solid #eee;">'
+                + '<td style="padding:5px;">' + escapeHtml(r.name) + '</td>'
+                + '<td style="padding:5px;">' + escapeHtml(r.image) + '</td>'
+                + '<td style="padding:5px;">' + escapeHtml(String(r.server)) + '</td>'
+                + '<td style="padding:5px;">' + escapeHtml(r.state) + '</td>'
+                + '<td style="padding:5px;">' + badge + '</td>'
+                + '<td style="padding:5px;">' + escapeHtml((r.confidence * 100).toFixed(0) + '%') + '</td>'
+                + '</tr>';
+        }
+        html += '</table>';
+        // Full replace so a refresh wipes the prior render (Req 5.3).
+        content.innerHTML = html;
+    } catch (err) {
+        // Thrown/network error; refresh control remains usable for retry (Req 5.5).
+        content.innerHTML = '<p style="color:red;">Failed to load agents.</p>';
+    }
+}
+
+/**
  * Fetch the template catalog from GET /api/templates and render the Marketplace
  * panel with a one-click deploy control per template (Req 8.2, 8.5, 8.6).
  * Handles 401 gracefully by showing an auth-required message (Req 8.2) without
@@ -1176,5 +1285,9 @@ if (typeof module !== 'undefined' && module.exports) {
         // Onboarding sandbox render helper (Req 3.3, tested by task 15.3)
         SANDBOX_ALLOWED_STATUSES,
         renderSandboxApps,
+        // Agent Control render helper (Req 5.1, tested by task 6.3)
+        renderAgentRows,
+        // Agent Control loader (Req 5.1, 5.3, 5.4, 5.5, 5.6, 4.6)
+        loadAgentControl,
     };
 }

@@ -489,6 +489,11 @@ TRANSLATIONS = {
         'deploy_failed': 'Deployment failed',
         'authentication_required': 'Authentication is required. Please sign in.',
         'access_url': 'Access URL',
+        # Tooling menu & Control of Agents (Req 6.1-6.5, 5.7)
+        'tooling': 'Tooling',
+        'control_of_agents': 'Control of Agents',
+        'agent_control_desc': 'Live view of containers discovered across managed servers, classified as probable agents or unclassified.',
+        'agent_control_loading': 'Loading agents...',
         # Onboarding: Sandbox / Demo Mode panel (Req 1.6, 2.1, 2.2, 3.3)
         'sandbox': 'Sandbox / Demo Mode',
         'sandbox_desc': 'Provision, reset, or tear down a demo environment seeded with sample applications.',
@@ -792,6 +797,11 @@ TRANSLATIONS = {
         'deploy_failed': 'Échec du déploiement',
         'authentication_required': 'Authentification requise. Veuillez vous connecter.',
         'access_url': "URL d'accès",
+        # Menu Outils & Contrôle des agents (Req 6.1-6.5, 5.7)
+        'tooling': 'Outils',
+        'control_of_agents': 'Contrôle des agents',
+        'agent_control_desc': 'Vue en direct des conteneurs découverts sur les serveurs gérés, classés comme agents probables ou non classés.',
+        'agent_control_loading': 'Chargement des agents...',
         # Onboarding: Mode Bac à sable / Démo (Req 1.6, 2.1, 2.2, 3.3)
         'sandbox': 'Bac à sable / Mode démo',
         'sandbox_desc': "Provisionnez, réinitialisez ou supprimez un environnement de démonstration avec des applications d'exemple.",
