@@ -10,7 +10,7 @@ SandboxManager.
 # Required per-container fields in the API contract (Req 4.4).
 CONTAINER_FIELDS = (
     "server_id", "server_name", "container_id", "name", "image",
-    "state", "classification", "confidence_score",
+    "state", "classification", "confidence_score", "classification_evidence",
 )
 
 
@@ -24,6 +24,18 @@ def _coerce_confidence(value):
         return float(value)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _coerce_evidence(value):
+    """Coerce any evidence value to a list of strings, defaulting to [].
+
+    Missing values, ``None``, and non-list types fall back to ``[]`` so the
+    serialized shape always carries a list (Req 1.3, 1.5). List entries are
+    stringified so the payload is always a list of strings.
+    """
+    if isinstance(value, list):
+        return [str(item) for item in value]
+    return []
 
 
 def serialize_container(row):
@@ -42,6 +54,7 @@ def serialize_container(row):
         "state": row.get("state") or "unknown",
         "classification": row.get("classification") or "unclassified",
         "confidence_score": _coerce_confidence(row.get("confidence_score")),
+        "classification_evidence": _coerce_evidence(row.get("classification_evidence")),
     }
 
 
@@ -87,5 +100,6 @@ def scan_live(servers, collect, classify):
             merged["server_name"] = server.get("server_name")
             merged["classification"] = result["classification"]
             merged["confidence_score"] = result["score"]
+            merged["classification_evidence"] = result.get("evidence", [])
             containers.append(merged)
     return build_payload(containers, errors)

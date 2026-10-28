@@ -20,10 +20,24 @@ UNCLASSIFIED = "unclassified"
 # Score at or above this threshold -> probable_agent.
 AGENT_THRESHOLD = 0.5
 
-# Image/name tokens that strongly suggest an agent runtime.
+# Image/name tokens that strongly suggest an agent / GenAI runtime.
+#
+# Two kinds of tokens live here:
+#  - Agent frameworks/products ("agent", "kiro", "shai", "autogpt", ...).
+#  - GenAI application markers used by this platform's own apps ("hypervisia",
+#    "genai", "llm", "rag", "assistant", ...). These matter because an app's
+#    *image* and *container name* both carry the product token (e.g.
+#    image "ai-hypervisia-...-ai-hypervisia" + name "ai-hypervisia-app-..."),
+#    so the combined image+name weight (0.35 + 0.25 = 0.60) crosses the agent
+#    threshold. Infra sidecars of the same app (name "ai-hypervisia-nginx",
+#    image "nginx:alpine") only match on the name, score 0.25, and correctly
+#    stay unclassified.
 _AGENT_NAME_TOKENS = (
     "agent", "kiro", "shai", "autogpt", "autogen", "crewai",
     "langchain", "llamaindex", "copilot", "devin", "aider",
+    # GenAI application / product markers.
+    "hypervisia", "genai", "vllm", "ollama",
+    "assistant", "chatbot", "inference", "agentic",
 )
 
 # Known LLM / inference API hosts an agent is likely to call.
@@ -44,6 +58,15 @@ _LLM_ENV_HINTS = (
 _LLM_PROCESS_HINTS = (
     "openai", "anthropic", "langchain", "llama_index", "llamaindex",
     "autogen", "crewai", "ollama", "transformers", "vllm", "litellm",
+)
+
+# Pure-infrastructure process names. A container whose running processes are
+# *only* these daemons is a web/DB/cache sidecar, not an agent, even when it
+# shares an AI app's product name (e.g. the "nginx" tier of "ai-hypervisia").
+# Used to suppress name/image token signals so such sidecars stay unclassified.
+_INFRA_PROCESS_COMMS = (
+    "nginx", "postgres", "redis", "redis-server", "mysqld", "mariadbd",
+    "memcached", "haproxy", "envoy", "traefik", "httpd", "apache2",
 )
 
 # Weights per signal. Scores are summed then clamped to [0, 1].
@@ -76,34 +99,56 @@ def classify(observation: Dict[str, Any]) -> Dict[str, Any]:
     network = observation.get("network_summary") or {}
     status = (observation.get("status") or "").lower()
 
+    # Compute strong agentic signals first; they also decide whether a
+    # product-name match on a pure-infra sidecar should be trusted.
+    env_hits = _env_hits(env)
+    proc_hits = _process_hits(processes)
+    net_hits = _network_hits(network)
+    # A container running only infra daemons (nginx/postgres/redis/...) with no
+    # LLM/agent env, process, or network evidence is a web/DB sidecar. Suppress
+    # name/image token signals so it stays unclassified even if it carries an AI
+    # app's product name (e.g. "ai-hypervisia-nginx").
+    suppress_name_tokens = (
+        _is_pure_infra(processes) and not (env_hits or proc_hits or net_hits)
+    )
+
     # 1. Image name tokens.
     token = _first_token(image, _AGENT_NAME_TOKENS)
     if token:
-        score += _W_IMAGE_NAME
-        evidence.append(f"image '{observation.get('image')}' contains agent token '{token}'")
+        if suppress_name_tokens:
+            evidence.append(
+                f"image '{observation.get('image')}' contains agent token "
+                f"'{token}' (ignored: infra-only sidecar)")
+            token = None  # no score contribution; treated as no signal below
+        else:
+            score += _W_IMAGE_NAME
+            evidence.append(f"image '{observation.get('image')}' contains agent token '{token}'")
 
     # 2. Container name tokens.
-    token = _first_token(name, _AGENT_NAME_TOKENS)
-    if token:
-        score += _W_CONTAINER_NAME
-        evidence.append(f"container name '{observation.get('name')}' contains agent token '{token}'")
+    name_token = _first_token(name, _AGENT_NAME_TOKENS)
+    if name_token:
+        if suppress_name_tokens:
+            evidence.append(
+                f"container name '{observation.get('name')}' contains agent token "
+                f"'{name_token}' (ignored: infra-only sidecar)")
+        else:
+            score += _W_CONTAINER_NAME
+            evidence.append(f"container name '{observation.get('name')}' contains agent token '{name_token}'")
+            token = token or name_token
 
     # 3. Env var hints.
-    env_hits = _env_hits(env)
     if env_hits:
         score += _W_ENV_HINT
         shown = ", ".join(env_hits[:3])
         evidence.append(f"environment hints at LLM/agent config: {shown}")
 
     # 4. In-container process hints.
-    proc_hits = _process_hits(processes)
     if proc_hits:
         score += _W_PROCESS_HINT
         shown = ", ".join(sorted(proc_hits)[:3])
         evidence.append(f"process args reference LLM client libs: {shown}")
 
     # 5. Outbound connections to known LLM API hosts.
-    net_hits = _network_hits(network)
     if net_hits:
         score += _W_NETWORK_LLM
         shown = ", ".join(net_hits[:3])
@@ -141,6 +186,25 @@ def _env_hits(env: Dict[str, Any]) -> List[str]:
                 hits.append(key)
                 break
     return hits
+
+
+def _is_pure_infra(processes: List[Dict[str, str]]) -> bool:
+    """Return True if every running process is a known pure-infra daemon.
+
+    An empty process list returns False (unknown, not provably infra): the
+    suppression this gates is only applied when infra-only processes are
+    positively observed, so a sidecar with no process data is still eligible to
+    be classified on its other signals.
+    """
+    if not processes:
+        return False
+    for proc in processes:
+        comm = (proc.get("comm") or "").strip().lower()
+        args = (proc.get("args") or "").strip().lower()
+        hay = comm + " " + args
+        if not any(d in hay for d in _INFRA_PROCESS_COMMS):
+            return False
+    return True
 
 
 def _process_hits(processes: List[Dict[str, str]]) -> List[str]:

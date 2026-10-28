@@ -1268,6 +1268,272 @@ async function loadSandboxStatus() {
     }
 }
 
+/**
+ * Normalize an Agent Control API container list into display rows. Pure: no DOM
+ * and no I/O, so the jsdom harness can assert the rendered set (mirrors
+ * {@link renderSandboxApps}). Produces one row per input container, in input
+ * order, each carrying the required display fields with safe defaults for
+ * missing/odd values (Req 5.1, 2.1, 2.2).
+ *
+ * @param {Array<Object>} containers - discovered containers; each may carry
+ *        name, image, server_name, server_id, state, classification,
+ *        confidence_score, classification_evidence.
+ * @returns {Array<{name: string, image: string, server: (string|number), state: string, classification: string, confidence: number, evidence: string[]}>}
+ *          one row per input container, in input order.
+ */
+function renderAgentRows(containers) {
+    const list = Array.isArray(containers) ? containers : [];
+    return list.map(function (container) {
+        const c = (container && typeof container === 'object') ? container : {};
+        return {
+            name: c.name || '(unnamed)',
+            image: c.image || '',
+            server: c.server_name || c.server_id || '',
+            state: c.state || 'unknown',
+            classification: c.classification || 'unclassified',
+            confidence: typeof c.confidence_score === 'number' ? c.confidence_score : 0,
+            evidence: Array.isArray(c.classification_evidence) ? c.classification_evidence : [],
+        };
+    });
+}
+
+// Marker id for the injected Evidence_Tooltip stylesheet; the styles are added
+// once per document (Req 3.2).
+const AGENT_EVIDENCE_TOOLTIP_STYLE_ID = 'agent-evidence-tooltip-styles';
+
+/**
+ * Inject the Evidence_Tooltip stylesheet once per document. The tooltip matches
+ * the dashboard's inline-style palette (dark text on a light panel, a 1px solid
+ * #ddd border, small padding, a subtle shadow, font-size 12px) and is a custom
+ * styled popover rather than the native `title` attribute (Req 3.1, 3.2).
+ */
+function ensureAgentEvidenceTooltipStyles() {
+    if (typeof document === 'undefined' || !document.head) return;
+    if (document.getElementById(AGENT_EVIDENCE_TOOLTIP_STYLE_ID)) return;
+    const style = document.createElement('style');
+    style.id = AGENT_EVIDENCE_TOOLTIP_STYLE_ID;
+    style.textContent =
+        '.agent-evidence-tooltip {'
+        + ' position: absolute; z-index: 1000; left: 0; top: 100%;'
+        + ' max-width: 360px; padding: 6px 8px;'
+        + ' background: #fff; color: #333;'
+        + ' border: 1px solid #ddd; border-radius: 3px;'
+        + ' box-shadow: 0 2px 6px rgba(0,0,0,0.15);'
+        + ' font-size: 12px; line-height: 1.4; white-space: normal; }'
+        + '.agent-evidence-tooltip .evidence-line { display: block; }';
+    document.head.appendChild(style);
+}
+
+/**
+ * Build an Evidence_Tooltip element for a Classification_Cell, or return null
+ * when the cell carries no parseable evidence.
+ *
+ * The cell's `data-evidence` attribute is parsed inside a try/catch; a missing
+ * attribute or a parse failure yields no tooltip (Req 2.6, and the defensive
+ * JSON handling from the design). Each evidence entry is rendered as its own
+ * `.evidence-line` child in array order, with its text escaped via escapeHtml
+ * so classifier-supplied metacharacters render as text (Req 2.4, 2.7, 3.3).
+ *
+ * @param {HTMLElement} cell - the hovered `.agent-classification-cell`.
+ * @returns {HTMLElement|null} a `div.agent-evidence-tooltip`, or null.
+ */
+function buildAgentEvidenceTooltip(cell) {
+    if (!cell || typeof cell.getAttribute !== 'function') return null;
+    const raw = cell.getAttribute('data-evidence');
+    if (!raw) return null;
+    let lines;
+    try {
+        lines = JSON.parse(raw);
+    } catch (e) {
+        // Malformed JSON yields no tooltip rather than a thrown error.
+        return null;
+    }
+    if (!Array.isArray(lines) || lines.length === 0) return null;
+
+    const tooltip = document.createElement('div');
+    tooltip.className = 'agent-evidence-tooltip';
+    // One line node per evidence entry, in array order (Req 2.4, 3.3). escapeHtml
+    // neutralizes HTML metacharacters before the text reaches the DOM (Req 2.7).
+    let inner = '';
+    for (const line of lines) {
+        inner += '<span class="evidence-line">' + escapeHtml(String(line)) + '</span>';
+    }
+    tooltip.innerHTML = inner;
+    return tooltip;
+}
+
+/**
+ * Wire a single delegated hover handler on `#agentControlContent` that shows an
+ * Evidence_Tooltip while the pointer is over a `.agent-classification-cell` with
+ * evidence and removes it when the pointer leaves (Req 2.3, 2.5).
+ *
+ * The handler is bound once per container element; a marker flag on the element
+ * guards against double-binding across repeated `loadAgentControl` renders
+ * (the content is full-replaced, not the container, so the listener survives).
+ * Delegation uses the bubbling `mouseover`/`mouseout` events (plain `mouseenter`/
+ * `mouseleave` do not bubble) and resolves the cell with `closest`, so both real
+ * pointer movement and dispatched events drive the behavior.
+ *
+ * @param {HTMLElement} container - the `#agentControlContent` element.
+ */
+function wireAgentEvidenceTooltip(container) {
+    if (!container || container._agentEvidenceTooltipWired) return;
+    container._agentEvidenceTooltipWired = true;
+
+    function cellFrom(target) {
+        if (!target || typeof target.closest !== 'function') return null;
+        const cell = target.closest('.agent-classification-cell');
+        return (cell && container.contains(cell)) ? cell : null;
+    }
+
+    container.addEventListener('mouseover', function (evt) {
+        const cell = cellFrom(evt.target);
+        if (!cell || !cell.getAttribute('data-evidence')) return;
+        // Avoid stacking tooltips if mouseover fires repeatedly within the cell.
+        if (cell._agentEvidenceTooltip) return;
+        const tooltip = buildAgentEvidenceTooltip(cell);
+        if (!tooltip) return;
+        cell._agentEvidenceTooltip = tooltip;
+        cell.appendChild(tooltip);
+    });
+
+    container.addEventListener('mouseout', function (evt) {
+        const cell = cellFrom(evt.target);
+        if (!cell) return;
+        // Ignore moves that stay within the same cell (to a descendant).
+        const related = evt.relatedTarget;
+        if (related && typeof cell.contains === 'function' && cell.contains(related)) return;
+        const tooltip = cell._agentEvidenceTooltip;
+        if (tooltip && tooltip.parentNode) {
+            tooltip.parentNode.removeChild(tooltip);
+        }
+        cell._agentEvidenceTooltip = null;
+    });
+}
+
+/**
+ * Fetch the live container inventory from the Agent Control API and render the
+ * "Control of Agents" table. Shows a loading indicator before the request (Req 5.4),
+ * handles 401/error/network failures without breaking the refresh control (Req 5.5),
+ * surfaces a per-server error banner from the payload's `errors` array (Req 4.6),
+ * renders an empty-state message when there are no rows (Req 5.6), and full-replaces
+ * `#agentControlContent` so a refresh wipes the prior render (Req 5.3).
+ */
+async function loadAgentControl() {
+    const content = document.getElementById('agentControlContent');
+    if (!content) return;
+    // Inject the tooltip styles and wire the delegated hover handler once. The
+    // container element survives the inner-HTML full-replace below, so binding it
+    // here (guarded against double-binding) keeps the Evidence_Tooltip working
+    // across refreshes (Req 2.3, 2.5, 3.2).
+    ensureAgentEvidenceTooltipStyles();
+    wireAgentEvidenceTooltip(content);
+    // Loading indicator before awaiting the request (Req 5.4).
+    content.innerHTML = '<p>Loading agents...</p>';
+
+    try {
+        // Use the live-scan path (?live=1): discover + classify containers across
+        // every managed server on each load. The stored inventory
+        // (runtime_containers) is only populated by a background scanner, so the
+        // dashboard would otherwise show nothing until that scanner has run.
+        const response = await fetch('/api/agent-control/containers?live=1', {
+            method: 'GET',
+            credentials: 'same-origin'
+        });
+
+        if (response.status === 401) {
+            content.innerHTML = '<p style="color:orange;">Authentication is required. Please sign in.</p>';
+            return;
+        }
+        if (!response.ok) {
+            // Error message; the refresh control in the section header remains usable (Req 5.5).
+            content.innerHTML = '<p style="color:red;">Failed to load agents.</p>';
+            return;
+        }
+
+        const data = await response.json();
+        const rows = renderAgentRows(data && data.containers);
+
+        // Per-server error banner surfacing unreachable servers (Req 4.6).
+        let banner = '';
+        if (data && Array.isArray(data.errors) && data.errors.length) {
+            const ids = data.errors.map(function (e) { return (e && e.server_id != null) ? e.server_id : '?'; });
+            banner = '<p style="color:#b26a00;">⚠️ ' + escapeHtml(
+                data.errors.length + ' server(s) unreachable: ' + ids.join(', ')) + '</p>';
+        }
+
+        if (rows.length === 0) {
+            // Empty-state message (Req 5.6).
+            content.innerHTML = banner + '<p style="color:orange;">No agents were discovered.</p>';
+            return;
+        }
+
+        let html = banner + '<table style="width:100%; border-collapse:collapse;">';
+        html += '<tr style="border-bottom:1px solid #ddd;">'
+            + '<th style="text-align:left; padding:5px;">Name</th>'
+            + '<th style="text-align:left; padding:5px;">Image</th>'
+            + '<th style="text-align:left; padding:5px;">Server</th>'
+            + '<th style="text-align:left; padding:5px;">State</th>'
+            + '<th style="text-align:left; padding:5px;">Classification</th>'
+            + '<th style="text-align:left; padding:5px;">Confidence</th></tr>';
+        for (const r of rows) {
+            const badge = r.classification === 'probable_agent'
+                ? '<span style="background:#28a745; color:#fff; padding:2px 8px; border-radius:3px; font-size:12px;">probable agent</span>'
+                : '<span style="background:#6c757d; color:#fff; padding:2px 8px; border-radius:3px; font-size:12px;">unclassified</span>';
+            // Only cells with at least one evidence line carry data-evidence; empty
+            // cells get no carrier and therefore no tooltip (Req 2.6). The JSON is
+            // escaped before it reaches the attribute (Req 2.7).
+            const evidenceAttr = r.evidence.length
+                ? ' data-evidence="' + escapeHtml(JSON.stringify(r.evidence)) + '"'
+                : '';
+            html += '<tr style="border-bottom:1px solid #eee;">'
+                + '<td style="padding:5px;">' + escapeHtml(r.name) + '</td>'
+                + '<td style="padding:5px;">' + escapeHtml(r.image) + '</td>'
+                + '<td style="padding:5px;">' + escapeHtml(String(r.server)) + '</td>'
+                + '<td style="padding:5px;">' + escapeHtml(r.state) + '</td>'
+                + '<td class="agent-classification-cell" style="padding:5px; position:relative;"' + evidenceAttr + '>' + badge + '</td>'
+                + '<td style="padding:5px; color:' + confidenceColor(r.confidence) + '; font-weight:600;">' + escapeHtml(confidenceText(r.confidence)) + '</td>'
+                + '</tr>';
+        }
+        html += '</table>';
+        // Full replace so a refresh wipes the prior render (Req 5.3).
+        content.innerHTML = html;
+    } catch (err) {
+        // Thrown/network error; refresh control remains usable for retry (Req 5.5).
+        content.innerHTML = '<p style="color:red;">Failed to load agents.</p>';
+    }
+}
+
+// Threshold colors for the Confidence_Indicator (Req 4.1, 4.2, 4.3).
+const CONFIDENCE_RED = '#dc3545';
+const CONFIDENCE_ORANGE = '#fd7e14';
+const CONFIDENCE_GREEN = '#28a745';
+
+/**
+ * Threshold color for a confidence score in [0,1], judged on its whole-number
+ * percentage: red (<=20), orange (>20 and <51), green (>=51). Pure and exported
+ * for the jsdom harness. (Req 4.1, 4.2, 4.3)
+ * @param {number} score - confidence score in [0,1]
+ * @returns {string} a CSS color
+ */
+function confidenceColor(score) {
+    const pct = Math.round((typeof score === 'number' ? score : 0) * 100);
+    if (pct <= 20) return CONFIDENCE_RED;
+    if (pct < 51) return CONFIDENCE_ORANGE;
+    return CONFIDENCE_GREEN;
+}
+
+/**
+ * Render a confidence score in [0,1] as a whole-number percentage with a
+ * trailing percent sign, matching the displayed banding. (Req 4.4)
+ * @param {number} score - confidence score in [0,1]
+ * @returns {string} e.g. "42%"
+ */
+function confidenceText(score) {
+    const pct = Math.round((typeof score === 'number' ? score : 0) * 100);
+    return pct + '%';
+}
+
 /*
  * Export the Sort_Helper functions for the Node/jsdom test harness. In the
  * browser `module` is undefined, so this block is skipped and the functions
@@ -1295,5 +1561,16 @@ if (typeof module !== 'undefined' && module.exports) {
         // Onboarding sandbox render helper (Req 3.3, tested by task 15.3)
         SANDBOX_ALLOWED_STATUSES,
         renderSandboxApps,
+        // Agent Control render helper (Req 5.1, 2.1, 2.2)
+        renderAgentRows,
+        // Agent Control loader (Req 5.1, 5.3, 5.4, 5.5, 5.6, 4.6, 2.3, 2.6, 2.7)
+        loadAgentControl,
+        // Confidence color/text helpers (Req 4.1, 4.2, 4.3, 4.4)
+        confidenceColor,
+        confidenceText,
+        // Evidence_Tooltip helpers (Req 2.3, 2.4, 2.5, 2.6, 3.1, 3.2, 3.3)
+        ensureAgentEvidenceTooltipStyles,
+        buildAgentEvidenceTooltip,
+        wireAgentEvidenceTooltip,
     };
 }
