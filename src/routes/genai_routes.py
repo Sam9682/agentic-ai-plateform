@@ -107,7 +107,21 @@ def resolve_context_file(safe_action):
     return None
 
 
-def return_prompt_for_developer(detected_action, application_name, application_folder, user_name, user_email, repo_gitea_url='', branch_name='', repo_github_url='', message='', version='default'):
+def _session_user_id():
+    """Return the current Flask session user id, or 0 outside a request context.
+
+    Reads ``session.get('user_id', 0)`` inside a ``try/except RuntimeError`` so
+    the prompt builders can be called from non-Flask surfaces (e.g. the MCP
+    stdio server), where accessing ``session`` raises ``RuntimeError: Working
+    outside of request context``. In that case it returns ``0``.
+    """
+    try:
+        return session.get('user_id', 0)
+    except RuntimeError:
+        return 0
+
+
+def return_prompt_for_developer(detected_action, application_name, application_folder, user_name, user_email, repo_gitea_url='', branch_name='', repo_github_url='', message='', version='default', user_id=None):
     l_prompt = ''
 
     if version == 'default':
@@ -151,7 +165,7 @@ def return_prompt_for_developer(detected_action, application_name, application_f
 
             # Replace placeholders
             try:
-                l_prompt = context_template.replace('{{USER_ID}}', str(session.get('user_id', 0)))
+                l_prompt = context_template.replace('{{USER_ID}}', str(user_id if user_id is not None else _session_user_id()))
                 l_prompt = l_prompt.replace('{{USER_NAME}}', user_name or '')
                 l_prompt = l_prompt.replace('{{USER_EMAIL}}', user_email or '')
                 l_prompt = l_prompt.replace('{{TAIL_LINES}}', '100')
@@ -170,7 +184,7 @@ def return_prompt_for_developer(detected_action, application_name, application_f
 # Inventory of recognized executable operator actions. Mirrors the operator
 # dropdown in templates/dashboard.html. MODIFY_CODE is intentionally excluded
 # because it is redirected to the Developer agent before prompt building.
-RECOGNIZED_OPERATOR_ACTIONS = {'START', 'STOP', 'LOGS', 'PS', 'SPECIFY', 'RESTORE_DATABASE'}
+RECOGNIZED_OPERATOR_ACTIONS = {'START', 'STOP', 'LOGS', 'PS', 'SPECIFY', 'RESTORE_DATABASE', 'BACKUP'}
 
 def _is_recognized_operator_action(safe_action):
     """Return True if the given action is a recognized executable operator action.
@@ -192,7 +206,7 @@ User Question: {message}
 Provide a helpful and informative response.
 """
 
-def return_prompt_for_operator(detected_action, application_name, application_folder, user_name, user_email, version='default'):
+def return_prompt_for_operator(detected_action, application_name, application_folder, user_name, user_email, version='default', user_id=None):
     """Resolve the operator prompt for a detected action.
 
     Returns a tuple ``(l_prompt, is_executing)`` where ``is_executing`` is True
@@ -243,7 +257,7 @@ def return_prompt_for_operator(detected_action, application_name, application_fo
 
             # Replace placeholders
             try:
-                l_prompt = context_template.replace('{{USER_ID}}', str(session.get('user_id', 0)))
+                l_prompt = context_template.replace('{{USER_ID}}', str(user_id if user_id is not None else _session_user_id()))
                 l_prompt = l_prompt.replace('{{USER_NAME}}', user_name or '')
                 l_prompt = l_prompt.replace('{{USER_EMAIL}}', user_email or '')
                 l_prompt = l_prompt.replace('{{TAIL_LINES}}', '100')
