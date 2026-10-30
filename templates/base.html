@@ -15,18 +15,32 @@
                 <div class="nav-links">
                     {% if session.user_id %}
                         {% if username %}<span class="nav-user">{{ get_text('welcome') }}, {{ username }}</span>{% endif %}
-                        <a href="javascript:void(0)" onclick="showTab('apps')" id="navApps" class="nav-active">{{ get_text('applications') }}</a>
+                        <div class="nav-dropdown">
+                            <a href="javascript:void(0)" class="nav-dropdown-btn" id="navApps" onclick="toggleNavDropdown('apps')">{{ get_text('applications') }} ▼</a>
+                            <div class="nav-dropdown-content" id="navAppsDropdown">
+                                <a href="javascript:void(0)" onclick="showTab('apps')" id="navAppsDashboard">📊 {{ get_text('am_dashboard') }}</a>
+                                <a href="javascript:void(0)" onclick="showTab('agentControl')" id="navAgentControl">📦 {{ get_text('control_of_applications') }}</a>
+                                {% if username == 'admin' %}
+                                <a href="javascript:void(0)" onclick="showTab('appManagement')" id="navAppManagement">📱 {{ get_text('applications_management') }}</a>
+                                <a href="javascript:void(0)" onclick="showTab('orchestrator')" id="navAppOrchestrator">🎯 {{ get_text('applications_orchestrator') }}</a>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="nav-dropdown">
+                            <a href="javascript:void(0)" class="nav-dropdown-btn" id="navAgents" onclick="toggleNavDropdown('agents')">🛰️ {{ get_text('agents') }} ▼</a>
+                            <div class="nav-dropdown-content" id="navAgentsDropdown">
+                                <a href="javascript:void(0)" onclick="showTab('agentManagement')" id="navAgentManagement">🛰️ {{ get_text('agent_management') }}</a>
+                            </div>
+                        </div>
                         <a href="javascript:void(0)" onclick="showTab('orchestratorServerless')" id="navOrchestratorServerless">🚀 Serverless</a>
                         <div class="nav-dropdown">
                             <a href="javascript:void(0)" class="nav-dropdown-btn" id="navTooling" onclick="toggleNavDropdown('tooling')">🛠️ {{ get_text('tooling') }} ▼</a>
                             <div class="nav-dropdown-content" id="navToolingDropdown">
-                                <a href="javascript:void(0)" onclick="showTab('agentControl')" id="navAgentControl">🤖 {{ get_text('control_of_agents') }}</a>
-                                <a href="javascript:void(0)" onclick="showTab('agentManagement')" id="navAgentManagement">🛰️ {{ get_text('agent_management') }}</a>
                                 <a href="javascript:void(0)" onclick="showTab('sandbox')" id="navSandbox">🧪 {{ get_text('sandbox') }}</a>
                                 <a href="javascript:void(0)" onclick="showTab('marketplace')" id="navMarketplace">🛒 {{ get_text('marketplace') }}</a>
+                                <a href="javascript:void(0)" onclick="showTab('billing')" id="navBilling">💳 {{ get_text('billing') }}</a>
                             </div>
                         </div>
-                        <a href="javascript:void(0)" onclick="showTab('billing')" id="navBilling">{{ get_text('billing') }}</a>
                         <a href="javascript:void(0)" onclick="showTab('security')" id="navSecurity">🔐</a>
                         {% if username == 'admin' %}
                         <div class="nav-dropdown">
@@ -34,9 +48,7 @@
                             <div class="nav-dropdown-content" id="navConfigDropdown">
                                 <a href="javascript:void(0)" onclick="showTab('users')">👥 {{ get_text('user_management') }}</a>
                                 <a href="javascript:void(0)" onclick="showTab('servers')">🖥️ {{ get_text('server_management') }}</a>
-                                <a href="javascript:void(0)" onclick="showTab('appManagement')">📱 {{ get_text('applications_management') }}</a>
                                 <a href="javascript:void(0)" onclick="showTab('deployments')">🚀 {{ get_text('deployments_management') }}</a>
-                                <a href="javascript:void(0)" onclick="showTab('orchestrator')">🎯 {{ get_text('orchestrator') }}</a>
                                 <a href="javascript:void(0)" onclick="showTab('database')">🗄️ {{ get_text('database_management') }}</a>
                                 <a href="javascript:void(0)" onclick="showTab('settings')">⚙️ Settings</a>
                             </div>
@@ -85,21 +97,26 @@
             <div class="mobile-nav-content">
                 {% if session.user_id %}
                     {% if username %}<span class="nav-user">{{ get_text('welcome') }}, {{ username }}</span>{% endif %}
-                    <a href="javascript:void(0)" onclick="showTab('apps')">{{ get_text('applications') }}</a>
+                    <span class="mobile-nav-group-label">{{ get_text('applications') }}</span>
+                    <a href="javascript:void(0)" onclick="showTab('apps')">📊 {{ get_text('am_dashboard') }}</a>
+                    <a href="javascript:void(0)" onclick="showTab('agentControl')">📦 {{ get_text('control_of_applications') }}</a>
+                    {% if username == 'admin' %}
+                    <a href="javascript:void(0)" onclick="showTab('appManagement')">📱 {{ get_text('applications_management') }}</a>
+                    <a href="javascript:void(0)" onclick="showTab('orchestrator')">🎯 {{ get_text('applications_orchestrator') }}</a>
+                    {% endif %}
+                    <span class="mobile-nav-group-label">🛰️ {{ get_text('agents') }}</span>
+                    <a href="javascript:void(0)" onclick="showTab('agentManagement')">🛰️ {{ get_text('agent_management') }}</a>
                     <a href="javascript:void(0)" onclick="showTab('orchestratorServerless')">🚀 Serverless</a>
                     <span class="mobile-nav-group-label">🛠️ {{ get_text('tooling') }}</span>
-                    <a href="javascript:void(0)" onclick="showTab('agentControl')">🤖 {{ get_text('control_of_agents') }}</a>
-                    <a href="javascript:void(0)" onclick="showTab('agentManagement')">🛰️ {{ get_text('agent_management') }}</a>
                     <a href="javascript:void(0)" onclick="showTab('sandbox')">🧪 {{ get_text('sandbox') }}</a>
                     <a href="javascript:void(0)" onclick="showTab('marketplace')">🛒 {{ get_text('marketplace') }}</a>
-                    <a href="javascript:void(0)" onclick="showTab('billing')">{{ get_text('billing') }}</a>
+                    <a href="javascript:void(0)" onclick="showTab('billing')">💳 {{ get_text('billing') }}</a>
                     <a href="javascript:void(0)" onclick="showTab('security')">🔐 {{ get_text('account_security') }}</a>
                     {% if username == 'admin' %}
+                    <span class="mobile-nav-group-label">{{ get_text('configuration') }}</span>
                     <a href="javascript:void(0)" onclick="showTab('users')">👥 {{ get_text('user_management') }}</a>
                     <a href="javascript:void(0)" onclick="showTab('servers')">🖥️ {{ get_text('server_management') }}</a>
-                    <a href="javascript:void(0)" onclick="showTab('appManagement')">📱 {{ get_text('applications_management') }}</a>
                     <a href="javascript:void(0)" onclick="showTab('deployments')">🚀 {{ get_text('deployments_management') }}</a>
-                    <a href="javascript:void(0)" onclick="showTab('orchestrator')">🎯 {{ get_text('orchestrator') }}</a>
                     <a href="javascript:void(0)" onclick="showTab('database')">🗄️ {{ get_text('database_management') }}</a>
                     <a href="javascript:void(0)" onclick="showTab('settings')">⚙️ Settings</a>
                     {% endif %}
@@ -158,22 +175,26 @@
         
         // Navbar dropdown functionality
         function toggleNavDropdown(dropdownType) {
-            const configDropdown = document.getElementById('navConfigDropdown');
-            const helpDropdown = document.getElementById('navHelpDropdown');
-            const toolingDropdown = document.getElementById('navToolingDropdown');
-            
-            // Close all dropdowns first
-            if (configDropdown) configDropdown.style.display = 'none';
-            if (helpDropdown) helpDropdown.style.display = 'none';
-            if (toolingDropdown) toolingDropdown.style.display = 'none';
-            
-            // Open the requested dropdown
-            if (dropdownType === 'config' && configDropdown) {
-                configDropdown.style.display = 'block';
-            } else if (dropdownType === 'help' && helpDropdown) {
-                helpDropdown.style.display = 'block';
-            } else if (dropdownType === 'tooling' && toolingDropdown) {
-                toolingDropdown.style.display = 'block';
+            // Map each dropdown type to its content element id.
+            const dropdowns = {
+                apps: 'navAppsDropdown',
+                agents: 'navAgentsDropdown',
+                tooling: 'navToolingDropdown',
+                config: 'navConfigDropdown',
+                help: 'navHelpDropdown',
+            };
+
+            // Close all dropdowns first.
+            Object.values(dropdowns).forEach(function (id) {
+                const el = document.getElementById(id);
+                if (el) el.style.display = 'none';
+            });
+
+            // Open the requested dropdown.
+            const targetId = dropdowns[dropdownType];
+            if (targetId) {
+                const el = document.getElementById(targetId);
+                if (el) el.style.display = 'block';
             }
         }
         
@@ -189,12 +210,11 @@
             if (!event.target.matches('.nav-dropdown-btn') && 
                 !event.target.closest('.nav-dropdown-content') &&
                 !event.target.closest('.nav-dropdown')) {
-                const configDropdown = document.getElementById('navConfigDropdown');
-                const helpDropdown = document.getElementById('navHelpDropdown');
-                const toolingDropdown = document.getElementById('navToolingDropdown');
-                if (configDropdown) configDropdown.style.display = 'none';
-                if (helpDropdown) helpDropdown.style.display = 'none';
-                if (toolingDropdown) toolingDropdown.style.display = 'none';
+                ['navAppsDropdown', 'navAgentsDropdown', 'navToolingDropdown',
+                 'navConfigDropdown', 'navHelpDropdown'].forEach(function (id) {
+                    const el = document.getElementById(id);
+                    if (el) el.style.display = 'none';
+                });
             }
         });
         
@@ -205,14 +225,21 @@
             document.querySelectorAll('.nav-dropdown-btn').forEach(l => l.classList.remove('nav-active'));
 
             const map = {
+                // Applications dropdown
                 apps: 'navApps',
-                billing: 'navBilling',
-                security: 'navSecurity',
+                agentControl: 'navApps',
+                appManagement: 'navApps',
+                orchestrator: 'navApps',
+                // Agents dropdown
+                agentManagement: 'navAgents',
+                // Serverless (flat link)
                 orchestratorServerless: 'navOrchestratorServerless',
-                marketplace: 'navMarketplace',
-                sandbox: 'navSandbox',
-                agentControl: 'navTooling',
-                agentManagement: 'navTooling',
+                // Tooling dropdown
+                sandbox: 'navTooling',
+                marketplace: 'navTooling',
+                billing: 'navTooling',
+                // Account security icon (flat link)
+                security: 'navSecurity',
             };
             const id = map[activeTab];
             if (id) { const el = document.getElementById(id); if (el) el.classList.add('nav-active'); }

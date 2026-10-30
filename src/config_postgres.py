@@ -496,6 +496,9 @@ TRANSLATIONS = {
         'agent_control_loading': 'Loading agents...',
         # Agent Management (ARO + ZAF) section
         'agent_management': 'Agent Management',
+        'agents': 'Agents',
+        'control_of_applications': 'Control of Applications',
+        'applications_orchestrator': 'Applications Orchestrator',
         'am_dashboard': 'Dashboard',
         'am_runtimes': 'Runtime Registry',
         'am_instances': 'Agent Instances',
@@ -817,6 +820,9 @@ TRANSLATIONS = {
         'agent_control_loading': 'Chargement des agents...',
         # Gestion des agents (ARO + ZAF)
         'agent_management': 'Gestion des agents',
+        'agents': 'Agents',
+        'control_of_applications': 'Contrôle des applications',
+        'applications_orchestrator': 'Orchestrateur des applications',
         'am_dashboard': 'Tableau de bord',
         'am_runtimes': 'Registre des runtimes',
         'am_instances': "Instances d'agents",

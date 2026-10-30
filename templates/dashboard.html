@@ -993,7 +993,7 @@
     <!-- Control of Agents Section (tooling-menu-agent-control, Req 5.2, 5.7) -->
     <div id="agentControlSection" class="tab-content" style="display: none;">
         <div class="section-header">
-            <h2>🤖 {{ get_text('control_of_agents') }}</h2>
+            <h2>📦 {{ get_text('control_of_applications') }}</h2>
             <button class="btn btn-secondary" onclick="loadAgentControl()">🔄 {{ get_text('refresh') }}</button>
         </div>
 
@@ -1348,14 +1348,14 @@ function showTab(tab) {
         updateNavActive(tab);
     }
     
-    // Only close dropdowns if we're actually switching tabs within the dashboard
-    // Don't close dropdowns for Help menu navigation since those are external links
-    if (tab === 'apps' || tab === 'billing' || tab === 'security' || tab === 'users' || tab === 'appManagement' || tab === 'servers' || tab === 'orchestrator' || tab === 'deployments' || tab === 'database' || tab === 'orchestratorServerless') {
-        const configDropdown = document.getElementById('navConfigDropdown');
-        const helpDropdown = document.getElementById('navHelpDropdown');
-        if (configDropdown) configDropdown.style.display = 'none';
-        if (helpDropdown) helpDropdown.style.display = 'none';
-    }
+    // Switching to any in-dashboard tab closes every open nav dropdown. Help
+    // menu items are external links and are not routed through switchTab, so
+    // they are unaffected.
+    ['navAppsDropdown', 'navAgentsDropdown', 'navToolingDropdown',
+     'navConfigDropdown', 'navHelpDropdown'].forEach(function (id) {
+        const el = document.getElementById(id);
+        if (el) el.style.display = 'none';
+    });
 }
 
 function loadUsers() {
