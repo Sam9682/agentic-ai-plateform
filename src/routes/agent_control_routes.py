@@ -85,5 +85,46 @@ def list_containers():
     servers = [
         {'id': r[0], 'server_ip': r[1], 'server_name': r[2]} for r in rows
     ]
-    payload = svc.scan_live(servers, collect_server_containers, classify)
+
+    # Requester identity: there is no users.is_admin column, so we look up only
+    # the username and resolve admin from the session flag (serverless_routes
+    # convention) OR username == 'admin' (billing_routes / api_deployments
+    # convention). Either signal grants admin; neither means non-admin.
+    viewer_id = session['user_id']
+    viewer = db_manager.execute_query(
+        'SELECT username FROM users WHERE id = %s',
+        (viewer_id,), fetch_one=True,
+    )
+    viewer_username = viewer[0] if viewer else None
+    is_admin = bool(session.get('is_admin')) or viewer_username == 'admin'
+
+    # Owner index: deployments ⋈ users (excluding failed/error rows). A DB
+    # failure here fails safe to an EMPTY index rather than raising: every
+    # container then derives as Unowned, so admins still see all rows and
+    # non-admins see none — never leaking another user's container (Req 5.1,
+    # 5.2, 5.3).
+    try:
+        deployment_rows = db_manager.execute_query(
+            "SELECT d.user_id, u.username, d.application_name, d.deployment_path "
+            "FROM deployments d JOIN users u ON u.id = d.user_id "
+            "WHERE d.status NOT IN ('failed', 'error')",
+            fetch_all=True,
+        ) or []
+        index = svc.build_deployments_index(deployment_rows)
+    except Exception as exc:  # fail safe: empty index (Req 5.1, 5.2, 5.3)
+        logger.error('Failed to build deployments index: %s', exc)
+        index = {"by_slug": {}, "by_path": {}}
+
+    payload = svc.scan_live(
+        servers, collect_server_containers, classify,
+        owner_for=lambda c: svc.derive_owner(c, index),
+    )
+
+    # Admin sees everything unchanged (Unowned + infra, preserving errors).
+    # Non-admin keeps only containers they own (Req 4.1, 4.2, 5.1, 5.2, 5.3).
+    if not is_admin:
+        payload['containers'] = [
+            c for c in payload['containers']
+            if c.get('owner') and c['owner'].get('user_id') == viewer_id
+        ]
     return jsonify(payload), 200

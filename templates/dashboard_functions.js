@@ -1286,6 +1286,8 @@ function renderAgentRows(containers) {
     return list.map(function (container) {
         const c = (container && typeof container === 'object') ? container : {};
         return {
+            application: c.application_name || '',
+            owner: (c.owner && c.owner.username) ? c.owner.username : '',
             name: c.name || '(unnamed)',
             image: c.image || '',
             server: c.server_name || c.server_id || '',
@@ -1470,12 +1472,15 @@ async function loadAgentControl() {
 
         let html = banner + '<table style="width:100%; border-collapse:collapse;">';
         html += '<tr style="border-bottom:1px solid #ddd;">'
+            + '<th style="text-align:left; padding:5px;">Application</th>'
+            + '<th style="text-align:left; padding:5px;">Owner</th>'
             + '<th style="text-align:left; padding:5px;">Name</th>'
             + '<th style="text-align:left; padding:5px;">Image</th>'
             + '<th style="text-align:left; padding:5px;">Server</th>'
             + '<th style="text-align:left; padding:5px;">State</th>'
             + '<th style="text-align:left; padding:5px;">Classification</th>'
-            + '<th style="text-align:left; padding:5px;">Confidence</th></tr>';
+            + '<th style="text-align:left; padding:5px;">Confidence</th>'
+            + '<th style="text-align:left; padding:5px;">Action</th></tr>';
         for (const r of rows) {
             const badge = r.classification === 'probable_agent'
                 ? '<span style="background:#28a745; color:#fff; padding:2px 8px; border-radius:3px; font-size:12px;">probable agent</span>'
@@ -1486,13 +1491,22 @@ async function loadAgentControl() {
             const evidenceAttr = r.evidence.length
                 ? ' data-evidence="' + escapeHtml(JSON.stringify(r.evidence)) + '"'
                 : '';
+            // Per-row STOP control: enabled and carrying the application name when
+            // present (Req 3.1); disabled with an explanatory title when the row has
+            // no application name (Req 3.4).
+            const stopBtn = r.application
+                ? '<button class="btn btn-danger btn-small" onclick="stopAgentApplication(\'' + escapeHtml(r.application) + '\')">⛔ Stop</button>'
+                : '<button class="btn btn-danger btn-small" disabled title="No application name">⛔ Stop</button>';
             html += '<tr style="border-bottom:1px solid #eee;">'
+                + '<td style="padding:5px;">' + (escapeHtml(r.application) || '—') + '</td>'
+                + '<td style="padding:5px;">' + (escapeHtml(r.owner) || '—') + '</td>'
                 + '<td style="padding:5px;">' + escapeHtml(r.name) + '</td>'
                 + '<td style="padding:5px;">' + escapeHtml(r.image) + '</td>'
                 + '<td style="padding:5px;">' + escapeHtml(String(r.server)) + '</td>'
                 + '<td style="padding:5px;">' + escapeHtml(r.state) + '</td>'
                 + '<td class="agent-classification-cell" style="padding:5px; position:relative;"' + evidenceAttr + '>' + badge + '</td>'
                 + '<td style="padding:5px; color:' + confidenceColor(r.confidence) + '; font-weight:600;">' + escapeHtml(confidenceText(r.confidence)) + '</td>'
+                + '<td style="padding:5px;">' + stopBtn + '</td>'
                 + '</tr>';
         }
         html += '</table>';
@@ -1501,6 +1515,48 @@ async function loadAgentControl() {
     } catch (err) {
         // Thrown/network error; refresh control remains usable for retry (Req 5.5).
         content.innerHTML = '<p style="color:red;">Failed to load agents.</p>';
+    }
+}
+
+/**
+ * Stop a whole Compose application from the Control_View by reusing the existing
+ * application-level STOP action (POST /api/deployments). Mirrors the
+ * deployTemplate / sandboxAction pattern in this file.
+ *
+ * Guards against an empty application name (Req 3.4) so no request is sent. Sends
+ * `{ action: 'STOP', application_name }` with same-origin credentials (Req 3.2).
+ * On a non-ok response or a thrown error, surfaces an inline message at the top of
+ * `#agentControlContent` WITHOUT refreshing, leaving the current table in place so
+ * the operator keeps context (Req 3.6). On success, re-renders via loadAgentControl
+ * (Req 3.5).
+ *
+ * @param {string} applicationName - the row's application (compose project) name.
+ */
+async function stopAgentApplication(applicationName) {
+    if (!applicationName) return;                       // guard (Req 3.4)
+    const content = document.getElementById('agentControlContent');
+    try {
+        const response = await fetch('/api/deployments', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'STOP', application_name: applicationName })
+        });                                             // Req 3.2
+        const data = await response.json().catch(function () { return {}; });
+        if (!response.ok) {
+            if (content) {
+                content.insertAdjacentHTML('afterbegin',
+                    '<p style="color:red;">⛔ Stop failed: '
+                    + escapeHtml((data && data.error) || 'Unknown error') + '</p>');
+            }                                           // Req 3.6
+            return;
+        }
+        await loadAgentControl();                       // refresh (Req 3.5)
+    } catch (err) {
+        if (content) {
+            content.insertAdjacentHTML('afterbegin',
+                '<p style="color:red;">⛔ Stop failed.</p>'); // Req 3.6
+        }
     }
 }
 
@@ -1751,6 +1807,8 @@ if (typeof module !== 'undefined' && module.exports) {
         renderAgentRows,
         // Agent Control loader (Req 5.1, 5.3, 5.4, 5.5, 5.6, 4.6, 2.3, 2.6, 2.7)
         loadAgentControl,
+        // Per-row STOP handler reusing POST /api/deployments (Req 3.1, 3.2, 3.5, 3.6)
+        stopAgentApplication,
         // Confidence color/text helpers (Req 4.1, 4.2, 4.3, 4.4)
         confidenceColor,
         confidenceText,
