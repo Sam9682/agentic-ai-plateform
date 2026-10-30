@@ -1747,10 +1747,228 @@ async function loadAmRuntimes() {
 
 async function loadAmInstances() {
     const data = await amGet('/api/v1/agents/');
-    amRenderTable('amInstancesContent',
-        [{ key: 'id', label: 'ID' }, { key: 'identity', label: 'Identity' },
-         { key: 'name', label: 'Name' }, { key: 'status', label: 'Status' }],
-        data && data.agents, 'No agents registered.');
+    renderAgentInstancesTable('amInstancesContent', data && data.agents, 'amInstancesFeedback');
+}
+
+/*
+ * Pure status -> legal-controls mapping for Agent Management lifecycle controls.
+ *
+ * Maps an agent's current `status` to which of the three lifecycle controls
+ * (Start / Stop / Restart) are legal, derived directly from the backend
+ * transition graph (src/aro/lifecycle.py, src/aro/lifecycle_service.py):
+ *   - start   drives -> STARTING, legal from READY, STOPPED, FAILED
+ *   - stop    drives -> STOPPING, legal from RUNNING, UNHEALTHY
+ *   - restart stops-then-starts (or starts), viable from
+ *             RUNNING, READY, STOPPED, FAILED, UNHEALTHY
+ * Every transient/other/unknown state (REGISTERED, INSTALLING, INSTALLED,
+ * CONFIGURING, STARTING, STOPPING, QUARANTINED, TERMINATED, and any value not
+ * listed) enables nothing. An action presented as enabled corresponds to a
+ * transition the service would accept; a disabled action corresponds to one
+ * the service would reject with 409. Pure (no DOM access), plain top-level
+ * declaration so inline onclick handlers resolve it in the browser, and
+ * exported for the jsdom unit tests. (Req 2.5)
+ *
+ * @param {string} status - the agent's current lifecycle status.
+ * @returns {{start: boolean, stop: boolean, restart: boolean}}
+ */
+function lifecycleControlState(status) {
+    const start = status === 'READY' || status === 'STOPPED' || status === 'FAILED';
+    const stop = status === 'RUNNING' || status === 'UNHEALTHY';
+    const restart = status === 'RUNNING' || status === 'READY' || status === 'STOPPED'
+        || status === 'FAILED' || status === 'UNHEALTHY';
+    return { start, stop, restart };
+}
+
+/*
+ * Dedicated Instances renderer for the Agent Management "Instances" panel.
+ *
+ * This is a SEPARATE render path from the shared amRenderTable() (which backs
+ * seven other panels and emits text-only cells). Keeping the action-control
+ * markup here leaves amRenderTable() provably untouched (Req 3.4) while adding
+ * per-agent Start / Stop / Restart controls whose enabled/disabled state is
+ * derived from lifecycleControlState(agent.status) (Req 2.1, 2.5).
+ */
+
+// The three lifecycle operations and their display labels, in render order.
+const AM_LIFECYCLE_OPS = [
+    { op: 'start', label: 'Start' },
+    { op: 'stop', label: 'Stop' },
+    { op: 'restart', label: 'Restart' },
+];
+
+/**
+ * Build the <tr> HTML for the Instances table body: one row per agent with
+ * ID / Identity / Name / Status cells plus an Actions cell carrying three
+ * state-aware Start / Stop / Restart buttons.
+ *
+ * All interpolated cell and attribute values are HTML-escaped via escapeHtml.
+ * The agent id used in each button's inline onclick is coerced to an integer
+ * and rendered numerically, so the handler argument is never attacker-controlled
+ * markup. Each button's `disabled` state comes from lifecycleControlState(status);
+ * a disabled button also carries a `title` explaining why it is unavailable.
+ * Pure (returns a string, no DOM access) and exported for the jsdom harness.
+ * (Req 2.1, 2.5)
+ *
+ * @param {Array<Object>} agents - the agent objects (id, identity, name, status).
+ * @returns {string} the concatenated <tr>...</tr> rows.
+ */
+function renderAgentInstanceRows(agents) {
+    const list = Array.isArray(agents) ? agents : [];
+    let html = '';
+    for (const agent of list) {
+        const a = agent || {};
+        const status = a.status === undefined || a.status === null ? '' : String(a.status);
+        const idText = a.id === undefined || a.id === null ? '' : String(a.id);
+        const identityText = a.identity === undefined || a.identity === null ? '' : String(a.identity);
+        const nameText = a.name === undefined || a.name === null ? '' : String(a.name);
+        // Coerce the id used in the onclick to an integer rendered numerically,
+        // so the inline handler argument cannot carry injected markup. A
+        // non-numeric id yields 0 (no row action succeeds against a bad id).
+        const idNum = parseInt(a.id, 10);
+        const onclickId = Number.isFinite(idNum) ? idNum : 0;
+        const state = lifecycleControlState(status);
+        html += '<tr style="border-bottom:1px solid #eee;">';
+        html += '<td style="padding:5px;">' + escapeHtml(idText) + '</td>';
+        html += '<td style="padding:5px;">' + escapeHtml(identityText) + '</td>';
+        html += '<td style="padding:5px;">' + escapeHtml(nameText) + '</td>';
+        html += '<td style="padding:5px;">' + escapeHtml(status) + '</td>';
+        html += '<td style="padding:5px;">';
+        for (const entry of AM_LIFECYCLE_OPS) {
+            const enabled = !!state[entry.op];
+            const disabledAttr = enabled ? '' : ' disabled';
+            const titleAttr = enabled
+                ? ''
+                : ' title="' + escapeHtml(entry.label + ' is not allowed while '
+                    + (status || 'in this state') + '"');
+            html += '<button type="button"' + disabledAttr + titleAttr
+                + ' onclick="triggerAgentLifecycle(' + onclickId + ', \'' + entry.op + '\')"'
+                + ' style="margin-right:4px;">' + escapeHtml(entry.label) + '</button>';
+        }
+        html += '</td>';
+        html += '</tr>';
+    }
+    return html;
+}
+
+/**
+ * Write the full Instances table into a container, reusing the SAME empty-state
+ * text ("No agents registered.") and error-state rendering and the same
+ * `__error` convention as amRenderTable (so Req 3.3 is preserved), then add a
+ * dedicated per-panel feedback element (#amInstancesFeedback) that
+ * triggerAgentLifecycle writes success/error messages into without disturbing
+ * the table. A thin wrapper: it delegates the row markup to
+ * renderAgentInstanceRows and leaves amRenderTable() untouched (Req 3.4).
+ *
+ * @param {string} containerId - id of the container element to render into.
+ * @param {Array<Object>|{__error:*}} data - agent list, or an {__error} marker.
+ * @param {string} feedbackId - id for the feedback element (e.g. 'amInstancesFeedback').
+ */
+function renderAgentInstancesTable(containerId, data, feedbackId) {
+    const content = document.getElementById(containerId);
+    if (!content) return;
+    // Error state: same text and __error convention as amRenderTable (Req 3.3).
+    if (data && data.__error) {
+        content.innerHTML = '<p style="color:red;">Failed to load (' + escapeHtml(String(data.__error)) + ').</p>';
+        return;
+    }
+    const list = Array.isArray(data) ? data : [];
+    // Empty state: same text as amRenderTable's caller passed (Req 3.3).
+    if (list.length === 0) {
+        content.innerHTML = '<p style="color:orange;">' + escapeHtml('No agents registered.') + '</p>';
+        return;
+    }
+    const fbId = feedbackId || 'amInstancesFeedback';
+    let html = '<table style="width:100%; border-collapse:collapse;"><tr style="border-bottom:1px solid #ddd;">';
+    html += '<th style="text-align:left; padding:5px;">' + escapeHtml('ID') + '</th>';
+    html += '<th style="text-align:left; padding:5px;">' + escapeHtml('Identity') + '</th>';
+    html += '<th style="text-align:left; padding:5px;">' + escapeHtml('Name') + '</th>';
+    html += '<th style="text-align:left; padding:5px;">' + escapeHtml('Status') + '</th>';
+    html += '<th style="text-align:left; padding:5px;">' + escapeHtml('Actions') + '</th>';
+    html += '</tr>';
+    html += renderAgentInstanceRows(list);
+    html += '</table>';
+    html += '<div id="' + escapeHtml(fbId) + '" style="margin-top:8px;"></div>';
+    content.innerHTML = html;
+}
+
+/**
+ * POST helper for the Instances lifecycle actions, mirroring amGet's result
+ * shape. POSTs to /api/v1/agents/<agentId>/<op> with same-origin credentials,
+ * parses the body defensively (a non-JSON or empty body yields {} rather than
+ * throwing), and discriminates success / 409 / 404 / network error exactly as
+ * amGet does: the parsed body on success, { __error: resp.status } on any
+ * non-OK response (including 409 and 404), and { __error: 'network' } when the
+ * request itself throws. Plain top-level declaration so it is resolvable from
+ * the inline onclick handler; exported for the jsdom harness. (Req 2.2, 2.3, 2.4)
+ *
+ * @param {number|string} agentId - the agent's id (used in the URL path).
+ * @param {string} op - the lifecycle operation: 'start', 'stop', or 'restart'.
+ * @returns {Promise<Object|{__error:*}>} parsed body, or an {__error} marker.
+ */
+async function amPostLifecycle(agentId, op) {
+    try {
+        const resp = await fetch('/api/v1/agents/' + agentId + '/' + op, {
+            method: 'POST',
+            credentials: 'same-origin',
+        });
+        // Parse the body defensively: a lifecycle endpoint may answer with an
+        // empty body or non-JSON content, which must not throw past the guard.
+        let body = {};
+        try {
+            const text = await resp.text();
+            body = text ? JSON.parse(text) : {};
+        } catch (parseErr) {
+            body = {};
+        }
+        if (!resp.ok) return { __error: resp.status };
+        return body;
+    } catch (e) {
+        return { __error: 'network' };
+    }
+}
+
+/**
+ * Inline-onclick handler for a per-row lifecycle control. Validates the
+ * operation and agent id (returning early with no request when either is
+ * invalid), invokes amPostLifecycle, and surfaces the outcome in the panel's
+ * dedicated feedback element (#amInstancesFeedback) with HTML-escaped text:
+ * on success it refreshes the Instances table via loadAmInstances() so the
+ * updated status is shown, then writes a success message; on error (409 / 404
+ * / network) it writes an escaped error message WITHOUT disturbing the table
+ * (the existing rows remain intact). Plain top-level async declaration so the
+ * inline onclick resolves it in the browser; exported for the jsdom harness.
+ * (Req 2.2, 2.3, 2.4)
+ *
+ * @param {number|string} agentId - the agent's id (as rendered in the onclick).
+ * @param {string} op - the lifecycle operation: 'start', 'stop', or 'restart'.
+ * @returns {Promise<void>}
+ */
+async function triggerAgentLifecycle(agentId, op) {
+    // Guard: only the three known operations, and a present (non-empty) id.
+    const validOp = op === 'start' || op === 'stop' || op === 'restart';
+    const hasId = agentId !== undefined && agentId !== null && agentId !== '';
+    if (!validOp || !hasId) return;
+
+    const result = await amPostLifecycle(agentId, op);
+
+    const writeFeedback = function (color, message) {
+        const fb = document.getElementById('amInstancesFeedback');
+        if (!fb) return;
+        fb.innerHTML = '<span style="color:' + color + ';">' + escapeHtml(message) + '</span>';
+    };
+
+    if (result && result.__error) {
+        // 409 / 404 / network: report the error, leave the table untouched.
+        const reason = result.__error === 'network'
+            ? 'network error'
+            : 'error ' + String(result.__error);
+        writeFeedback('red', 'Failed to ' + op + ' agent (' + reason + ').');
+        return;
+    }
+
+    // Success: refresh the panel so the new status is shown, then confirm.
+    await loadAmInstances();
+    writeFeedback('green', 'Agent ' + op + ' succeeded.');
 }
 
 async function loadAmTasks() {
@@ -1856,6 +2074,14 @@ if (typeof module !== 'undefined' && module.exports) {
         loadAmDashboard,
         loadAmRuntimes,
         loadAmInstances,
+        // Pure status -> legal lifecycle-controls mapping (Req 2.5)
+        lifecycleControlState,
+        // Dedicated Instances renderer with state-aware lifecycle controls (Req 2.1, 2.5, 3.3, 3.4)
+        renderAgentInstanceRows,
+        renderAgentInstancesTable,
+        // Lifecycle POST helper + per-row action handler (Req 2.2, 2.3, 2.4)
+        amPostLifecycle,
+        triggerAgentLifecycle,
         loadAmTasks,
         loadAmPolicies,
         loadAmMcp,
