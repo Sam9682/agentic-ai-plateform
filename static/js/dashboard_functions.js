@@ -59,7 +59,7 @@ async function loadServerlessLinks() {
 
         if (endpoints.length === 0 && links.length === 0) {
             if (select) select.innerHTML = '<option value="">-- No endpoints available --</option>';
-            if (linksContent) linksContent.innerHTML = '<p style="color:orange;">No agentic-ai-plateform-serverless-brik endpoints are currently assigned. Please contact your administrator.</p>';
+            if (linksContent) linksContent.innerHTML = '<p style="color:orange;">No opcp-serverless-* endpoints are currently running. Please start an endpoint or contact your administrator.</p>';
             return;
         }
 
@@ -77,10 +77,11 @@ async function loadServerlessLinks() {
                 select.innerHTML = selectHtml;
             }
 
-            // Populate links panel with status badges
+            // Populate links panel with status badges (only running endpoints from backend)
             if (linksContent) {
-                let panelHtml = '<table style="width:100%; border-collapse:collapse;">';
-                panelHtml += '<tr style="border-bottom:1px solid #ddd;"><th style="text-align:left; padding:5px;">Endpoint</th><th style="text-align:left; padding:5px;">Owner</th><th style="text-align:left; padding:5px;">Status</th></tr>';
+                let panelHtml = '<p style="font-size:12px; color:#666; margin:0 0 8px 0;"><em>Showing only running opcp-serverless-* endpoints</em></p>';
+                panelHtml += '<table style="width:100%; border-collapse:collapse;">';
+                panelHtml += '<tr style="border-bottom:1px solid #ddd;"><th style="text-align:left; padding:5px;">Endpoint</th><th style="text-align:left; padding:5px;">App</th><th style="text-align:left; padding:5px;">Owner</th><th style="text-align:left; padding:5px;">Status</th></tr>';
                 for (const ep of endpoints) {
                     let statusBadge;
                     if (ep.status === 'AVAILABLE') {
@@ -90,8 +91,10 @@ async function loadServerlessLinks() {
                     } else {
                         statusBadge = '<span style="background:#6c757d; color:#fff; padding:2px 8px; border-radius:3px; font-size:12px;">❓ UNKNOWN</span>';
                     }
+                    const appName = ep.app_name || 'opcp-serverless-brik';
                     panelHtml += '<tr style="border-bottom:1px solid #eee;">';
                     panelHtml += '<td style="padding:5px;"><a href="' + ep.url + '" target="_blank" style="color:#007bff; text-decoration:none;">' + ep.url + '</a></td>';
+                    panelHtml += '<td style="padding:5px;">' + appName + '</td>';
                     panelHtml += '<td style="padding:5px;">' + ep.username + '</td>';
                     panelHtml += '<td style="padding:5px;">' + statusBadge + '</td>';
                     panelHtml += '</tr>';
@@ -228,7 +231,7 @@ function formatRepoSize(sizeInMB) {
 function startCloneProgressSimulation(repoSizeMB) {
     let progress = 0;
     let startTime = Date.now();
-
+    
     // Calculate estimated duration based on actual repo size
     let estimatedDuration;
     if (repoSizeMB < 10) {
@@ -240,14 +243,14 @@ function startCloneProgressSimulation(repoSizeMB) {
     } else {
         estimatedDuration = 300 + (repoSizeMB * 0.1); // 5+ minutes
     }
-
+    
     // Set initial estimated time
     document.getElementById('estimatedTime').textContent = formatDuration(Math.round(estimatedDuration));
-
+    
     const progressInterval = setInterval(() => {
         const elapsed = Math.floor((Date.now() - startTime) / 1000);
         document.getElementById('elapsedTime').textContent = elapsed + 's';
-
+        
         // Simulate realistic progress curve (slower at start, faster in middle, slower at end)
         const timeRatio = elapsed / estimatedDuration;
         if (timeRatio < 0.1) {
@@ -257,16 +260,16 @@ function startCloneProgressSimulation(repoSizeMB) {
         } else {
             progress = 95 + (timeRatio - 0.8) * 25; // 95-100% in last 20% of time
         }
-
+        
         progress = Math.min(progress, 99); // Never reach 100% until actually done
-
+        
         const progressBar = document.getElementById('cloneProgress');
         const progressText = document.getElementById('progressText');
-
+        
         if (progressBar) {
             progressBar.style.width = progress + '%';
         }
-
+        
         if (progressText) {
             if (progress < 10) {
                 progressText.textContent = 'Connecting to repository...';
@@ -280,15 +283,15 @@ function startCloneProgressSimulation(repoSizeMB) {
                 progressText.textContent = 'Finalizing clone operation...';
             }
         }
-
+        
         // Update estimated time remaining
         const remaining = Math.max(0, estimatedDuration - elapsed);
         if (remaining > 0) {
             document.getElementById('estimatedTime').textContent = formatDuration(remaining) + ' remaining';
         }
-
+        
     }, 1000);
-
+    
     // Store interval ID to clear it later
     window.cloneProgressInterval = progressInterval;
 }
@@ -888,6 +891,116 @@ function updateIndicators(table, activeIndex, dir) {
     }
 }
 
+/* ------------------------------------------------------------------------- *
+ * AppCard state -> background color resolver (Running_State highlight)        *
+ *                                                                             *
+ * Mirrors the state derivation and background-color assignment used by the    *
+ * inline status-styling block in templates/dashboard.html (~lines 2661-2691   *
+ * for derivation, ~2785-2834 for styling). Extracted here so the state->color *
+ * mapping can be exercised by the Node/jsdom test harness without a full DOM. *
+ *                                                                             *
+ * Color mapping:                                                              *
+ *   Running     -> '#d4edda' (Soft_Green)                                     *
+ *   NotRunning  -> '#f8d7da' (Soft_Red)                                       *
+ *   Other       -> unchanged (resolver returns '' as the "no highlight" value)*
+ * ------------------------------------------------------------------------- */
+
+/** Soft_Green background applied to Running_State AppCards. */
+const RUNNING_BACKGROUND_COLOR = '#d4edda';
+/** Soft_Red background applied to Not_Running_State AppCards. */
+const NOT_RUNNING_BACKGROUND_COLOR = '#f8d7da';
+
+/**
+ * Resolve an AppCard's status from its raw `logs` text, mirroring the
+ * derivation performed inline in templates/dashboard.html.
+ *
+ * The dashboard first checks for the cloned-but-not-compliant and not-cloned
+ * conditions via case-insensitive log substrings, then (when the app is cloned
+ * and compliant) parses the JSON emitted after a `STDOUT:` marker to read
+ * `docker_compose_ps`, falling back to raw `IS_RUNNING` / `IS_NOT_RUNNING`
+ * substring matching when the JSON cannot be parsed.
+ *
+ * @param {string} logs - Raw status/log text for the application.
+ * @returns {('Running'|'NotRunning'|'Other')} The resolved status.
+ */
+function resolveAppCardStatus(logs) {
+    const text = (logs === null || logs === undefined) ? '' : String(logs);
+    const lower = text.toLowerCase();
+
+    // Cloned-but-not-compliant and not-cloned are "Other" states: they never
+    // receive the running / not-running highlight colors.
+    const isClonedButNotCompliant = lower.includes('deployapp.sh not found');
+    if (isClonedButNotCompliant) {
+        return 'Other';
+    }
+
+    const isNotCloned = lower.includes('application not deployed') ||
+                        lower.includes('clone it first');
+    if (isNotCloned) {
+        return 'Other';
+    }
+
+    // Cloned and compliant: determine running state. Prefer the JSON
+    // `docker_compose_ps` field; fall back to raw substring matching.
+    let isRunning = false;
+    let isNotRunning = false;
+    try {
+        const lines = text.split('\n');
+        const stdoutIndex = lines.findIndex(function (line) {
+            return line.includes('STDOUT:');
+        });
+        const jsonLines = stdoutIndex >= 0 ? lines.slice(stdoutIndex + 1) : lines;
+        const jsonString = jsonLines.join('\n').trim();
+
+        const statusData = JSON.parse(jsonString);
+        if (statusData && statusData.docker_compose_ps) {
+            isRunning = statusData.docker_compose_ps === 'IS_RUNNING';
+            isNotRunning = statusData.docker_compose_ps === 'IS_NOT_RUNNING';
+        }
+    } catch (e) {
+        // Fallback to old text parsing when JSON is absent/malformed.
+        isRunning = text.includes('IS_RUNNING');
+        isNotRunning = text.includes('IS_NOT_RUNNING');
+    }
+
+    if (isRunning) {
+        return 'Running';
+    }
+    if (isNotRunning) {
+        return 'NotRunning';
+    }
+    return 'Other';
+}
+
+/**
+ * Map a resolved AppCard status to the background color the dashboard applies.
+ *
+ * @param {('Running'|'NotRunning'|'Other')} status - Resolved status.
+ * @returns {string} '#d4edda' for Running, '#f8d7da' for NotRunning, '' otherwise.
+ */
+function statusToBackgroundColor(status) {
+    if (status === 'Running') {
+        return RUNNING_BACKGROUND_COLOR;
+    }
+    if (status === 'NotRunning') {
+        return NOT_RUNNING_BACKGROUND_COLOR;
+    }
+    // Other_State: no running/not-running highlight; leave background unchanged.
+    return '';
+}
+
+/**
+ * Resolve an AppCard's status from raw logs and return the background color to
+ * apply. Convenience wrapper combining resolveAppCardStatus and
+ * statusToBackgroundColor.
+ *
+ * @param {string} logs - Raw status/log text for the application.
+ * @returns {string} '#d4edda' (Running), '#f8d7da' (NotRunning), or '' (Other).
+ */
+function resolveAppCardBackgroundColor(logs) {
+    return statusToBackgroundColor(resolveAppCardStatus(logs));
+}
+
 /* ==========================================================================
  * Onboarding: Template Marketplace + Sandbox / Demo Mode (Req 8.2-8.6, 3.3)
  * ========================================================================== */
@@ -929,364 +1042,6 @@ function renderSandboxApps(apps) {
             access_url: (a.access_url != null) ? a.access_url : null,
         };
     });
-}
-
-/**
- * Normalize an Agent Control API container list into display rows. Pure: no DOM
- * and no I/O, so the jsdom harness can assert the rendered set (mirrors
- * {@link renderSandboxApps}). Produces one row per input container, in input
- * order, each carrying the six required display fields with safe defaults for
- * missing/odd values (Req 5.1).
- *
- * @param {Array<Object>} containers - discovered containers; each may carry
- *        name, image, server_name, server_id, state, classification,
- *        confidence_score.
- * @returns {Array<{name: string, image: string, server: (string|number), state: string, classification: string, confidence: number}>}
- *          one row per input container, in input order.
- */
-function renderAgentRows(containers) {
-    const list = Array.isArray(containers) ? containers : [];
-    return list.map(function (container) {
-        const c = (container && typeof container === 'object') ? container : {};
-        return {
-            application: c.application_name || '',
-            owner: (c.owner && c.owner.username) ? c.owner.username : '',
-            name: c.name || '(unnamed)',
-            image: c.image || '',
-            server: c.server_name || c.server_id || '',
-            state: c.state || 'unknown',
-            classification: c.classification || 'unclassified',
-            confidence: typeof c.confidence_score === 'number' ? c.confidence_score : 0,
-            evidence: Array.isArray(c.classification_evidence) ? c.classification_evidence : [],
-        };
-    });
-}
-
-// Threshold colors for the Confidence_Indicator (Req 4.1, 4.2, 4.3).
-const CONFIDENCE_RED = '#dc3545';
-const CONFIDENCE_ORANGE = '#fd7e14';
-const CONFIDENCE_GREEN = '#28a745';
-
-/**
- * Threshold color for a confidence score in [0,1], judged on its whole-number
- * percentage: red (<=20), orange (>20 and <51), green (>=51). Pure and exported
- * for the jsdom harness. (Req 4.1, 4.2, 4.3)
- * @param {number} score - confidence score in [0,1]
- * @returns {string} a CSS color
- */
-function confidenceColor(score) {
-    const pct = Math.round((typeof score === 'number' ? score : 0) * 100);
-    if (pct <= 20) return CONFIDENCE_RED;
-    if (pct < 51) return CONFIDENCE_ORANGE;
-    return CONFIDENCE_GREEN;
-}
-
-/**
- * Render a confidence score in [0,1] as a whole-number percentage with a
- * trailing percent sign, matching the displayed banding. (Req 4.4)
- * @param {number} score - confidence score in [0,1]
- * @returns {string} e.g. "42%"
- */
-function confidenceText(score) {
-    const pct = Math.round((typeof score === 'number' ? score : 0) * 100);
-    return pct + '%';
-}
-
-/**
- * Fetch the discovered-container inventory from GET /api/agent-control/containers
- * and render the Control of Agents panel (Req 5.1, 5.3, 5.4, 5.5, 5.6, 4.6).
- *
- * Owns fetch + DOM writes (mirrors {@link loadSandboxStatus} / {@link loadTemplates});
- * the pure {@link renderAgentRows} helper produces the row data. Shows a loading
- * indicator before awaiting (Req 5.4), handles 401 / non-ok / thrown errors with a
- * message while leaving the refresh control usable (Req 5.5), renders an empty-state
- * message when there are no rows (Req 5.6), surfaces a per-server error banner from
- * the payload's `errors` array (Req 4.6), and full-replaces `#agentControlContent`
- * so a refresh wipes the prior render (Req 5.3).
- */
-// Marker id for the injected Evidence_Tooltip stylesheet; the styles are added
-// once per document (Req 3.2).
-const AGENT_EVIDENCE_TOOLTIP_STYLE_ID = 'agent-evidence-tooltip-styles';
-
-/**
- * Inject the Evidence_Tooltip stylesheet once per document. The tooltip matches
- * the dashboard's inline-style palette (dark text on a light panel, a 1px solid
- * #ddd border, small padding, a subtle shadow, font-size 12px) and is a custom
- * styled popover rather than the native `title` attribute (Req 3.1, 3.2).
- */
-function ensureAgentEvidenceTooltipStyles() {
-    if (typeof document === 'undefined' || !document.head) return;
-    if (document.getElementById(AGENT_EVIDENCE_TOOLTIP_STYLE_ID)) return;
-    const style = document.createElement('style');
-    style.id = AGENT_EVIDENCE_TOOLTIP_STYLE_ID;
-    style.textContent =
-        '.agent-evidence-tooltip {'
-        + ' position: absolute; z-index: 1000; left: 0; top: 100%;'
-        + ' max-width: 360px; padding: 6px 8px;'
-        + ' background: #fff; color: #333;'
-        + ' border: 1px solid #ddd; border-radius: 3px;'
-        + ' box-shadow: 0 2px 6px rgba(0,0,0,0.15);'
-        + ' font-size: 12px; line-height: 1.4; white-space: normal; }'
-        + '.agent-evidence-tooltip .evidence-line { display: block; }';
-    document.head.appendChild(style);
-}
-
-/**
- * Build an Evidence_Tooltip element for a Classification_Cell, or return null
- * when the cell carries no parseable evidence.
- *
- * The cell's `data-evidence` attribute is parsed inside a try/catch; a missing
- * attribute or a parse failure yields no tooltip (Req 2.6, and the defensive
- * JSON handling from the design). Each evidence entry is rendered as its own
- * `.evidence-line` child in array order, with its text escaped via escapeHtml
- * so classifier-supplied metacharacters render as text (Req 2.4, 2.7, 3.3).
- *
- * @param {HTMLElement} cell - the hovered `.agent-classification-cell`.
- * @returns {HTMLElement|null} a `div.agent-evidence-tooltip`, or null.
- */
-function buildAgentEvidenceTooltip(cell) {
-    if (!cell || typeof cell.getAttribute !== 'function') return null;
-    const raw = cell.getAttribute('data-evidence');
-    if (!raw) return null;
-    let lines;
-    try {
-        lines = JSON.parse(raw);
-    } catch (e) {
-        // Malformed JSON yields no tooltip rather than a thrown error.
-        return null;
-    }
-    if (!Array.isArray(lines) || lines.length === 0) return null;
-
-    const tooltip = document.createElement('div');
-    tooltip.className = 'agent-evidence-tooltip';
-    // One line node per evidence entry, in array order (Req 2.4, 3.3). escapeHtml
-    // neutralizes HTML metacharacters before the text reaches the DOM (Req 2.7).
-    let inner = '';
-    for (const line of lines) {
-        inner += '<span class="evidence-line">' + escapeHtml(String(line)) + '</span>';
-    }
-    tooltip.innerHTML = inner;
-    return tooltip;
-}
-
-/**
- * Wire a single delegated hover handler on `#agentControlContent` that shows an
- * Evidence_Tooltip while the pointer is over a `.agent-classification-cell` with
- * evidence and removes it when the pointer leaves (Req 2.3, 2.5).
- *
- * The handler is bound once per container element; a marker flag on the element
- * guards against double-binding across repeated `loadAgentControl` renders
- * (the content is full-replaced, not the container, so the listener survives).
- * Delegation uses the bubbling `mouseover`/`mouseout` events (plain `mouseenter`/
- * `mouseleave` do not bubble) and resolves the cell with `closest`, so both real
- * pointer movement and dispatched events drive the behavior.
- *
- * @param {HTMLElement} container - the `#agentControlContent` element.
- */
-function wireAgentEvidenceTooltip(container) {
-    if (!container || container._agentEvidenceTooltipWired) return;
-    container._agentEvidenceTooltipWired = true;
-
-    function cellFrom(target) {
-        if (!target || typeof target.closest !== 'function') return null;
-        const cell = target.closest('.agent-classification-cell');
-        return (cell && container.contains(cell)) ? cell : null;
-    }
-
-    container.addEventListener('mouseover', function (evt) {
-        const cell = cellFrom(evt.target);
-        if (!cell || !cell.getAttribute('data-evidence')) return;
-        // Avoid stacking tooltips if mouseover fires repeatedly within the cell.
-        if (cell._agentEvidenceTooltip) return;
-        const tooltip = buildAgentEvidenceTooltip(cell);
-        if (!tooltip) return;
-        cell._agentEvidenceTooltip = tooltip;
-        cell.appendChild(tooltip);
-    });
-
-    container.addEventListener('mouseout', function (evt) {
-        const cell = cellFrom(evt.target);
-        if (!cell) return;
-        // Ignore moves that stay within the same cell (to a descendant).
-        const related = evt.relatedTarget;
-        if (related && typeof cell.contains === 'function' && cell.contains(related)) return;
-        const tooltip = cell._agentEvidenceTooltip;
-        if (tooltip && tooltip.parentNode) {
-            tooltip.parentNode.removeChild(tooltip);
-        }
-        cell._agentEvidenceTooltip = null;
-    });
-}
-
-async function loadAgentControl() {
-    const content = document.getElementById('agentControlContent');
-    if (!content) return;
-    // Inject the tooltip styles and wire the delegated hover handler once. The
-    // container element survives the inner-HTML full-replace below, so binding it
-    // here (guarded against double-binding) keeps the Evidence_Tooltip working
-    // across refreshes (Req 2.3, 2.5, 3.2).
-    ensureAgentEvidenceTooltipStyles();
-    wireAgentEvidenceTooltip(content);
-    // Loading indicator before awaiting the request (Req 5.4).
-    content.innerHTML = '<p>Loading agents...</p>';
-
-    try {
-        // Use the live-scan path (?live=1): discover + classify containers across
-        // every managed server on each load. The stored inventory
-        // (runtime_containers) is only populated by a background scanner, so the
-        // dashboard would otherwise show nothing until that scanner has run.
-        const response = await fetch('/api/agent-control/containers?live=1', {
-            method: 'GET',
-            credentials: 'same-origin'
-        });
-
-        if (response.status === 401) {
-            content.innerHTML = '<p style="color:orange;">Authentication is required. Please sign in.</p>';
-            return;
-        }
-        if (!response.ok) {
-            // Error message; the refresh control in the section header remains usable (Req 5.5).
-            content.innerHTML = '<p style="color:red;">Failed to load agents.</p>';
-            return;
-        }
-
-        const data = await response.json();
-        const rows = renderAgentRows(data && data.containers);
-
-        // Per-server error banner surfacing unreachable servers (Req 4.6).
-        let banner = '';
-        if (data && Array.isArray(data.errors) && data.errors.length) {
-            const ids = data.errors.map(function (e) { return (e && e.server_id != null) ? e.server_id : '?'; });
-            banner = '<p style="color:#b26a00;">⚠️ ' + escapeHtml(
-                data.errors.length + ' server(s) unreachable: ' + ids.join(', ')) + '</p>';
-        }
-
-        if (rows.length === 0) {
-            // Empty-state message (Req 5.6).
-            content.innerHTML = banner + '<p style="color:orange;">No agents were discovered.</p>';
-            return;
-        }
-
-        let html = banner + '<table style="width:100%; border-collapse:collapse;">';
-        html += '<tr style="border-bottom:1px solid #ddd;">'
-            + '<th style="text-align:left; padding:5px;">Application / Service</th>'
-            + '<th style="text-align:left; padding:5px;">Owner</th>'
-            + '<th style="text-align:left; padding:5px;">Container name</th>'
-            + '<th style="text-align:left; padding:5px;">Image</th>'
-            + '<th style="text-align:left; padding:5px;">Server</th>'
-            + '<th style="text-align:left; padding:5px;">State</th>'
-            + '<th style="text-align:left; padding:5px;">Classification</th>'
-            + '<th style="text-align:left; padding:5px;">Confidence</th>'
-            + '<th style="text-align:left; padding:5px;">Action</th></tr>';
-        // Group rows by application so logical groups are clustered and easy to
-        // read. Rows without an application name fall into a trailing
-        // "(no application)" bucket. Within a group, insertion order is preserved.
-        const groups = [];
-        const groupIndex = {};
-        for (const r of rows) {
-            const key = r.application || '';
-            if (!(key in groupIndex)) {
-                groupIndex[key] = groups.length;
-                groups.push({ application: key, rows: [] });
-            }
-            groups[groupIndex[key]].rows.push(r);
-        }
-        // Stable, readable order: named applications first (A→Z, case-insensitive),
-        // the "(no application)" bucket last.
-        groups.sort(function (a, b) {
-            if (a.application === b.application) return 0;
-            if (a.application === '') return 1;
-            if (b.application === '') return -1;
-            return a.application.toLowerCase().localeCompare(b.application.toLowerCase());
-        });
-
-        const COLSPAN = 9; // number of columns in the table
-        for (const group of groups) {
-            const hasApp = group.application !== '';
-            const groupLabel = hasApp ? escapeHtml(group.application) : '(no application)';
-            // Group header band: names the application once and carries the
-            // application-level STOP control (enabled only for a real application).
-            const groupStopBtn = hasApp
-                ? '<button class="btn btn-danger btn-small" onclick="stopAgentApplication(\'' + escapeHtml(group.application) + '\')">⛔ Stop</button>'
-                : '<button class="btn btn-danger btn-small" disabled title="No application name">⛔ Stop</button>';
-            html += '<tr style="background:#eef3f8; border-top:2px solid #cbd6e2;">'
-                + '<td colspan="' + (COLSPAN - 1) + '" style="padding:6px 5px; font-weight:600;">'
-                + (hasApp ? 'Application / Service: ' : '') + groupLabel
-                + ' <span style="color:#888; font-weight:400;">(' + group.rows.length + ')</span></td>'
-                + '<td style="padding:6px 5px;">' + groupStopBtn + '</td>'
-                + '</tr>';
-            for (const r of group.rows) {
-                const badge = r.classification === 'probable_agent'
-                    ? '<span style="background:#28a745; color:#fff; padding:2px 8px; border-radius:3px; font-size:12px;">probable agent</span>'
-                    : '<span style="background:#6c757d; color:#fff; padding:2px 8px; border-radius:3px; font-size:12px;">unclassified</span>';
-                // Only cells with at least one evidence line carry data-evidence; empty
-                // cells get no carrier and therefore no tooltip (Req 2.6). The JSON is
-                // escaped before it reaches the attribute (Req 2.7).
-                const evidenceAttr = r.evidence.length
-                    ? ' data-evidence="' + escapeHtml(JSON.stringify(r.evidence)) + '"'
-                    : '';
-                html += '<tr style="border-bottom:1px solid #eee;">'
-                    + '<td style="padding:5px 5px 5px 20px; color:#888;">↳</td>'
-                    + '<td style="padding:5px;">' + (escapeHtml(r.owner) || '—') + '</td>'
-                    + '<td style="padding:5px;">' + escapeHtml(r.name) + '</td>'
-                    + '<td style="padding:5px;">' + escapeHtml(r.image) + '</td>'
-                    + '<td style="padding:5px;">' + escapeHtml(String(r.server)) + '</td>'
-                    + '<td style="padding:5px;">' + escapeHtml(r.state) + '</td>'
-                    + '<td class="agent-classification-cell" style="padding:5px; position:relative;"' + evidenceAttr + '>' + badge + '</td>'
-                    + '<td style="padding:5px; color:' + confidenceColor(r.confidence) + '; font-weight:600;">' + escapeHtml(confidenceText(r.confidence)) + '</td>'
-                    + '<td style="padding:5px;"></td>'
-                    + '</tr>';
-            }
-        }
-        html += '</table>';
-        // Full replace so a refresh wipes the prior render (Req 5.3).
-        content.innerHTML = html;
-    } catch (err) {
-        // Thrown/network error; refresh control remains usable for retry (Req 5.5).
-        content.innerHTML = '<p style="color:red;">Failed to load agents.</p>';
-    }
-}
-
-/**
- * Stop a whole Compose application from the Control_View by reusing the existing
- * application-level STOP action (POST /api/deployments). Mirrors the
- * deployTemplate / sandboxAction pattern in this file.
- *
- * Guards against an empty application name (Req 3.4) so no request is sent. Sends
- * `{ action: 'STOP', application_name }` with same-origin credentials (Req 3.2).
- * On a non-ok response or a thrown error, surfaces an inline message at the top of
- * `#agentControlContent` WITHOUT refreshing, leaving the current table in place so
- * the operator keeps context (Req 3.6). On success, re-renders via loadAgentControl
- * (Req 3.5).
- *
- * @param {string} applicationName - the row's application (compose project) name.
- */
-async function stopAgentApplication(applicationName) {
-    if (!applicationName) return;                       // guard (Req 3.4)
-    const content = document.getElementById('agentControlContent');
-    try {
-        const response = await fetch('/api/deployments', {
-            method: 'POST',
-            credentials: 'same-origin',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'STOP', application_name: applicationName })
-        });                                             // Req 3.2
-        const data = await response.json().catch(function () { return {}; });
-        if (!response.ok) {
-            if (content) {
-                content.insertAdjacentHTML('afterbegin',
-                    '<p style="color:red;">⛔ Stop failed: '
-                    + escapeHtml((data && data.error) || 'Unknown error') + '</p>');
-            }                                           // Req 3.6
-            return;
-        }
-        await loadAgentControl();                       // refresh (Req 3.5)
-    } catch (err) {
-        if (content) {
-            content.insertAdjacentHTML('afterbegin',
-                '<p style="color:red;">⛔ Stop failed.</p>'); // Req 3.6
-        }
-    }
 }
 
 /**
@@ -1513,6 +1268,546 @@ async function loadSandboxStatus() {
     }
 }
 
+/**
+ * Normalize an Agent Control API container list into display rows. Pure: no DOM
+ * and no I/O, so the jsdom harness can assert the rendered set (mirrors
+ * {@link renderSandboxApps}). Produces one row per input container, in input
+ * order, each carrying the required display fields with safe defaults for
+ * missing/odd values (Req 5.1, 2.1, 2.2).
+ *
+ * @param {Array<Object>} containers - discovered containers; each may carry
+ *        name, image, server_name, server_id, state, classification,
+ *        confidence_score, classification_evidence.
+ * @returns {Array<{name: string, image: string, server: (string|number), state: string, classification: string, confidence: number, evidence: string[]}>}
+ *          one row per input container, in input order.
+ */
+function renderAgentRows(containers) {
+    const list = Array.isArray(containers) ? containers : [];
+    return list.map(function (container) {
+        const c = (container && typeof container === 'object') ? container : {};
+        return {
+            application: c.application_name || '',
+            owner: (c.owner && c.owner.username) ? c.owner.username : '',
+            name: c.name || '(unnamed)',
+            image: c.image || '',
+            server: c.server_name || c.server_id || '',
+            state: c.state || 'unknown',
+            classification: c.classification || 'unclassified',
+            confidence: typeof c.confidence_score === 'number' ? c.confidence_score : 0,
+            evidence: Array.isArray(c.classification_evidence) ? c.classification_evidence : [],
+        };
+    });
+}
+
+// Marker id for the injected Evidence_Tooltip stylesheet; the styles are added
+// once per document (Req 3.2).
+const AGENT_EVIDENCE_TOOLTIP_STYLE_ID = 'agent-evidence-tooltip-styles';
+
+/**
+ * Inject the Evidence_Tooltip stylesheet once per document. The tooltip matches
+ * the dashboard's inline-style palette (dark text on a light panel, a 1px solid
+ * #ddd border, small padding, a subtle shadow, font-size 12px) and is a custom
+ * styled popover rather than the native `title` attribute (Req 3.1, 3.2).
+ */
+function ensureAgentEvidenceTooltipStyles() {
+    if (typeof document === 'undefined' || !document.head) return;
+    if (document.getElementById(AGENT_EVIDENCE_TOOLTIP_STYLE_ID)) return;
+    const style = document.createElement('style');
+    style.id = AGENT_EVIDENCE_TOOLTIP_STYLE_ID;
+    style.textContent =
+        '.agent-evidence-tooltip {'
+        + ' position: absolute; z-index: 1000; left: 0; top: 100%;'
+        + ' max-width: 360px; padding: 6px 8px;'
+        + ' background: #fff; color: #333;'
+        + ' border: 1px solid #ddd; border-radius: 3px;'
+        + ' box-shadow: 0 2px 6px rgba(0,0,0,0.15);'
+        + ' font-size: 12px; line-height: 1.4; white-space: normal; }'
+        + '.agent-evidence-tooltip .evidence-line { display: block; }';
+    document.head.appendChild(style);
+}
+
+/**
+ * Build an Evidence_Tooltip element for a Classification_Cell, or return null
+ * when the cell carries no parseable evidence.
+ *
+ * The cell's `data-evidence` attribute is parsed inside a try/catch; a missing
+ * attribute or a parse failure yields no tooltip (Req 2.6, and the defensive
+ * JSON handling from the design). Each evidence entry is rendered as its own
+ * `.evidence-line` child in array order, with its text escaped via escapeHtml
+ * so classifier-supplied metacharacters render as text (Req 2.4, 2.7, 3.3).
+ *
+ * @param {HTMLElement} cell - the hovered `.agent-classification-cell`.
+ * @returns {HTMLElement|null} a `div.agent-evidence-tooltip`, or null.
+ */
+function buildAgentEvidenceTooltip(cell) {
+    if (!cell || typeof cell.getAttribute !== 'function') return null;
+    const raw = cell.getAttribute('data-evidence');
+    if (!raw) return null;
+    let lines;
+    try {
+        lines = JSON.parse(raw);
+    } catch (e) {
+        // Malformed JSON yields no tooltip rather than a thrown error.
+        return null;
+    }
+    if (!Array.isArray(lines) || lines.length === 0) return null;
+
+    const tooltip = document.createElement('div');
+    tooltip.className = 'agent-evidence-tooltip';
+    // One line node per evidence entry, in array order (Req 2.4, 3.3). escapeHtml
+    // neutralizes HTML metacharacters before the text reaches the DOM (Req 2.7).
+    let inner = '';
+    for (const line of lines) {
+        inner += '<span class="evidence-line">' + escapeHtml(String(line)) + '</span>';
+    }
+    tooltip.innerHTML = inner;
+    return tooltip;
+}
+
+/**
+ * Wire a single delegated hover handler on `#agentControlContent` that shows an
+ * Evidence_Tooltip while the pointer is over a `.agent-classification-cell` with
+ * evidence and removes it when the pointer leaves (Req 2.3, 2.5).
+ *
+ * The handler is bound once per container element; a marker flag on the element
+ * guards against double-binding across repeated `loadAgentControl` renders
+ * (the content is full-replaced, not the container, so the listener survives).
+ * Delegation uses the bubbling `mouseover`/`mouseout` events (plain `mouseenter`/
+ * `mouseleave` do not bubble) and resolves the cell with `closest`, so both real
+ * pointer movement and dispatched events drive the behavior.
+ *
+ * @param {HTMLElement} container - the `#agentControlContent` element.
+ */
+function wireAgentEvidenceTooltip(container) {
+    if (!container || container._agentEvidenceTooltipWired) return;
+    container._agentEvidenceTooltipWired = true;
+
+    function cellFrom(target) {
+        if (!target || typeof target.closest !== 'function') return null;
+        const cell = target.closest('.agent-classification-cell');
+        return (cell && container.contains(cell)) ? cell : null;
+    }
+
+    container.addEventListener('mouseover', function (evt) {
+        const cell = cellFrom(evt.target);
+        if (!cell || !cell.getAttribute('data-evidence')) return;
+        // Avoid stacking tooltips if mouseover fires repeatedly within the cell.
+        if (cell._agentEvidenceTooltip) return;
+        const tooltip = buildAgentEvidenceTooltip(cell);
+        if (!tooltip) return;
+        cell._agentEvidenceTooltip = tooltip;
+        cell.appendChild(tooltip);
+    });
+
+    container.addEventListener('mouseout', function (evt) {
+        const cell = cellFrom(evt.target);
+        if (!cell) return;
+        // Ignore moves that stay within the same cell (to a descendant).
+        const related = evt.relatedTarget;
+        if (related && typeof cell.contains === 'function' && cell.contains(related)) return;
+        const tooltip = cell._agentEvidenceTooltip;
+        if (tooltip && tooltip.parentNode) {
+            tooltip.parentNode.removeChild(tooltip);
+        }
+        cell._agentEvidenceTooltip = null;
+    });
+}
+
+/**
+ * Fetch the live container inventory from the Agent Control API and render the
+ * "Control of Agents" table. Shows a loading indicator before the request (Req 5.4),
+ * handles 401/error/network failures without breaking the refresh control (Req 5.5),
+ * surfaces a per-server error banner from the payload's `errors` array (Req 4.6),
+ * renders an empty-state message when there are no rows (Req 5.6), and full-replaces
+ * `#agentControlContent` so a refresh wipes the prior render (Req 5.3).
+ */
+async function loadAgentControl() {
+    const content = document.getElementById('agentControlContent');
+    if (!content) return;
+    // Inject the tooltip styles and wire the delegated hover handler once. The
+    // container element survives the inner-HTML full-replace below, so binding it
+    // here (guarded against double-binding) keeps the Evidence_Tooltip working
+    // across refreshes (Req 2.3, 2.5, 3.2).
+    ensureAgentEvidenceTooltipStyles();
+    wireAgentEvidenceTooltip(content);
+    // Loading indicator before awaiting the request (Req 5.4).
+    content.innerHTML = '<p>Loading agents...</p>';
+
+    try {
+        // Use the live-scan path (?live=1): discover + classify containers across
+        // every managed server on each load. The stored inventory
+        // (runtime_containers) is only populated by a background scanner, so the
+        // dashboard would otherwise show nothing until that scanner has run.
+        const response = await fetch('/api/agent-control/containers?live=1', {
+            method: 'GET',
+            credentials: 'same-origin'
+        });
+
+        if (response.status === 401) {
+            content.innerHTML = '<p style="color:orange;">Authentication is required. Please sign in.</p>';
+            return;
+        }
+        if (!response.ok) {
+            // Error message; the refresh control in the section header remains usable (Req 5.5).
+            content.innerHTML = '<p style="color:red;">Failed to load agents.</p>';
+            return;
+        }
+
+        const data = await response.json();
+        const rows = renderAgentRows(data && data.containers);
+
+        // Per-server error banner surfacing unreachable servers (Req 4.6).
+        let banner = '';
+        if (data && Array.isArray(data.errors) && data.errors.length) {
+            const ids = data.errors.map(function (e) { return (e && e.server_id != null) ? e.server_id : '?'; });
+            banner = '<p style="color:#b26a00;">⚠️ ' + escapeHtml(
+                data.errors.length + ' server(s) unreachable: ' + ids.join(', ')) + '</p>';
+        }
+
+        if (rows.length === 0) {
+            // Empty-state message (Req 5.6).
+            content.innerHTML = banner + '<p style="color:orange;">No agents were discovered.</p>';
+            return;
+        }
+
+        let html = banner + '<table style="width:100%; border-collapse:collapse;">';
+        html += '<tr style="border-bottom:1px solid #ddd;">'
+            + '<th style="text-align:left; padding:5px;">Application / Service</th>'
+            + '<th style="text-align:left; padding:5px;">Owner</th>'
+            + '<th style="text-align:left; padding:5px;">Container name</th>'
+            + '<th style="text-align:left; padding:5px;">Image</th>'
+            + '<th style="text-align:left; padding:5px;">Server</th>'
+            + '<th style="text-align:left; padding:5px;">State</th>'
+            + '<th style="text-align:left; padding:5px;">Classification</th>'
+            + '<th style="text-align:left; padding:5px;">Confidence</th>'
+            + '<th style="text-align:left; padding:5px;">Action</th></tr>';
+        // Group rows by application so logical groups are clustered and easy to
+        // read. Rows without an application name fall into a trailing
+        // "(no application)" bucket. Within a group, insertion order is preserved.
+        const groups = [];
+        const groupIndex = {};
+        for (const r of rows) {
+            const key = r.application || '';
+            if (!(key in groupIndex)) {
+                groupIndex[key] = groups.length;
+                groups.push({ application: key, rows: [] });
+            }
+            groups[groupIndex[key]].rows.push(r);
+        }
+        // Stable, readable order: named applications first (A→Z, case-insensitive),
+        // the "(no application)" bucket last.
+        groups.sort(function (a, b) {
+            if (a.application === b.application) return 0;
+            if (a.application === '') return 1;
+            if (b.application === '') return -1;
+            return a.application.toLowerCase().localeCompare(b.application.toLowerCase());
+        });
+
+        const COLSPAN = 9; // number of columns in the table
+        for (const group of groups) {
+            const hasApp = group.application !== '';
+            const groupLabel = hasApp ? escapeHtml(group.application) : '(no application)';
+            // Group header band: names the application once and carries the
+            // application-level STOP control (enabled only for a real application).
+            const groupStopBtn = hasApp
+                ? '<button class="btn btn-danger btn-small" onclick="stopAgentApplication(\'' + escapeHtml(group.application) + '\')">⛔ Stop</button>'
+                : '<button class="btn btn-danger btn-small" disabled title="No application name">⛔ Stop</button>';
+            html += '<tr style="background:#eef3f8; border-top:2px solid #cbd6e2;">'
+                + '<td colspan="' + (COLSPAN - 1) + '" style="padding:6px 5px; font-weight:600;">'
+                + (hasApp ? 'Application / Service: ' : '') + groupLabel
+                + ' <span style="color:#888; font-weight:400;">(' + group.rows.length + ')</span></td>'
+                + '<td style="padding:6px 5px;">' + groupStopBtn + '</td>'
+                + '</tr>';
+            for (const r of group.rows) {
+                const badge = r.classification === 'probable_agent'
+                    ? '<span style="background:#28a745; color:#fff; padding:2px 8px; border-radius:3px; font-size:12px;">probable agent</span>'
+                    : '<span style="background:#6c757d; color:#fff; padding:2px 8px; border-radius:3px; font-size:12px;">unclassified</span>';
+                // Only cells with at least one evidence line carry data-evidence; empty
+                // cells get no carrier and therefore no tooltip (Req 2.6). The JSON is
+                // escaped before it reaches the attribute (Req 2.7).
+                const evidenceAttr = r.evidence.length
+                    ? ' data-evidence="' + escapeHtml(JSON.stringify(r.evidence)) + '"'
+                    : '';
+                html += '<tr style="border-bottom:1px solid #eee;">'
+                    + '<td style="padding:5px 5px 5px 20px; color:#888;">↳</td>'
+                    + '<td style="padding:5px;">' + (escapeHtml(r.owner) || '—') + '</td>'
+                    + '<td style="padding:5px;">' + escapeHtml(r.name) + '</td>'
+                    + '<td style="padding:5px;">' + escapeHtml(r.image) + '</td>'
+                    + '<td style="padding:5px;">' + escapeHtml(String(r.server)) + '</td>'
+                    + '<td style="padding:5px;">' + escapeHtml(r.state) + '</td>'
+                    + '<td class="agent-classification-cell" style="padding:5px; position:relative;"' + evidenceAttr + '>' + badge + '</td>'
+                    + '<td style="padding:5px; color:' + confidenceColor(r.confidence) + '; font-weight:600;">' + escapeHtml(confidenceText(r.confidence)) + '</td>'
+                    + '<td style="padding:5px;"></td>'
+                    + '</tr>';
+            }
+        }
+        html += '</table>';
+        // Full replace so a refresh wipes the prior render (Req 5.3).
+        content.innerHTML = html;
+    } catch (err) {
+        // Thrown/network error; refresh control remains usable for retry (Req 5.5).
+        content.innerHTML = '<p style="color:red;">Failed to load agents.</p>';
+    }
+}
+
+/**
+ * Stop a whole Compose application from the Control_View by reusing the existing
+ * application-level STOP action (POST /api/deployments). Mirrors the
+ * deployTemplate / sandboxAction pattern in this file.
+ *
+ * Guards against an empty application name (Req 3.4) so no request is sent. Sends
+ * `{ action: 'STOP', application_name }` with same-origin credentials (Req 3.2).
+ * On a non-ok response or a thrown error, surfaces an inline message at the top of
+ * `#agentControlContent` WITHOUT refreshing, leaving the current table in place so
+ * the operator keeps context (Req 3.6). On success, re-renders via loadAgentControl
+ * (Req 3.5).
+ *
+ * @param {string} applicationName - the row's application (compose project) name.
+ */
+async function stopAgentApplication(applicationName) {
+    if (!applicationName) return;                       // guard (Req 3.4)
+    const content = document.getElementById('agentControlContent');
+    try {
+        const response = await fetch('/api/deployments', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'STOP', application_name: applicationName })
+        });                                             // Req 3.2
+        const data = await response.json().catch(function () { return {}; });
+        if (!response.ok) {
+            if (content) {
+                content.insertAdjacentHTML('afterbegin',
+                    '<p style="color:red;">⛔ Stop failed: '
+                    + escapeHtml((data && data.error) || 'Unknown error') + '</p>');
+            }                                           // Req 3.6
+            return;
+        }
+        await loadAgentControl();                       // refresh (Req 3.5)
+    } catch (err) {
+        if (content) {
+            content.insertAdjacentHTML('afterbegin',
+                '<p style="color:red;">⛔ Stop failed.</p>'); // Req 3.6
+        }
+    }
+}
+
+// Threshold colors for the Confidence_Indicator (Req 4.1, 4.2, 4.3).
+const CONFIDENCE_RED = '#dc3545';
+const CONFIDENCE_ORANGE = '#fd7e14';
+const CONFIDENCE_GREEN = '#28a745';
+
+/**
+ * Threshold color for a confidence score in [0,1], judged on its whole-number
+ * percentage: red (<=20), orange (>20 and <51), green (>=51). Pure and exported
+ * for the jsdom harness. (Req 4.1, 4.2, 4.3)
+ * @param {number} score - confidence score in [0,1]
+ * @returns {string} a CSS color
+ */
+function confidenceColor(score) {
+    const pct = Math.round((typeof score === 'number' ? score : 0) * 100);
+    if (pct <= 20) return CONFIDENCE_RED;
+    if (pct < 51) return CONFIDENCE_ORANGE;
+    return CONFIDENCE_GREEN;
+}
+
+/**
+ * Render a confidence score in [0,1] as a whole-number percentage with a
+ * trailing percent sign, matching the displayed banding. (Req 4.4)
+ * @param {number} score - confidence score in [0,1]
+ * @returns {string} e.g. "42%"
+ */
+function confidenceText(score) {
+    const pct = Math.round((typeof score === 'number' ? score : 0) * 100);
+    return pct + '%';
+}
+
+/* ======================================================================== *
+ * Agent Management (ARO + ZAF) dashboard panels.
+ *
+ * These back the "Agent Management" navigation section. They call the
+ * /api/v1/agents, /api/v1/governance and /api/v1/observability endpoints,
+ * which are tenant-scoped server-side (the active tenant is resolved from the
+ * session membership). Rendering is defensive: errors never break the refresh
+ * control, and all interpolated values are HTML-escaped via escapeHtml.
+ * ======================================================================== */
+
+// Which AM panel ids exist; used to toggle visibility.
+const AM_PANELS = ['dashboard', 'runtimes', 'instances', 'tasks', 'policies',
+    'mcp', 'approvals', 'observability', 'incidents'];
+
+/**
+ * Show one Agent Management sub-panel and lazily load its content.
+ * @param {string} name - panel id suffix (e.g. 'runtimes')
+ */
+function showAmPanel(name) {
+    for (const p of AM_PANELS) {
+        const el = document.getElementById('amPanel-' + p);
+        if (el) el.style.display = (p === name) ? 'block' : 'none';
+    }
+    const loaders = {
+        dashboard: loadAmDashboard,
+        runtimes: loadAmRuntimes,
+        instances: loadAmInstances,
+        tasks: loadAmTasks,
+        policies: loadAmPolicies,
+        mcp: loadAmMcp,
+        approvals: loadAmApprovals,
+        observability: loadAmObservability,
+        incidents: loadAmIncidents,
+    };
+    const fn = loaders[name];
+    if (typeof fn === 'function') fn();
+}
+
+/** JSON GET helper for the AM panels; returns parsed body or null on failure. */
+async function amGet(url) {
+    try {
+        const resp = await fetch(url, { method: 'GET', credentials: 'same-origin' });
+        if (!resp.ok) return { __error: resp.status };
+        return await resp.json();
+    } catch (e) {
+        return { __error: 'network' };
+    }
+}
+
+/** Render a list of objects as a simple table into a container element. */
+function amRenderTable(containerId, columns, rows, emptyMsg) {
+    const content = document.getElementById(containerId);
+    if (!content) return;
+    if (rows && rows.__error) {
+        content.innerHTML = '<p style="color:red;">Failed to load (' + escapeHtml(String(rows.__error)) + ').</p>';
+        return;
+    }
+    const list = Array.isArray(rows) ? rows : [];
+    if (list.length === 0) {
+        content.innerHTML = '<p style="color:orange;">' + escapeHtml(emptyMsg || 'Nothing to show.') + '</p>';
+        return;
+    }
+    let html = '<table style="width:100%; border-collapse:collapse;"><tr style="border-bottom:1px solid #ddd;">';
+    for (const c of columns) html += '<th style="text-align:left; padding:5px;">' + escapeHtml(c.label) + '</th>';
+    html += '</tr>';
+    for (const row of list) {
+        html += '<tr style="border-bottom:1px solid #eee;">';
+        for (const c of columns) {
+            const v = row[c.key];
+            html += '<td style="padding:5px;">' + escapeHtml(v === undefined || v === null ? '' : String(
+                typeof v === 'object' ? JSON.stringify(v) : v)) + '</td>';
+        }
+        html += '</tr>';
+    }
+    html += '</table>';
+    content.innerHTML = html;
+}
+
+/** Entry point when the Agent Management tab opens: show the dashboard panel. */
+function loadAgentManagement() {
+    showAmPanel('dashboard');
+}
+
+async function loadAmDashboard() {
+    const el = document.getElementById('amDashboardCards');
+    if (!el) return;
+    el.innerHTML = '<p>Loading...</p>';
+    const [agents, metrics, approvals, incidents] = await Promise.all([
+        amGet('/api/v1/agents/'),
+        amGet('/api/v1/observability/metrics'),
+        amGet('/api/v1/governance/approvals'),
+        amGet('/api/v1/observability/incidents'),
+    ]);
+    const agentList = (agents && agents.agents) || [];
+    const running = agentList.filter(function (a) { return a.status === 'RUNNING'; }).length;
+    const failed = agentList.filter(function (a) { return a.status === 'FAILED' || a.status === 'UNHEALTHY'; }).length;
+    const pending = ((approvals && approvals.approvals) || []).length;
+    const incCount = ((incidents && incidents.incidents) || []).length;
+    const totalEvents = (metrics && metrics.total_events) || 0;
+    function card(label, value, color) {
+        return '<div class="am-card" style="display:inline-block; min-width:120px; margin:6px; padding:12px 16px; '
+            + 'background:#fff; border:1px solid #ddd; border-radius:6px; text-align:center;">'
+            + '<div style="font-size:24px; font-weight:700; color:' + color + ';">' + escapeHtml(String(value)) + '</div>'
+            + '<div style="font-size:12px; color:#666;">' + escapeHtml(label) + '</div></div>';
+    }
+    el.innerHTML =
+        card('Total agents', agentList.length, '#333') +
+        card('Running', running, '#28a745') +
+        card('Failed/Unhealthy', failed, '#dc3545') +
+        card('Pending approvals', pending, '#fd7e14') +
+        card('Incidents', incCount, '#dc3545') +
+        card('Events', totalEvents, '#007bff');
+}
+
+async function loadAmRuntimes() {
+    const data = await amGet('/api/v1/agents/runtimes');
+    amRenderTable('amRuntimesContent',
+        [{ key: 'identifier', label: 'Identifier' }, { key: 'name', label: 'Name' },
+         { key: 'version', label: 'Version' }, { key: 'supported_protocols', label: 'Protocols' },
+         { key: 'status', label: 'Status' }],
+        data && data.runtimes, 'No runtimes registered.');
+}
+
+async function loadAmInstances() {
+    const data = await amGet('/api/v1/agents/');
+    amRenderTable('amInstancesContent',
+        [{ key: 'id', label: 'ID' }, { key: 'identity', label: 'Identity' },
+         { key: 'name', label: 'Name' }, { key: 'status', label: 'Status' }],
+        data && data.agents, 'No agents registered.');
+}
+
+async function loadAmTasks() {
+    const data = await amGet('/api/v1/agents/tasks?limit=50');
+    // tasks list endpoint is per-agent; the dashboard shows recent across agents
+    // via the observability events as a fallback when no direct list is wired.
+    const rows = (data && data.tasks) || (data && Array.isArray(data) ? data : []);
+    amRenderTable('amTasksContent',
+        [{ key: 'task_ref', label: 'Task' }, { key: 'operation', label: 'Operation' },
+         { key: 'status', label: 'Status' }],
+        rows, 'No recent tasks.');
+}
+
+async function loadAmPolicies() {
+    const data = await amGet('/api/v1/governance/policies');
+    amRenderTable('amPoliciesContent',
+        [{ key: 'name', label: 'Name' }, { key: 'version', label: 'Version' },
+         { key: 'scope', label: 'Scope' }, { key: 'enabled', label: 'Enabled' }],
+        data && data.policies, 'No policies defined.');
+}
+
+async function loadAmMcp() {
+    // The MCP registry listing is surfaced through decisions/events; show the
+    // governed-tool decisions as the MCP activity view.
+    const data = await amGet('/api/v1/governance/decisions');
+    amRenderTable('amMcpContent',
+        [{ key: 'action', label: 'Action' }, { key: 'resource', label: 'Resource' },
+         { key: 'decision', label: 'Decision' }, { key: 'decided_at', label: 'When' }],
+        data && data.decisions, 'No governed invocations yet.');
+}
+
+async function loadAmApprovals() {
+    const data = await amGet('/api/v1/governance/approvals');
+    amRenderTable('amApprovalsContent',
+        [{ key: 'id', label: 'ID' }, { key: 'action', label: 'Action' },
+         { key: 'resource', label: 'Resource' }, { key: 'status', label: 'Status' }],
+        data && data.approvals, 'No pending approvals.');
+}
+
+async function loadAmObservability() {
+    const data = await amGet('/api/v1/observability/events?limit=100');
+    amRenderTable('amObservabilityContent',
+        [{ key: 'event_type', label: 'Event' }, { key: 'agent_id', label: 'Agent' },
+         { key: 'decision', label: 'Decision' }, { key: 'severity', label: 'Severity' },
+         { key: 'occurred_at', label: 'When' }],
+        data && data.events, 'No events yet.');
+}
+
+async function loadAmIncidents() {
+    const data = await amGet('/api/v1/observability/incidents');
+    amRenderTable('amIncidentsContent',
+        [{ key: 'id', label: 'ID' }, { key: 'kind', label: 'Kind' },
+         { key: 'severity', label: 'Severity' }, { key: 'summary', label: 'Summary' },
+         { key: 'status', label: 'Status' }],
+        data && data.incidents, 'No security incidents.');
+}
+
 /*
  * Export the Sort_Helper functions for the Node/jsdom test harness. In the
  * browser `module` is undefined, so this block is skipped and the functions
@@ -1531,12 +1826,18 @@ if (typeof module !== 'undefined' && module.exports) {
         buildComparator,
         applySort,
         updateIndicators,
+        // AppCard state -> color resolver (Running_State highlight)
+        RUNNING_BACKGROUND_COLOR,
+        NOT_RUNNING_BACKGROUND_COLOR,
+        resolveAppCardStatus,
+        statusToBackgroundColor,
+        resolveAppCardBackgroundColor,
         // Onboarding sandbox render helper (Req 3.3, tested by task 15.3)
         SANDBOX_ALLOWED_STATUSES,
         renderSandboxApps,
-        // Agent Control render helper (Req 5.1, tested by task 6.3)
+        // Agent Control render helper (Req 5.1, 2.1, 2.2)
         renderAgentRows,
-        // Agent Control loader (Req 5.1, 5.3, 5.4, 5.5, 5.6, 4.6)
+        // Agent Control loader (Req 5.1, 5.3, 5.4, 5.5, 5.6, 4.6, 2.3, 2.6, 2.7)
         loadAgentControl,
         // Per-row STOP handler reusing POST /api/deployments (Req 3.1, 3.2, 3.5, 3.6)
         stopAgentApplication,
@@ -1547,5 +1848,19 @@ if (typeof module !== 'undefined' && module.exports) {
         ensureAgentEvidenceTooltipStyles,
         buildAgentEvidenceTooltip,
         wireAgentEvidenceTooltip,
+        // Agent Management (ARO + ZAF) panel helpers (Task 18)
+        AM_PANELS,
+        showAmPanel,
+        amRenderTable,
+        loadAgentManagement,
+        loadAmDashboard,
+        loadAmRuntimes,
+        loadAmInstances,
+        loadAmTasks,
+        loadAmPolicies,
+        loadAmMcp,
+        loadAmApprovals,
+        loadAmObservability,
+        loadAmIncidents,
     };
 }

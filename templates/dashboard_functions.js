@@ -1853,5 +1853,14 @@ if (typeof module !== 'undefined' && module.exports) {
         showAmPanel,
         amRenderTable,
         loadAgentManagement,
+        loadAmDashboard,
+        loadAmRuntimes,
+        loadAmInstances,
+        loadAmTasks,
+        loadAmPolicies,
+        loadAmMcp,
+        loadAmApprovals,
+        loadAmObservability,
+        loadAmIncidents,
     };
 }
