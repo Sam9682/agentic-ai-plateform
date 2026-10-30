@@ -1169,42 +1169,74 @@ async function loadAgentControl() {
 
         let html = banner + '<table style="width:100%; border-collapse:collapse;">';
         html += '<tr style="border-bottom:1px solid #ddd;">'
-            + '<th style="text-align:left; padding:5px;">Application</th>'
+            + '<th style="text-align:left; padding:5px;">Application / Service</th>'
             + '<th style="text-align:left; padding:5px;">Owner</th>'
-            + '<th style="text-align:left; padding:5px;">Name</th>'
+            + '<th style="text-align:left; padding:5px;">Container name</th>'
             + '<th style="text-align:left; padding:5px;">Image</th>'
             + '<th style="text-align:left; padding:5px;">Server</th>'
             + '<th style="text-align:left; padding:5px;">State</th>'
             + '<th style="text-align:left; padding:5px;">Classification</th>'
             + '<th style="text-align:left; padding:5px;">Confidence</th>'
             + '<th style="text-align:left; padding:5px;">Action</th></tr>';
+        // Group rows by application so logical groups are clustered and easy to
+        // read. Rows without an application name fall into a trailing
+        // "(no application)" bucket. Within a group, insertion order is preserved.
+        const groups = [];
+        const groupIndex = {};
         for (const r of rows) {
-            const badge = r.classification === 'probable_agent'
-                ? '<span style="background:#28a745; color:#fff; padding:2px 8px; border-radius:3px; font-size:12px;">probable agent</span>'
-                : '<span style="background:#6c757d; color:#fff; padding:2px 8px; border-radius:3px; font-size:12px;">unclassified</span>';
-            // Only cells with at least one evidence line carry data-evidence; empty
-            // cells get no carrier and therefore no tooltip (Req 2.6). The JSON is
-            // escaped before it reaches the attribute (Req 2.7).
-            const evidenceAttr = r.evidence.length
-                ? ' data-evidence="' + escapeHtml(JSON.stringify(r.evidence)) + '"'
-                : '';
-            // Per-row STOP control: enabled and carrying the application name when
-            // present (Req 3.1); disabled with an explanatory title when the row has
-            // no application name (Req 3.4).
-            const stopBtn = r.application
-                ? '<button class="btn btn-danger btn-small" onclick="stopAgentApplication(\'' + escapeHtml(r.application) + '\')">⛔ Stop</button>'
+            const key = r.application || '';
+            if (!(key in groupIndex)) {
+                groupIndex[key] = groups.length;
+                groups.push({ application: key, rows: [] });
+            }
+            groups[groupIndex[key]].rows.push(r);
+        }
+        // Stable, readable order: named applications first (A→Z, case-insensitive),
+        // the "(no application)" bucket last.
+        groups.sort(function (a, b) {
+            if (a.application === b.application) return 0;
+            if (a.application === '') return 1;
+            if (b.application === '') return -1;
+            return a.application.toLowerCase().localeCompare(b.application.toLowerCase());
+        });
+
+        const COLSPAN = 9; // number of columns in the table
+        for (const group of groups) {
+            const hasApp = group.application !== '';
+            const groupLabel = hasApp ? escapeHtml(group.application) : '(no application)';
+            // Group header band: names the application once and carries the
+            // application-level STOP control (enabled only for a real application).
+            const groupStopBtn = hasApp
+                ? '<button class="btn btn-danger btn-small" onclick="stopAgentApplication(\'' + escapeHtml(group.application) + '\')">⛔ Stop</button>'
                 : '<button class="btn btn-danger btn-small" disabled title="No application name">⛔ Stop</button>';
-            html += '<tr style="border-bottom:1px solid #eee;">'
-                + '<td style="padding:5px;">' + (escapeHtml(r.application) || '—') + '</td>'
-                + '<td style="padding:5px;">' + (escapeHtml(r.owner) || '—') + '</td>'
-                + '<td style="padding:5px;">' + escapeHtml(r.name) + '</td>'
-                + '<td style="padding:5px;">' + escapeHtml(r.image) + '</td>'
-                + '<td style="padding:5px;">' + escapeHtml(String(r.server)) + '</td>'
-                + '<td style="padding:5px;">' + escapeHtml(r.state) + '</td>'
-                + '<td class="agent-classification-cell" style="padding:5px; position:relative;"' + evidenceAttr + '>' + badge + '</td>'
-                + '<td style="padding:5px; color:' + confidenceColor(r.confidence) + '; font-weight:600;">' + escapeHtml(confidenceText(r.confidence)) + '</td>'
-                + '<td style="padding:5px;">' + stopBtn + '</td>'
+            html += '<tr style="background:#eef3f8; border-top:2px solid #cbd6e2;">'
+                + '<td colspan="' + (COLSPAN - 1) + '" style="padding:6px 5px; font-weight:600;">'
+                + (hasApp ? 'Application / Service: ' : '') + groupLabel
+                + ' <span style="color:#888; font-weight:400;">(' + group.rows.length + ')</span></td>'
+                + '<td style="padding:6px 5px;">' + groupStopBtn + '</td>'
                 + '</tr>';
+            for (const r of group.rows) {
+                const badge = r.classification === 'probable_agent'
+                    ? '<span style="background:#28a745; color:#fff; padding:2px 8px; border-radius:3px; font-size:12px;">probable agent</span>'
+                    : '<span style="background:#6c757d; color:#fff; padding:2px 8px; border-radius:3px; font-size:12px;">unclassified</span>';
+                // Only cells with at least one evidence line carry data-evidence; empty
+                // cells get no carrier and therefore no tooltip (Req 2.6). The JSON is
+                // escaped before it reaches the attribute (Req 2.7).
+                const evidenceAttr = r.evidence.length
+                    ? ' data-evidence="' + escapeHtml(JSON.stringify(r.evidence)) + '"'
+                    : '';
+                html += '<tr style="border-bottom:1px solid #eee;">'
+                    + '<td style="padding:5px 5px 5px 20px; color:#888;">↳</td>'
+                    + '<td style="padding:5px;">' + (escapeHtml(r.owner) || '—') + '</td>'
+                    + '<td style="padding:5px;">' + escapeHtml(r.name) + '</td>'
+                    + '<td style="padding:5px;">' + escapeHtml(r.image) + '</td>'
+                    + '<td style="padding:5px;">' + escapeHtml(String(r.server)) + '</td>'
+                    + '<td style="padding:5px;">' + escapeHtml(r.state) + '</td>'
+                    + '<td class="agent-classification-cell" style="padding:5px; position:relative;"' + evidenceAttr + '>' + badge + '</td>'
+                    + '<td style="padding:5px; color:' + confidenceColor(r.confidence) + '; font-weight:600;">' + escapeHtml(confidenceText(r.confidence)) + '</td>'
+                    + '<td style="padding:5px;"></td>'
+                    + '</tr>';
+            }
         }
         html += '</table>';
         // Full replace so a refresh wipes the prior render (Req 5.3).
