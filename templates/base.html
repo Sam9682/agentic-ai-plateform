@@ -21,6 +21,7 @@
                             <a href="javascript:void(0)" class="nav-dropdown-btn" id="navTooling" onclick="toggleNavDropdown('tooling')">🛠️ {{ get_text('tooling') }} ▼</a>
                             <div class="nav-dropdown-content" id="navToolingDropdown">
                                 <a href="javascript:void(0)" onclick="showTab('agentControl')" id="navAgentControl">🤖 {{ get_text('control_of_agents') }}</a>
+                                <a href="javascript:void(0)" onclick="showTab('agentManagement')" id="navAgentManagement">🛰️ {{ get_text('agent_management') }}</a>
                                 <a href="javascript:void(0)" onclick="showTab('sandbox')" id="navSandbox">🧪 {{ get_text('sandbox') }}</a>
                                 <a href="javascript:void(0)" onclick="showTab('marketplace')" id="navMarketplace">🛒 {{ get_text('marketplace') }}</a>
                             </div>
@@ -88,6 +89,7 @@
                     <a href="javascript:void(0)" onclick="showTab('orchestratorServerless')">🚀 Serverless</a>
                     <span class="mobile-nav-group-label">🛠️ {{ get_text('tooling') }}</span>
                     <a href="javascript:void(0)" onclick="showTab('agentControl')">🤖 {{ get_text('control_of_agents') }}</a>
+                    <a href="javascript:void(0)" onclick="showTab('agentManagement')">🛰️ {{ get_text('agent_management') }}</a>
                     <a href="javascript:void(0)" onclick="showTab('sandbox')">🧪 {{ get_text('sandbox') }}</a>
                     <a href="javascript:void(0)" onclick="showTab('marketplace')">🛒 {{ get_text('marketplace') }}</a>
                     <a href="javascript:void(0)" onclick="showTab('billing')">{{ get_text('billing') }}</a>
@@ -210,6 +212,7 @@
                 marketplace: 'navMarketplace',
                 sandbox: 'navSandbox',
                 agentControl: 'navTooling',
+                agentManagement: 'navTooling',
             };
             const id = map[activeTab];
             if (id) { const el = document.getElementById(id); if (el) el.classList.add('nav-active'); }

@@ -1006,6 +1006,64 @@
         </div>
     </div>
 
+    <!-- Agent Management Section (ARO + ZAF) -->
+    <div id="agentManagementSection" class="tab-content" style="display: none;">
+        <div class="section-header">
+            <h2>🛰️ {{ get_text('agent_management') }}</h2>
+            <button class="btn btn-secondary" onclick="loadAgentManagement()">🔄 {{ get_text('refresh') }}</button>
+        </div>
+
+        <!-- Sub-navigation across the ARO/ZAF panels. -->
+        <div id="amSubnav" style="margin-bottom: 15px;">
+            <button class="btn btn-sm" onclick="showAmPanel('dashboard')">📊 {{ get_text('am_dashboard') }}</button>
+            <button class="btn btn-sm" onclick="showAmPanel('runtimes')">🧩 {{ get_text('am_runtimes') }}</button>
+            <button class="btn btn-sm" onclick="showAmPanel('instances')">🤖 {{ get_text('am_instances') }}</button>
+            <button class="btn btn-sm" onclick="showAmPanel('tasks')">📋 {{ get_text('am_tasks') }}</button>
+            <button class="btn btn-sm" onclick="showAmPanel('policies')">📜 {{ get_text('am_policies') }}</button>
+            <button class="btn btn-sm" onclick="showAmPanel('mcp')">🔌 {{ get_text('am_mcp') }}</button>
+            <button class="btn btn-sm" onclick="showAmPanel('approvals')">✅ {{ get_text('am_approvals') }}</button>
+            <button class="btn btn-sm" onclick="showAmPanel('observability')">📡 {{ get_text('am_observability') }}</button>
+            <button class="btn btn-sm" onclick="showAmPanel('incidents')">🚨 {{ get_text('am_incidents') }}</button>
+        </div>
+
+        <div id="amPanel-dashboard" class="am-panel">
+            <h3>📊 {{ get_text('am_dashboard') }}</h3>
+            <div id="amDashboardCards" class="am-cards"><p>{{ get_text('agent_control_loading') }}</p></div>
+        </div>
+        <div id="amPanel-runtimes" class="am-panel" style="display:none;">
+            <h3>🧩 {{ get_text('am_runtimes') }}</h3>
+            <div id="amRuntimesContent"></div>
+        </div>
+        <div id="amPanel-instances" class="am-panel" style="display:none;">
+            <h3>🤖 {{ get_text('am_instances') }}</h3>
+            <div id="amInstancesContent"></div>
+        </div>
+        <div id="amPanel-tasks" class="am-panel" style="display:none;">
+            <h3>📋 {{ get_text('am_tasks') }}</h3>
+            <div id="amTasksContent"></div>
+        </div>
+        <div id="amPanel-policies" class="am-panel" style="display:none;">
+            <h3>📜 {{ get_text('am_policies') }}</h3>
+            <div id="amPoliciesContent"></div>
+        </div>
+        <div id="amPanel-mcp" class="am-panel" style="display:none;">
+            <h3>🔌 {{ get_text('am_mcp') }}</h3>
+            <div id="amMcpContent"></div>
+        </div>
+        <div id="amPanel-approvals" class="am-panel" style="display:none;">
+            <h3>✅ {{ get_text('am_approvals') }}</h3>
+            <div id="amApprovalsContent"></div>
+        </div>
+        <div id="amPanel-observability" class="am-panel" style="display:none;">
+            <h3>📡 {{ get_text('am_observability') }}</h3>
+            <div id="amObservabilityContent"></div>
+        </div>
+        <div id="amPanel-incidents" class="am-panel" style="display:none;">
+            <h3>🚨 {{ get_text('am_incidents') }}</h3>
+            <div id="amIncidentsContent"></div>
+        </div>
+    </div>
+
     <!-- Deployment Logs Section -->
     <!-- Logs section removed from main panel -->
         </div>
@@ -1191,6 +1249,9 @@ function showTab(tab) {
     
     const agentControlSection = document.getElementById('agentControlSection');
     if (agentControlSection) agentControlSection.style.display = 'none';
+
+    const agentManagementSection = document.getElementById('agentManagementSection');
+    if (agentManagementSection) agentManagementSection.style.display = 'none';
     
     // Control virtual agents panel visibility
     const agentsPanel = document.getElementById('agentsPanel');
@@ -1274,6 +1335,11 @@ function showTab(tab) {
         if (agentControlSection) {
             agentControlSection.style.display = 'block';
             loadAgentControl();
+        }
+    } else if (tab === 'agentManagement') {
+        if (agentManagementSection) {
+            agentManagementSection.style.display = 'block';
+            loadAgentManagement();
         }
     }
     

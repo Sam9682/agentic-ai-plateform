@@ -1534,6 +1534,192 @@ function confidenceText(score) {
     return pct + '%';
 }
 
+/* ======================================================================== *
+ * Agent Management (ARO + ZAF) dashboard panels.
+ *
+ * These back the "Agent Management" navigation section. They call the
+ * /api/v1/agents, /api/v1/governance and /api/v1/observability endpoints,
+ * which are tenant-scoped server-side (the active tenant is resolved from the
+ * session membership). Rendering is defensive: errors never break the refresh
+ * control, and all interpolated values are HTML-escaped via escapeHtml.
+ * ======================================================================== */
+
+// Which AM panel ids exist; used to toggle visibility.
+const AM_PANELS = ['dashboard', 'runtimes', 'instances', 'tasks', 'policies',
+    'mcp', 'approvals', 'observability', 'incidents'];
+
+/**
+ * Show one Agent Management sub-panel and lazily load its content.
+ * @param {string} name - panel id suffix (e.g. 'runtimes')
+ */
+function showAmPanel(name) {
+    for (const p of AM_PANELS) {
+        const el = document.getElementById('amPanel-' + p);
+        if (el) el.style.display = (p === name) ? 'block' : 'none';
+    }
+    const loaders = {
+        dashboard: loadAmDashboard,
+        runtimes: loadAmRuntimes,
+        instances: loadAmInstances,
+        tasks: loadAmTasks,
+        policies: loadAmPolicies,
+        mcp: loadAmMcp,
+        approvals: loadAmApprovals,
+        observability: loadAmObservability,
+        incidents: loadAmIncidents,
+    };
+    const fn = loaders[name];
+    if (typeof fn === 'function') fn();
+}
+
+/** JSON GET helper for the AM panels; returns parsed body or null on failure. */
+async function amGet(url) {
+    try {
+        const resp = await fetch(url, { method: 'GET', credentials: 'same-origin' });
+        if (!resp.ok) return { __error: resp.status };
+        return await resp.json();
+    } catch (e) {
+        return { __error: 'network' };
+    }
+}
+
+/** Render a list of objects as a simple table into a container element. */
+function amRenderTable(containerId, columns, rows, emptyMsg) {
+    const content = document.getElementById(containerId);
+    if (!content) return;
+    if (rows && rows.__error) {
+        content.innerHTML = '<p style="color:red;">Failed to load (' + escapeHtml(String(rows.__error)) + ').</p>';
+        return;
+    }
+    const list = Array.isArray(rows) ? rows : [];
+    if (list.length === 0) {
+        content.innerHTML = '<p style="color:orange;">' + escapeHtml(emptyMsg || 'Nothing to show.') + '</p>';
+        return;
+    }
+    let html = '<table style="width:100%; border-collapse:collapse;"><tr style="border-bottom:1px solid #ddd;">';
+    for (const c of columns) html += '<th style="text-align:left; padding:5px;">' + escapeHtml(c.label) + '</th>';
+    html += '</tr>';
+    for (const row of list) {
+        html += '<tr style="border-bottom:1px solid #eee;">';
+        for (const c of columns) {
+            const v = row[c.key];
+            html += '<td style="padding:5px;">' + escapeHtml(v === undefined || v === null ? '' : String(
+                typeof v === 'object' ? JSON.stringify(v) : v)) + '</td>';
+        }
+        html += '</tr>';
+    }
+    html += '</table>';
+    content.innerHTML = html;
+}
+
+/** Entry point when the Agent Management tab opens: show the dashboard panel. */
+function loadAgentManagement() {
+    showAmPanel('dashboard');
+}
+
+async function loadAmDashboard() {
+    const el = document.getElementById('amDashboardCards');
+    if (!el) return;
+    el.innerHTML = '<p>Loading...</p>';
+    const [agents, metrics, approvals, incidents] = await Promise.all([
+        amGet('/api/v1/agents/'),
+        amGet('/api/v1/observability/metrics'),
+        amGet('/api/v1/governance/approvals'),
+        amGet('/api/v1/observability/incidents'),
+    ]);
+    const agentList = (agents && agents.agents) || [];
+    const running = agentList.filter(function (a) { return a.status === 'RUNNING'; }).length;
+    const failed = agentList.filter(function (a) { return a.status === 'FAILED' || a.status === 'UNHEALTHY'; }).length;
+    const pending = ((approvals && approvals.approvals) || []).length;
+    const incCount = ((incidents && incidents.incidents) || []).length;
+    const totalEvents = (metrics && metrics.total_events) || 0;
+    function card(label, value, color) {
+        return '<div class="am-card" style="display:inline-block; min-width:120px; margin:6px; padding:12px 16px; '
+            + 'background:#fff; border:1px solid #ddd; border-radius:6px; text-align:center;">'
+            + '<div style="font-size:24px; font-weight:700; color:' + color + ';">' + escapeHtml(String(value)) + '</div>'
+            + '<div style="font-size:12px; color:#666;">' + escapeHtml(label) + '</div></div>';
+    }
+    el.innerHTML =
+        card('Total agents', agentList.length, '#333') +
+        card('Running', running, '#28a745') +
+        card('Failed/Unhealthy', failed, '#dc3545') +
+        card('Pending approvals', pending, '#fd7e14') +
+        card('Incidents', incCount, '#dc3545') +
+        card('Events', totalEvents, '#007bff');
+}
+
+async function loadAmRuntimes() {
+    const data = await amGet('/api/v1/agents/runtimes');
+    amRenderTable('amRuntimesContent',
+        [{ key: 'identifier', label: 'Identifier' }, { key: 'name', label: 'Name' },
+         { key: 'version', label: 'Version' }, { key: 'supported_protocols', label: 'Protocols' },
+         { key: 'status', label: 'Status' }],
+        data && data.runtimes, 'No runtimes registered.');
+}
+
+async function loadAmInstances() {
+    const data = await amGet('/api/v1/agents/');
+    amRenderTable('amInstancesContent',
+        [{ key: 'id', label: 'ID' }, { key: 'identity', label: 'Identity' },
+         { key: 'name', label: 'Name' }, { key: 'status', label: 'Status' }],
+        data && data.agents, 'No agents registered.');
+}
+
+async function loadAmTasks() {
+    const data = await amGet('/api/v1/agents/tasks?limit=50');
+    // tasks list endpoint is per-agent; the dashboard shows recent across agents
+    // via the observability events as a fallback when no direct list is wired.
+    const rows = (data && data.tasks) || (data && Array.isArray(data) ? data : []);
+    amRenderTable('amTasksContent',
+        [{ key: 'task_ref', label: 'Task' }, { key: 'operation', label: 'Operation' },
+         { key: 'status', label: 'Status' }],
+        rows, 'No recent tasks.');
+}
+
+async function loadAmPolicies() {
+    const data = await amGet('/api/v1/governance/policies');
+    amRenderTable('amPoliciesContent',
+        [{ key: 'name', label: 'Name' }, { key: 'version', label: 'Version' },
+         { key: 'scope', label: 'Scope' }, { key: 'enabled', label: 'Enabled' }],
+        data && data.policies, 'No policies defined.');
+}
+
+async function loadAmMcp() {
+    // The MCP registry listing is surfaced through decisions/events; show the
+    // governed-tool decisions as the MCP activity view.
+    const data = await amGet('/api/v1/governance/decisions');
+    amRenderTable('amMcpContent',
+        [{ key: 'action', label: 'Action' }, { key: 'resource', label: 'Resource' },
+         { key: 'decision', label: 'Decision' }, { key: 'decided_at', label: 'When' }],
+        data && data.decisions, 'No governed invocations yet.');
+}
+
+async function loadAmApprovals() {
+    const data = await amGet('/api/v1/governance/approvals');
+    amRenderTable('amApprovalsContent',
+        [{ key: 'id', label: 'ID' }, { key: 'action', label: 'Action' },
+         { key: 'resource', label: 'Resource' }, { key: 'status', label: 'Status' }],
+        data && data.approvals, 'No pending approvals.');
+}
+
+async function loadAmObservability() {
+    const data = await amGet('/api/v1/observability/events?limit=100');
+    amRenderTable('amObservabilityContent',
+        [{ key: 'event_type', label: 'Event' }, { key: 'agent_id', label: 'Agent' },
+         { key: 'decision', label: 'Decision' }, { key: 'severity', label: 'Severity' },
+         { key: 'occurred_at', label: 'When' }],
+        data && data.events, 'No events yet.');
+}
+
+async function loadAmIncidents() {
+    const data = await amGet('/api/v1/observability/incidents');
+    amRenderTable('amIncidentsContent',
+        [{ key: 'id', label: 'ID' }, { key: 'kind', label: 'Kind' },
+         { key: 'severity', label: 'Severity' }, { key: 'summary', label: 'Summary' },
+         { key: 'status', label: 'Status' }],
+        data && data.incidents, 'No security incidents.');
+}
+
 /*
  * Export the Sort_Helper functions for the Node/jsdom test harness. In the
  * browser `module` is undefined, so this block is skipped and the functions
@@ -1572,5 +1758,10 @@ if (typeof module !== 'undefined' && module.exports) {
         ensureAgentEvidenceTooltipStyles,
         buildAgentEvidenceTooltip,
         wireAgentEvidenceTooltip,
+        // Agent Management (ARO + ZAF) panel helpers (Task 18)
+        AM_PANELS,
+        showAmPanel,
+        amRenderTable,
+        loadAgentManagement,
     };
 }

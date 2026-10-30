@@ -586,6 +586,37 @@ def init_db():
                 conn.rollback()
                 print(f"[INFO] Runtime monitor migration check: {e}")
 
+            # Apply ARO/ZAF migrations in dependency order. Each is idempotent
+            # (IF NOT EXISTS / ON CONFLICT) and wrapped so a re-run is harmless.
+            for _aro_migration in (
+                'add_tenancy.sql',
+                'add_agent_events.sql',
+                'add_agent_credentials.sql',
+                'add_agent_runtimes.sql',
+                'add_execution_environments.sql',
+                'add_agents.sql',
+                'add_agent_executions.sql',
+                'add_agent_tasks.sql',
+                'add_governance.sql',
+                'add_approvals.sql',
+                'add_mcp_registry.sql',
+                'add_incidents.sql',
+            ):
+                try:
+                    migration_path = os.path.join(
+                        os.path.dirname(os.path.dirname(__file__)),
+                        'migration', _aro_migration,
+                    )
+                    if os.path.exists(migration_path):
+                        with open(migration_path, 'r') as f:
+                            migration_sql = f.read()
+                        cursor.execute(migration_sql)
+                        conn.commit()
+                except Exception as e:
+                    # Migration may already be applied, ignore errors
+                    conn.rollback()
+                    print(f"[INFO] ARO/ZAF migration check ({_aro_migration}): {e}")
+
             # Ensure agentic-ai-plateform-serverless-brik application exists and is assigned to all users
             try:
                 cursor.execute("SELECT id FROM applications WHERE name = %s", ('opcp-serverless-brik',))

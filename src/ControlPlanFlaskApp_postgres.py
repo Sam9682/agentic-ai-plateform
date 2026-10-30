@@ -29,6 +29,12 @@ from .routes.templates_routes import templates_bp
 from .routes.wizard_routes import wizard_bp
 from .routes.sandbox_routes import sandbox_bp
 from .routes.agent_control_routes import agent_control_bp
+# ARO (Agent Runtime Orchestrator) + ZAF (Zero-trust Agent Firewall) blueprints.
+from .routes.aro_runtime_routes import aro_runtime_bp
+from .routes.aro_agent_routes import aro_agent_bp
+from .routes.aro_task_routes import aro_task_bp
+from .routes.zaf_governance_routes import zaf_governance_bp
+from .routes.obs_routes import obs_bp
 
 # Redirect all print() statements to log files
 class PrintLogger:
@@ -118,5 +124,11 @@ def create_app():
     app.register_blueprint(wizard_bp)
     app.register_blueprint(sandbox_bp)
     app.register_blueprint(agent_control_bp)
+    # ARO/ZAF/OBS blueprints.
+    app.register_blueprint(aro_runtime_bp)
+    app.register_blueprint(aro_agent_bp)
+    app.register_blueprint(aro_task_bp)
+    app.register_blueprint(zaf_governance_bp)
+    app.register_blueprint(obs_bp)
     
     return app
