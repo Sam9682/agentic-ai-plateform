@@ -8,10 +8,25 @@ import logging
 import configparser
 from contextlib import contextmanager
 from werkzeug.security import generate_password_hash
-from .config_postgres import get_database_config, AI_ENGINE
+from .config_postgres import get_database_config, AI_ENGINE, _is_development
 from .query_converter import convert_sqlite_to_postgres_query
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_seed_password() -> str:
+    # SEED_ADMIN_PASSWORD is the Secret_Key_Name for the initial seeded credential.
+    # Uses the same gate as _is_development(): no FLASK_ENV default, so unset => prod.
+    env_pw = os.environ.get('SEED_ADMIN_PASSWORD')
+    if _is_development():
+        return env_pw if env_pw else 'password'
+    if not env_pw or env_pw == 'password':
+        raise RuntimeError(
+            "Refusing to seed default users in production: required secret "
+            "'SEED_ADMIN_PASSWORD' is missing or set to its insecure default. "
+            "Set the 'SEED_ADMIN_PASSWORD' environment variable before db-init."
+        )
+    return env_pw
 
 # Allowed container runtime types. Anything else is rejected and falls back to
 # 'runc' to prevent arbitrary values being passed to `docker run --runtime`.
@@ -737,13 +752,17 @@ def init_db():
             # Create default admin user if none exists
             cursor.execute('SELECT COUNT(*) FROM users WHERE username = %s', ('admin',))
             if cursor.fetchone()[0] == 0:
-                admin_password_hash = generate_password_hash('password')
+                # Resolve the seed credential BEFORE any INSERT. In production this
+                # raises (naming SEED_ADMIN_PASSWORD only, never the value) so no
+                # default-credentialed user is ever created.
+                seed_pw = _resolve_seed_password()
+                admin_password_hash = generate_password_hash(seed_pw)
                 cursor.execute('''
                     INSERT INTO users (username, email, password_hash, first_name, last_name, suspended)
                     VALUES (%s, %s, %s, %s, %s, %s) RETURNING id
                 ''', ('admin', f'admin@{DOMAIN}', admin_password_hash, 'System', 'Administrator', False))
 
-                demo_password_hash = generate_password_hash('password')
+                demo_password_hash = generate_password_hash(seed_pw)
                 cursor.execute('''
                     INSERT INTO users (username, email, password_hash, first_name, last_name, suspended)
                     VALUES (%s, %s, %s, %s, %s, %s) RETURNING id

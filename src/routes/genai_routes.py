@@ -286,54 +286,6 @@ def return_prompt_for_operator(detected_action, application_name, application_fo
 
     return l_prompt, False
 
-@genai_bp.route('/deployments/<int:deployment_id>/logs')
-def api_deployment_logs(deployment_id):
-    # Log API call
-    user_id = session.get('user_id', 'anonymous')
-    remote_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.remote_addr)
-
-    logger.info(f"[DEPLOYMENT LOGS] GET /api/deployments/{deployment_id}/logs - User: {user_id}, IP: {remote_ip}")
-
-    if 'user_id' not in session:
-        logger.warning(f"[DEPLOYMENT LOGS] FAILED - Authentication required from {remote_ip}")
-        return jsonify({'error': 'Authentication required'}), 401
-
-    deployment = db_manager.execute_query('''SELECT deployment_path FROM deployments
-        WHERE id = %s AND user_id = %s
-    ''', (deployment_id, session['user_id']), fetch_one=True)
-
-    if not deployment:
-        logger.warning(f"[DEPLOYMENT LOGS] FAILED - Deployment {deployment_id} not found for user {user_id}")
-        return jsonify({'error': 'Deployment not found'}), 404
-
-    # Extract deployment path safely
-    deploy_path = str(deployment[0] if isinstance(deployment, (list, tuple)) else deployment)
-
-    # Validate deployment path to prevent path traversal
-    if not deploy_path or '..' in deploy_path or not deploy_path.startswith(f'/home/{LINUX_USER_INSTALLATION}/deployments/'):
-        logger.warning(f"[DEPLOYMENT LOGS] SECURITY - Invalid deployment path: {deploy_path} for user {user_id}")
-        return jsonify({'error': 'Invalid deployment path'}), 400
-
-    log_file = os.path.join(deploy_path, 'deployment.log')
-
-    # Additional security check for log file path
-    if not log_file.startswith(f'/home/{LINUX_USER_INSTALLATION}/deployments/') or '..' in log_file:
-        logger.warning(f"[DEPLOYMENT LOGS] SECURITY - Invalid log file path: {log_file} for user {user_id}")
-        return jsonify({'error': 'Invalid log file path'}), 400
-
-    try:
-        if os.path.exists(log_file):
-            with open(log_file, 'r') as f:
-                logs = f.read()
-        else:
-            logs = 'No logs available'
-
-        logger.info(f"[DEPLOYMENT LOGS] SUCCESS - Returned logs for deployment {deployment_id} to user {user_id}")
-        return jsonify({'logs': logs})
-    except Exception as e:
-        logger.error(f"[DEPLOYMENT LOGS] ERROR - Failed to read logs for deployment {deployment_id} by user {user_id}: {str(e)}")
-        return jsonify({'error': f'Failed to read logs: {str(e)}'}), 500
-
 @genai_bp.route('/request_dev_ai_for_app', methods=['POST'])
 def api_request_dev_ai_for_app():
     from flask import Response, stream_with_context

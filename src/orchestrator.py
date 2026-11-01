@@ -591,9 +591,6 @@ class LightOrchestrator:
                         for service in services:
                             self._reconcile_service(service[0], service[1])
 
-                    # Update Nginx config if needed
-                    self.generate_nginx_config()
-
                 except Exception as e:
                     logger.error(f"Reconciliation error: {e}")
                     # Log more details about the error for debugging

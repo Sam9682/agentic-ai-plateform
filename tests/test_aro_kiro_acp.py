@@ -91,6 +91,7 @@ class MockKiroTransport(AcpTransport):
         self._outbox = []       # queued byte chunks for the client to read
         self._buffer = acp.LineBuffer()
         self.cancelled = False
+        self.closed = False
         self._session = "sess-1"
 
     def write(self, data: bytes) -> None:
@@ -118,12 +119,12 @@ class MockKiroTransport(AcpTransport):
         elif method == "session/cancel":
             self.cancelled = True
 
-    def read_chunks(self):
+    def read_chunks(self, read_timeout=None):
         while self._outbox:
             yield self._outbox.pop(0)
 
     def close(self):
-        pass
+        self.closed = True
 
 
 def _adapter_with_mock(mock):

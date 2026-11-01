@@ -57,7 +57,9 @@ access_log_format = '%(h)s %(l)s %(u)s %(t)s "%(r)s" %(s)s %(b)s "%(f)s" "%(a)s"
 proc_name = PLTF_FOLDER
 
 # Daemon mode
-daemon = True
+# Default True preserves the host deployment (deployControlPlan.sh) behavior.
+# Containers set GUNICORN_DAEMON=false so gunicorn runs in the foreground and the container stays attached.
+daemon = os.environ.get('GUNICORN_DAEMON', 'true').lower() == 'true'
 pidfile = "conf/gunicorn.pid"
 
 # User and group to run as

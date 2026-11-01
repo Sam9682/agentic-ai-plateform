@@ -64,10 +64,25 @@ def build_cli_argv(
 
 
 class _ProcessHandle(ExecutionHandle):
-    """Streams a subprocess's stdout as chunks; cancel terminates the process."""
+    """Streams a subprocess's stdout as chunks; cancel terminates the process.
 
-    def __init__(self, proc: subprocess.Popen):
+    ``cancel()`` stops both the local ``docker exec`` client process and the
+    container-side child process tree it spawned. The container-side kill is
+    issued through an injected ``kill_children`` callback (wired by the adapter
+    to ``docker exec <c> pkill -TERM -f shai`` via ``_exec``) so the headless
+    SHAI child does not survive as an orphan when the local client is torn down.
+    ``result()`` blocks on ``self._proc.wait()`` before reading ``returncode``
+    so it always reflects the finished execution.
+    """
+
+    def __init__(
+        self,
+        proc: subprocess.Popen,
+        *,
+        kill_children: Optional[Callable[[], Any]] = None,
+    ):
         self._proc = proc
+        self._kill_children = kill_children
         self._lines: List[str] = []
         self._cancelled = False
         self._lock = threading.Lock()
@@ -87,14 +102,33 @@ class _ProcessHandle(ExecutionHandle):
     def cancel(self) -> bool:
         with self._lock:
             self._cancelled = True
+        ok = True
+        # Stop the container-side child process tree first so the headless SHAI
+        # child does not linger after the local client goes away.
+        if self._kill_children is not None:
+            try:
+                self._kill_children()
+            except Exception:  # noqa: BLE001
+                ok = False
+        # Terminate the local `docker exec` client process.
         try:
             if self._proc.poll() is None:
                 self._proc.terminate()
-            return True
         except Exception:  # noqa: BLE001
             return False
+        return ok
 
-    def result(self) -> ExecutionResult:
+    def result(self, timeout: Optional[float] = None) -> ExecutionResult:
+        # Block until the underlying execution has finished before reading the
+        # return code, so result() never returns a premature/None returncode.
+        try:
+            self._proc.wait(timeout=timeout)
+        except TypeError:
+            # Fakes/handles whose wait() takes no timeout argument.
+            self._proc.wait()
+        except Exception:  # noqa: BLE001
+            # e.g. subprocess.TimeoutExpired - fall through to current state.
+            pass
         rc = self._proc.poll()
         if self._cancelled:
             return ExecutionResult(success=False, returncode=rc, output="\n".join(self._lines), error="cancelled")
@@ -141,10 +175,82 @@ class ShaiCliAdapter(AgentRuntimeAdapter):
     def get_capabilities(self) -> List[Capability]:
         return list(_SHAI_CLI_CAPABILITIES)
 
+    @staticmethod
+    def _parse_sha256(out: str) -> Optional[str]:
+        """Extract a bare lowercase sha256 hex digest from command output.
+
+        Accepts the ``<digest>  <path>`` form emitted by ``sha256sum`` as well
+        as a bare digest. Returns None when no 64-char hex token is present.
+        """
+        for token in (out or "").split():
+            t = token.strip().lower()
+            # Strip an optional algorithm prefix, e.g. "sha256:deadbeef...".
+            if t.startswith("sha256:"):
+                t = t[len("sha256:"):]
+            if len(t) == 64 and all(ch in "0123456789abcdef" for ch in t):
+                return t
+        return None
+
+    @staticmethod
+    def _expected_digest(configuration: Dict[str, Any]) -> Optional[str]:
+        """Return the configured expected sha256 digest, if any.
+
+        Honours either ``sha256`` or ``digest`` (which may carry a ``sha256:``
+        prefix), normalised to a bare lowercase hex string.
+        """
+        raw = configuration.get("sha256") or configuration.get("digest")
+        if not raw:
+            return None
+        value = str(raw).strip().lower()
+        if value.startswith("sha256:"):
+            value = value[len("sha256:"):]
+        return value or None
+
     def install(self, configuration: Dict[str, Any]) -> ExecutionResult:
         self._require(Capability.INSTALL)
         version = configuration.get("version", self._version)
-        cmd = f"docker exec {self._container} sh -lc 'npm install -g @ovhcloud/shai@{shlex.quote(version)}'"
+        qversion = shlex.quote(version)
+        c = shlex.quote(self._container)
+        expected = self._expected_digest(configuration)
+
+        # When integrity material is configured, download (pack) the artifact
+        # first, verify its sha256, and only activate the runtime on a match.
+        if expected is not None:
+            tarball = f"/tmp/shai-{version}.tgz"
+            qtar = shlex.quote(tarball)
+            pack_cmd = (
+                f"docker exec {c} sh -lc "
+                f"'cd /tmp && npm pack @ovhcloud/shai@{qversion} --silent "
+                f"--pack-destination /tmp >/dev/null && "
+                f"sha256sum $(ls -t /tmp/*.tgz | head -n1)'"
+            )
+            ok, out, err = self._exec(pack_cmd)
+            if not ok:
+                return ExecutionResult(success=False, returncode=1, output=out,
+                                       error=err or "artifact download failed")
+            actual = self._parse_sha256(out)
+            if actual is None:
+                return ExecutionResult(
+                    success=False, returncode=1, output=out,
+                    error="could not compute sha256 of downloaded artifact")
+            if actual != expected:
+                # Integrity mismatch: do NOT activate the runtime.
+                return ExecutionResult(
+                    success=False, returncode=1, output=out,
+                    error=f"sha256 mismatch: expected {expected}, got {actual}",
+                    extra={"expected_sha256": expected, "actual_sha256": actual})
+            # Verified: install from the downloaded, integrity-checked tarball.
+            install_cmd = (
+                f"docker exec {c} sh -lc "
+                f"'npm install -g $(ls -t /tmp/*.tgz | head -n1)'"
+            )
+            ok, out, err = self._exec(install_cmd)
+            return ExecutionResult(success=ok, returncode=0 if ok else 1, output=out,
+                                   error=None if ok else err,
+                                   extra={"verified_sha256": expected})
+
+        # No integrity material configured: preserve the prior behavior.
+        cmd = f"docker exec {self._container} sh -lc 'npm install -g @ovhcloud/shai@{qversion}'"
         ok, out, err = self._exec(cmd)
         return ExecutionResult(success=ok, returncode=0 if ok else 1, output=out, error=None if ok else err)
 
@@ -164,13 +270,28 @@ class ShaiCliAdapter(AgentRuntimeAdapter):
         self._require(Capability.STATUS)
         return self._status
 
+    def _kill_container_children(self):
+        """Kill the container-side SHAI child process tree spawned for a run.
+
+        Sends ``SIGTERM`` to the headless SHAI children via ``pkill`` inside the
+        container; if that finds nothing to signal (non-zero), falls back to
+        ``docker stop`` so a wedged container does not keep the child alive.
+        Both commands go through ``_exec`` (SSH to the target server).
+        """
+        c = shlex.quote(self._container)
+        ok, out, err = self._exec(f"docker exec {c} pkill -TERM -f shai", timeout=30)
+        if not ok:
+            # Fallback: stop the whole container so no orphaned child survives.
+            return self._exec(f"docker stop {c}", timeout=60)
+        return ok, out, err
+
     def execute(self, agent_id: str, task: Dict[str, Any]) -> ExecutionHandle:
         self._require(Capability.EXECUTE)
         if self._status != "RUNNING":
             raise ExecutionError("adapter not started")
         prompt = str(task.get("prompt", ""))
         argv = build_cli_argv(self._container, prompt, agent_config=self._agent_config)
-        return _ProcessHandle(self._spawn(argv))
+        return _ProcessHandle(self._spawn(argv), kill_children=self._kill_container_children)
 
     def get_logs(self, agent_id: str, limit: int = 200) -> str:
         self._require(Capability.LOGS)

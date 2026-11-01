@@ -16,7 +16,7 @@ remote HTTP endpoint and is therefore not advertised.
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, Iterator, List, Optional
+from typing import Any, Callable, Dict, FrozenSet, Iterator, List, Optional
 
 from .base import (
     AgentRuntimeAdapter,
@@ -27,6 +27,15 @@ from .base import (
     ExecutionResult,
 )
 from .sse_parser import SSEParser
+
+# Default terminal/error SSE event names. These supersede the former
+# hard-coded literals ("done","end","complete") and "error" while staying
+# backward compatible: the old names remain terminal. Callers may override
+# either set to recognize additional server-specific terminal signals.
+DEFAULT_TERMINAL_EVENTS: FrozenSet[str] = frozenset(
+    {"done", "end", "complete", "finish", "stop"}
+)
+DEFAULT_ERROR_EVENTS: FrozenSet[str] = frozenset({"error", "failed"})
 
 
 class HttpClient:
@@ -49,10 +58,19 @@ class HttpClient:
 class _SSEExecutionHandle(ExecutionHandle):
     """Streams SHAI SSE events as chunks; completion on a terminal event."""
 
-    def __init__(self, chunk_iter: Iterator[str], cancel_fn: Optional[Callable[[], bool]]):
+    def __init__(
+        self,
+        chunk_iter: Iterator[str],
+        cancel_fn: Optional[Callable[[], bool]],
+        *,
+        terminal_events: FrozenSet[str] = DEFAULT_TERMINAL_EVENTS,
+        error_events: FrozenSet[str] = DEFAULT_ERROR_EVENTS,
+    ):
         self._chunks = chunk_iter
         self._parser = SSEParser()
         self._cancel_fn = cancel_fn
+        self._terminal_events = terminal_events
+        self._error_events = error_events
         self._collected: List[str] = []
         self._result: Optional[ExecutionResult] = None
         self._cancelled = False
@@ -60,13 +78,13 @@ class _SSEExecutionHandle(ExecutionHandle):
     def stream(self) -> Iterator[ExecutionChunk]:
         for raw in self._chunks:
             for event in self._parser.feed(raw):
-                if event.event in ("done", "end", "complete"):
+                if event.event in self._terminal_events:
                     self._result = ExecutionResult(
                         success=True, returncode=0, output="".join(self._collected),
                     )
                     yield ExecutionChunk(data="", channel="event", done=True)
                     return
-                if event.event == "error":
+                if event.event in self._error_events:
                     self._result = ExecutionResult(
                         success=False, returncode=1, output="".join(self._collected),
                         error=event.data,
@@ -110,11 +128,15 @@ class ShaiHttpSseAdapter(AgentRuntimeAdapter):
         *,
         api_token: Optional[str] = None,
         supports_cancel: bool = False,
+        terminal_events: FrozenSet[str] = DEFAULT_TERMINAL_EVENTS,
+        error_events: FrozenSet[str] = DEFAULT_ERROR_EVENTS,
     ):
         self._base = base_url.rstrip("/")
         self._http = http_client
         self._token = api_token
         self._supports_cancel = supports_cancel
+        self._terminal_events = frozenset(terminal_events)
+        self._error_events = frozenset(error_events)
         self._status = "UNKNOWN"
         self._current_task_id: Optional[str] = None
 
@@ -169,7 +191,12 @@ class ShaiHttpSseAdapter(AgentRuntimeAdapter):
             def cancel_fn():  # noqa: E306
                 status, _ = self._http.post(f"{self._base}/v1/cancel", {}, self._headers())
                 return 200 <= int(status) < 300
-        return _SSEExecutionHandle(chunk_iter, cancel_fn)
+        return _SSEExecutionHandle(
+            chunk_iter,
+            cancel_fn,
+            terminal_events=self._terminal_events,
+            error_events=self._error_events,
+        )
 
     def get_logs(self, agent_id: str, limit: int = 200) -> str:
         self._require(Capability.LOGS)  # not advertised -> CapabilityError

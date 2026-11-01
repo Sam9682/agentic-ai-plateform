@@ -67,6 +67,10 @@ class AgentRepo:
     def __init__(self):
         self.agents = {}
         self.executions = []
+        # Mirror the real agent_repository Execution_Row contract (Section 9,
+        # Req 1.6-1.8): keep per-row state so set_execution_status /
+        # latest_running_execution behave like the DB-backed repo.
+        self._rows = {}      # id -> {tenant_id, agent_id, ref, status, ended}
         self._eid = 1
 
     def get_agent(self, tenant_id, agent_id):
@@ -79,8 +83,45 @@ class AgentRepo:
 
     def create_execution(self, tenant_id, agent_id, ref, server_id=None, container_id=None):
         self._eid += 1
+        eid = self._eid
         self.executions.append((tenant_id, agent_id, ref))
-        return self._eid
+        # New rows start in STARTING and are open (ended_at IS NULL).
+        self._rows[eid] = {
+            "tenant_id": tenant_id, "agent_id": agent_id, "ref": ref,
+            "status": lc.STARTING, "ended": False,
+        }
+        return eid
+
+    def latest_running_execution(self, tenant_id, agent_id):
+        """Newest still-open row id for the agent, or None (mirrors Req 1.8)."""
+        for eid in sorted(self._rows, reverse=True):
+            row = self._rows[eid]
+            if (row["tenant_id"] == tenant_id and row["agent_id"] == agent_id
+                    and not row["ended"]):
+                return eid
+        return None
+
+    def set_execution_status(self, tenant_id, execution_id, status, ended=False):
+        row = self._rows.get(execution_id)
+        if row is None or row["tenant_id"] != tenant_id:
+            return False
+        row["status"] = status
+        if ended:
+            row["ended"] = True
+        return True
+
+    def set_execution_session(self, tenant_id, execution_id, session_id=None,
+                              runtime_handle=None, runtime_adapter=None):
+        # Mirror the real agent_repository.set_execution_session (Req 4.1):
+        # record the session handle columns on a successful start so start()'s
+        # new session-durability write is honored by the e2e fake.
+        row = self._rows.get(execution_id)
+        if row is None or row["tenant_id"] != tenant_id:
+            return False
+        row["session_id"] = session_id
+        row["runtime_handle"] = runtime_handle
+        row["runtime_adapter"] = runtime_adapter
+        return True
 
     def seed(self, tenant_id, agent_id, identity):
         self.agents[(tenant_id, agent_id)] = dict(
@@ -130,7 +171,7 @@ class MockKiroTransport(AcpTransport):
                     "session/update", {"update": {"content": {"type": "text", "text": "inspected infrastructure"}}})))
                 self._outbox.append(acp.encode_message({"jsonrpc": "2.0", "id": mid, "result": {"stopReason": "end_turn"}}))
 
-    def read_chunks(self):
+    def read_chunks(self, read_timeout=None):
         while self._outbox:
             yield self._outbox.pop(0)
 
@@ -206,10 +247,10 @@ def test_governed_scenario(runtime_name, adapter_factory):
                       "payload": {"prompt": "inspect infrastructure"}, "status": "claimed",
                       "cancel_requested": False}
 
-        def mark_running(self, tid):
+        def mark_running(self, tenant_id, tid):
             self.t["status"] = "running"
 
-        def complete(self, tid, status, result=None):
+        def complete(self, tenant_id, tid, status, result=None):
             self.t["status"] = status
             self.t["result"] = result
 

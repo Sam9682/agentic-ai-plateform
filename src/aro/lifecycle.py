@@ -15,7 +15,7 @@ non-terminal state may be QUARANTINED (containment) or TERMINATED (delete).
 
 from __future__ import annotations
 
-from typing import Dict, FrozenSet, Set
+from typing import Dict, FrozenSet, Optional, Set
 
 REGISTERED = "REGISTERED"
 INSTALLING = "INSTALLING"
@@ -54,7 +54,7 @@ _BASE: Dict[str, Set[str]] = {
     STOPPED: {STARTING},  # restart
     FAILED: {INSTALLING, STARTING},  # allow recovery attempts
     UNHEALTHY: {STOPPING, RUNNING},  # recover or shut down
-    QUARANTINED: set(),  # exit quarantine only via explicit release flow
+    QUARANTINED: {READY},  # release-only exit (Req 1.1); stays out of _CONTAINMENT_SOURCES so READY is the sole legal target
     TERMINATED: set(),
 }
 
@@ -80,3 +80,20 @@ def can_transition(from_state: str, to_state: str) -> bool:
 
 def is_terminal(state: str) -> bool:
     return state in TERMINAL_STATES
+
+
+def reconcile_health(status: str, healthy: bool) -> Optional[str]:
+    """Decide the next lifecycle state from a health probe result.
+
+    Pure decision function (no side effects) consumed by the lifecycle
+    service's health-reconcile step:
+
+    * RUNNING + unhealthy  -> UNHEALTHY  (agent has degraded)
+    * UNHEALTHY + healthy  -> RUNNING    (agent has recovered)
+    * anything else        -> None       (no transition)
+    """
+    if status == RUNNING and not healthy:
+        return UNHEALTHY
+    if status == UNHEALTHY and healthy:
+        return RUNNING
+    return None

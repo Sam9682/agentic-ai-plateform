@@ -153,6 +153,23 @@ def create_execution(
     return int(row[0])
 
 
+def latest_running_execution(tenant_id: int, agent_id: int) -> Optional[int]:
+    """Return the id of the agent's newest still-open Execution_Row, or None.
+
+    An execution is "still open" while it has not been closed out
+    (``ended_at IS NULL``). The newest such row for the agent is returned so a
+    stop can close out the session that start opened (Req 1.8). Tenant-scoped.
+    """
+    row = _get_db().execute_query(
+        "SELECT id FROM agent_executions "
+        "WHERE tenant_id = %s AND agent_id = %s AND ended_at IS NULL "
+        "ORDER BY id DESC LIMIT 1",
+        (tenant_id, agent_id),
+        fetch_one=True,
+    )
+    return int(row[0]) if row else None
+
+
 def set_execution_status(
     tenant_id: int, execution_id: int, status: str, *, ended: bool = False
 ) -> bool:
@@ -161,5 +178,71 @@ def set_execution_status(
         f"UPDATE agent_executions SET status = %s{ended_sql} "
         "WHERE tenant_id = %s AND id = %s",
         (status, tenant_id, execution_id),
+    )
+    return bool(rows)
+
+
+# --------------------------------------------------------------------------- #
+# Session durability (Req 4.1, 4.2)
+# --------------------------------------------------------------------------- #
+_RUNNING_EXECUTION_SELECT = (
+    "SELECT id, agent_id, execution_ref, server_id, container_id, "
+    "session_id, runtime_handle, runtime_adapter, status "
+    "FROM agent_executions"
+)
+
+
+def _running_execution_row(row: Any) -> Dict[str, Any]:
+    return {
+        "id": int(row[0]),
+        "agent_id": int(row[1]),
+        "execution_ref": row[2],
+        "server_id": int(row[3]) if row[3] is not None else None,
+        "container_id": row[4],
+        "session_id": row[5],
+        "runtime_handle": row[6],
+        "runtime_adapter": row[7],
+        "status": row[8],
+    }
+
+
+def list_running_executions(tenant_id: int) -> List[Dict[str, Any]]:
+    """Return all RUNNING Execution_Rows for the tenant (Req 4.2).
+
+    The control-plane reconnect routine loads these at restart to re-attach to
+    (or close out) recorded remote runtimes rather than launching new ones. The
+    session-durability columns (``session_id``, ``runtime_handle``,
+    ``runtime_adapter``) are included alongside the server/container identifiers
+    so the reconnect routine has everything it needs to probe each session.
+    Tenant-scoped.
+    """
+    rows = _get_db().execute_query(
+        f"{_RUNNING_EXECUTION_SELECT} "
+        "WHERE tenant_id = %s AND status = 'RUNNING' ORDER BY id DESC",
+        (tenant_id,),
+        fetch_all=True,
+    )
+    return [_running_execution_row(r) for r in (rows or [])]
+
+
+def set_execution_session(
+    tenant_id: int,
+    execution_id: int,
+    *,
+    session_id: Optional[str] = None,
+    runtime_handle: Optional[str] = None,
+    runtime_adapter: Optional[str] = None,
+) -> bool:
+    """Persist the session handle on an Execution_Row after a successful start.
+
+    Writes the session-durability columns (``session_id``, ``runtime_handle``,
+    ``runtime_adapter``) so a control-plane restart can reconnect to the remote
+    runtime (Req 4.1). Tenant-scoped by id.
+    """
+    rows = _get_db().execute_query(
+        "UPDATE agent_executions SET "
+        "session_id = %s, runtime_handle = %s, runtime_adapter = %s "
+        "WHERE tenant_id = %s AND id = %s",
+        (session_id, runtime_handle, runtime_adapter, tenant_id, execution_id),
     )
     return bool(rows)

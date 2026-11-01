@@ -406,33 +406,48 @@ fi
 
 # Install Docker
 print_step "Installing Docker..."
-curl -fsSL https://get.docker.com -o get-docker.sh && sudo sh get-docker.sh > /dev/null 2>&1
+# Download the Docker convenience script and install it behind a guard so a
+# failed download warns instead of silently continuing. The script is made
+# executable, run under sudo, and removed afterwards.
+if curl -fsSL https://get.docker.com -o get-docker.sh; then
+    # Make the script executable and run it with proper permissions
+    chmod +x get-docker.sh
+    sudo sh get-docker.sh > /dev/null 2>&1
+    rm -f get-docker.sh
+else
+    print_warning "Failed to download Docker installation script"
+fi
 sudo usermod -aG docker $USER
 sudo curl -sL "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
 sudo chmod +x /usr/local/bin/docker-compose
-rm -f get-docker.sh
 print_success "Docker installed"
 
 # Install Kata Containers
 print_step "Installing Kata Containers..."
-wget -q https://github.com/kata-containers/kata-containers/releases/download/3.32.0/kata-static-3.32.0-amd64.tar.zst
-unzstd kata-static-3.32.0-amd64.tar.zst
-# Create a temporary directory to extract files to avoid changing parent directory ownership
-TEMP_DIR=$(mktemp -d)
-sudo tar xvf kata-static-3.32.0-amd64.tar -C "$TEMP_DIR" > /dev/null 2>&1
-sudo mv "$TEMP_DIR/opt/kata" /opt/
-sudo mkdir -p /etc/docker
-# Clean up temporary directory
-rm -rf "$TEMP_DIR"
-# Register the 'kata' runtime with the Docker daemon. The "runtimeType" key
-# pointing at the containerd-shim-kata-v2 binary matches the official Kata
-# "how-to-use-kata-with-docker" guide for the Go runtime (requires Docker v26+
-# with Kata >= 3.29.0; this script installs 3.32.0). Once configured, the
-# platform launches containers with `docker run --runtime kata ...` whenever the
-# admin selects the 'kata' runtime type in Settings.
-# Verify after install with:  docker info | grep -i kata
-#                             docker run --runtime kata --rm hello-world
-sudo tee /etc/docker/daemon.json > /dev/null <<EOF
+# Download and extract Kata behind nested guards so any failed step (download,
+# decompress, or extraction) warns and cleans up instead of continuing with a
+# half-installed runtime.
+if wget -q https://github.com/kata-containers/kata-containers/releases/download/3.32.0/kata-static-3.32.0-amd64.tar.zst; then
+    if unzstd kata-static-3.32.0-amd64.tar.zst; then
+        # Create a temporary directory to extract files to avoid changing parent directory ownership
+        TEMP_DIR=$(mktemp -d)
+        if sudo tar xvf kata-static-3.32.0-amd64.tar -C "$TEMP_DIR" > /dev/null 2>&1; then
+            # Move the extracted files to the correct location
+            sudo mkdir -p /opt/kata
+            sudo mv "$TEMP_DIR/opt/kata"/* /opt/kata/
+            # Clean up temporary directory
+            rm -rf "$TEMP_DIR"
+
+            # Register the 'kata' runtime with the Docker daemon. The "runtimeType" key
+            # pointing at the containerd-shim-kata-v2 binary matches the official Kata
+            # "how-to-use-kata-with-docker" guide for the Go runtime (requires Docker v26+
+            # with Kata >= 3.29.0; this script installs 3.32.0). Once configured, the
+            # platform launches containers with `docker run --runtime kata ...` whenever the
+            # admin selects the 'kata' runtime type in Settings.
+            # Verify after install with:  docker info | grep -i kata
+            #                             docker run --runtime kata --rm hello-world
+            sudo mkdir -p /etc/docker
+            sudo tee /etc/docker/daemon.json > /dev/null <<EOF
 {
     "runtimes": {
         "kata": {
@@ -441,9 +456,19 @@ sudo tee /etc/docker/daemon.json > /dev/null <<EOF
     }
 }
 EOF
-sudo systemctl reload docker
-rm -f kata-static-3.32.0-amd64.tar.zst kata-static-3.32.0-amd64.tar
-print_success "Kata Containers installed"
+            sudo systemctl reload docker
+            rm -f kata-static-3.32.0-amd64.tar.zst kata-static-3.32.0-amd64.tar
+            print_success "Kata Containers installed"
+        else
+            print_warning "Failed to extract Kata Containers"
+            rm -rf "$TEMP_DIR"
+        fi
+    else
+        print_warning "Failed to decompress Kata Containers archive"
+    fi
+else
+    print_warning "Failed to download Kata Containers"
+fi
 
 # Install NVIDIA GPU Drivers and MIG Support
 print_step "Installing NVIDIA GPU drivers..."

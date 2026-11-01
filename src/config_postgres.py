@@ -3,6 +3,31 @@ import os
 import subprocess
 import logging
 
+
+def _is_development() -> bool:
+    # No default: an unset FLASK_ENV is NOT development, so it fails fast in prod.
+    return os.environ.get('FLASK_ENV') == 'development'
+
+
+def require_secret(name: str, dev_fallback: str) -> str:
+    """Return the secret for `name`.
+    Development: fall back to `dev_fallback` when the env var is unset.
+    Production (FLASK_ENV != 'development'): the env var MUST be set to a
+    non-default value, else raise a clear error naming the key only.
+    Never includes the secret value in the error message or any log.
+    """
+    value = os.environ.get(name)
+    if _is_development():
+        return value if value is not None else dev_fallback
+    if not value or value == dev_fallback:
+        raise RuntimeError(
+            f"Refusing to start in production: required secret '{name}' is "
+            f"missing or set to its insecure default. Set the '{name}' "
+            f"environment variable to a secure value."
+        )
+    return value
+
+
 # PostgreSQL configuration
 def get_database_config():
     """Get PostgreSQL database configuration"""
@@ -11,7 +36,7 @@ def get_database_config():
         'port': int(os.environ.get('POSTGRES_PORT', 5432)),
         'database': os.environ.get('POSTGRES_DB', 'ai_swautomorph'),
         'user': os.environ.get('POSTGRES_USER', 'swautomorph'),
-        'password': os.environ.get('POSTGRES_PASSWORD', 'swautomorph_password'),
+        'password': require_secret('POSTGRES_PASSWORD', 'swautomorph_password'),
         'min_connections': int(os.environ.get('POSTGRES_MIN_CONN', 2)),
         'max_connections': int(os.environ.get('POSTGRES_MAX_CONN', 20)),
         'sslmode': os.environ.get('POSTGRES_SSLMODE', 'prefer'),
@@ -40,7 +65,7 @@ logger = logging.getLogger(__name__)
 OUTPUT_PRINT_LOGS_FILENAME = 'print_output_swautomorph.log'
 
 # Flask configuration
-SECRET_KEY = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
+SECRET_KEY = require_secret('SECRET_KEY', 'dev-secret-key-change-in-production')
 FLASK_ENV = os.environ.get('FLASK_ENV', 'development')
 
 # Platform name from deploy.ini

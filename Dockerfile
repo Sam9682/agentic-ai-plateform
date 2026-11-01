@@ -36,9 +36,11 @@ USER ubuntu
 EXPOSE 80
 
 # Set environment variables
-ENV FLASK_APP=ControlPlanFlaskApp.py
 ENV FLASK_ENV=production
 ENV SECRET_KEY=change-this-in-production
+# Run gunicorn in the foreground inside the container so the process stays attached.
+# The host deployment (deployControlPlan.sh) keeps the daemon=true default via gunicorn.conf.py.
+ENV GUNICORN_DAEMON=false
 
 # Create SSH setup script
 RUN echo '#!/bin/bash\n\
@@ -51,4 +53,4 @@ done\n\
 exec "$@"' > /app/start.sh && chmod +x /app/start.sh
 
 # Initialize database and start application
-CMD ["/app/start.sh", "python3", "ControlPlanFlaskApp.py"]
+CMD ["/app/start.sh", "gunicorn", "--config", "gunicorn.conf.py", "wsgi:application"]

@@ -30,7 +30,7 @@ if PROJECT_ROOT not in sys.path:
 
 from src.aro import lifecycle as lc  # noqa: E402
 from src.aro import agent_repository as agent_repo  # noqa: E402
-from src.aro.adapters.base import FakeAdapter  # noqa: E402
+from src.aro.adapters.base import ExecutionResult, FakeAdapter  # noqa: E402
 from src.aro.lifecycle_service import IllegalTransition, LifecycleService  # noqa: E402
 
 
@@ -97,8 +97,47 @@ class InMemoryAgentRepo:
         self._eid += 1
         self.executions.append(dict(id=eid, tenant_id=tenant_id, agent_id=agent_id,
                                     execution_ref=execution_ref, server_id=server_id,
-                                    container_id=container_id, status="STARTING"))
+                                    container_id=container_id, status="STARTING",
+                                    ended_at=None))
         return eid
+
+    def _find_execution(self, tenant_id, execution_id):
+        for e in self.executions:
+            if e["tenant_id"] == tenant_id and e["id"] == execution_id:
+                return e
+        return None
+
+    def latest_running_execution(self, tenant_id, agent_id):
+        candidates = [
+            e for e in self.executions
+            if e["tenant_id"] == tenant_id and e["agent_id"] == agent_id
+            and e.get("ended_at") is None
+        ]
+        if not candidates:
+            return None
+        return max(candidates, key=lambda e: e["id"])["id"]
+
+    def set_execution_status(self, tenant_id, execution_id, status, ended=False):
+        e = self._find_execution(tenant_id, execution_id)
+        if not e:
+            return False
+        e["status"] = status
+        if ended:
+            e["ended_at"] = "2026-01-01T00:00:00Z"
+        return True
+
+    def set_execution_session(self, tenant_id, execution_id, session_id=None,
+                              runtime_handle=None, runtime_adapter=None):
+        # Mirror the real agent_repository.set_execution_session (Req 4.1):
+        # persist the session handle columns on the Execution_Row so start()'s
+        # successful-path write is honored.
+        e = self._find_execution(tenant_id, execution_id)
+        if not e:
+            return False
+        e["session_id"] = session_id
+        e["runtime_handle"] = runtime_handle
+        e["runtime_adapter"] = runtime_adapter
+        return True
 
     def seed(self, tenant_id, agent_id, identity="agent://default/a1"):
         self.agents[(tenant_id, agent_id)] = dict(
@@ -167,6 +206,112 @@ def test_quarantine_from_running():
     svc.start(1, 12)
     svc.quarantine(1, 12, reason="anomaly")
     assert repo_obj.agents[(1, 12)]["status"] == lc.QUARANTINED
+
+
+# --------------------------------------------------------------------------- #
+# Strict-atomicity contract: install/start failure compensates to the pre-op
+# status instead of landing on FAILED (Task 9.14 reconciliation; Req 1.9, 1.10,
+# 7.4). These net-new negative-path tests PIN the one intentional behavior
+# change introduced by the compensating-rollback wrappers (task 9.9). FAILED is
+# no longer the resting place for an adapter failure during install/start; it is
+# reachable only via the explicit recovery/health/quarantine edges — which the
+# existing pure-graph tests above (test_illegal_transitions_rejected,
+# test_any_nonterminal_can_be_quarantined_or_terminated) and
+# test_failed_reachable_via_recovery_edges below continue to assert.
+# --------------------------------------------------------------------------- #
+class _FailingInstallAdapter(FakeAdapter):
+    """FakeAdapter whose install() reports failure (success=False).
+
+    Used to exercise the install_and_ready compensation path without raising a
+    raw exception, mirroring a real adapter returning a failed ExecutionResult.
+    """
+
+    def install(self, configuration):
+        from src.aro.adapters.base import Capability
+        self._require(Capability.INSTALL)
+        return ExecutionResult(success=False, returncode=1, output="",
+                               error="install boom")
+
+
+class _FailingStartAdapter(FakeAdapter):
+    """FakeAdapter whose start() reports failure (success=False).
+
+    install() still succeeds so the agent reaches READY; only start() fails,
+    exercising the start() compensation path (rollback + execution-row release).
+    """
+
+    def start(self, agent_id, configuration):
+        from src.aro.adapters.base import Capability
+        self._require(Capability.START)
+        return ExecutionResult(success=False, returncode=1, output="",
+                               error="start boom")
+
+
+def _service_with_adapter(repo_obj, events, adapter):
+    return LifecycleService(
+        events_repo=events,
+        adapter_for=lambda agent: adapter,
+        launcher=lambda agent, ref: {"server_id": 1, "container_id": "c123"},
+        agent_repo=repo_obj,
+    )
+
+
+def test_install_failure_rolls_back_to_pre_op_status_not_failed():
+    # Req 1.9: when adapter.install() fails after INSTALLING has been persisted,
+    # install_and_ready compensates by restoring the PRE-OP status (REGISTERED)
+    # — NOT FAILED — and emits agent.install.failed. This is the strict-atomicity
+    # contract that replaces the prior "land on FAILED on adapter failure"
+    # behavior; the assertion deliberately pins REGISTERED (the pre-op status),
+    # not FAILED.
+    repo_obj = InMemoryAgentRepo()
+    repo_obj.seed(1, 30)  # status REGISTERED (pre-op)
+    events = CapturingEvents()
+    svc = _service_with_adapter(repo_obj, events, _FailingInstallAdapter())
+
+    svc.install_and_ready(1, 30)
+
+    assert repo_obj.agents[(1, 30)]["status"] == lc.REGISTERED  # Req 1.9: pre-op, not FAILED
+    assert repo_obj.agents[(1, 30)]["status"] != lc.FAILED
+    assert any(e["event_type"] == "agent.install.failed" for e in events.events)
+
+
+def test_start_failure_rolls_back_and_releases_execution_row():
+    # Req 1.10: when adapter.start() fails after the Execution_Row has been
+    # created, start() compensates by (a) restoring the PRE-START status (READY)
+    # — NOT FAILED — and (b) releasing the created Execution_Row, closing it out
+    # as FAILED with ended_at set, and emits agent.start.failed. The agent
+    # resting status is READY (pre-op); only the execution ROW carries FAILED as
+    # its closed-out status, which is the intended row close-out, not the agent
+    # landing on FAILED.
+    repo_obj = InMemoryAgentRepo()
+    repo_obj.seed(1, 31)
+    events = CapturingEvents()
+    # Reach READY via a healthy install, then swap in the failing-start adapter.
+    svc_ready = _service_with_adapter(repo_obj, events, FakeAdapter())
+    svc_ready.install_and_ready(1, 31)
+    assert repo_obj.agents[(1, 31)]["status"] == lc.READY
+
+    svc = _service_with_adapter(repo_obj, events, _FailingStartAdapter())
+    svc.start(1, 31)
+
+    # Agent rolled back to its pre-start status (READY), not FAILED (Req 1.10).
+    assert repo_obj.agents[(1, 31)]["status"] == lc.READY
+    assert repo_obj.agents[(1, 31)]["status"] != lc.FAILED
+    # The created Execution_Row is released: closed out FAILED with ended_at set.
+    assert len(repo_obj.executions) == 1
+    row = repo_obj.executions[0]
+    assert row["status"] == lc.FAILED
+    assert row["ended_at"] is not None
+    assert any(e["event_type"] == "agent.start.failed" for e in events.events)
+
+
+def test_failed_reachable_via_recovery_edges():
+    # Req 1.9/1.10/7.4: although adapter failures no longer LAND the agent on
+    # FAILED, FAILED remains a legal, reachable state via the explicit recovery
+    # edges FAILED: {INSTALLING, STARTING}. Document that reachability so the
+    # reconciliation does not silently drop it from the contract.
+    assert lc.can_transition(lc.FAILED, lc.INSTALLING)
+    assert lc.can_transition(lc.FAILED, lc.STARTING)
 
 
 # --------------------------------------------------------------------------- #
