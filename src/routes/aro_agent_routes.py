@@ -9,6 +9,7 @@ Exposes ``aro_agent_bp`` under ``/api/v1/agents``:
 * POST   /{id}/start       - start the agent (operator role)
 * POST   /{id}/stop        - stop the agent (operator role)
 * POST   /{id}/restart     - restart the agent (operator role)
+* POST   /{id}/release     - release a QUARANTINED agent to READY (admin role)
 * GET    /{id}/status      - current status
 * GET    /{id}/logs        - recent logs (adapter-dependent)
 
@@ -129,6 +130,29 @@ def stop_agent(agent_id):
 @role_required("operator")
 def restart_agent(agent_id):
     return _run_lifecycle(agent_id, lambda s, t, a: s.restart(t, a))
+
+
+@aro_agent_bp.route("/<int:agent_id>/release", methods=["POST"])
+@role_required("admin")
+def release_agent(agent_id):
+    """Release a QUARANTINED agent back to READY (phase3-zaf-enforcement R8.4).
+
+    Restoration from containment requires explicit operator authorization, so
+    this route is gated by ``role_required("admin")``: it returns 401 for an
+    unauthenticated caller and 403 for an authenticated non-admin *before* the
+    body runs, so an unauthorized request never reaches ``release`` and causes
+    no state change.
+
+    The restoration itself routes through the Phase 2
+    :meth:`LifecycleService.release`, which anchors release to the
+    ``QUARANTINED`` source status specifically: a release requested for an
+    agent whose status is not ``QUARANTINED`` is rejected as an
+    :class:`IllegalTransition` *before any write* (no state change) and surfaces
+    here as a 409 via :func:`_run_lifecycle`. The legal ``QUARANTINED -> READY``
+    path still routes through ``transition`` so that remains the sole mutation
+    path.
+    """
+    return _run_lifecycle(agent_id, lambda s, t, a: s.release(t, a))
 
 
 @aro_agent_bp.route("/<int:agent_id>/status", methods=["GET"])

@@ -45,16 +45,20 @@ from typing import Any, Callable, Dict, Optional
 
 from . import event_service as es
 from . import task_repository as task_repo
+from ..zaf.enforcement import EnforcementError
 
 #: Default heartbeat interval (seconds). MUST be strictly less than the lease
 #: TTL so a live worker always renews its lease before it can expire (Req 6.5).
 DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 20
 
 #: Terminal statuses that are never re-enqueued. ``succeeded`` is terminal
-#: success; ``cancelled`` is a deliberate user decision. Any other terminal
-#: (``failed``/``timed_out``) is a non-success terminal routed through
-#: ``reenqueue_or_finalize`` for bounded retry (Req 6.3/6.4).
-_NON_REENQUEUE_TERMINALS = frozenset({"succeeded", "cancelled"})
+#: success; ``cancelled`` is a deliberate user decision; ``denied`` is a ZAF
+#: enforcement hard-deny (Phase 3, R1.6) that must NEVER be retried — a policy
+#: deny is authoritative, so re-enqueuing it would re-attempt a blocked
+#: operation. Any other terminal (``failed``/``timed_out``) is a non-success
+#: terminal routed through ``reenqueue_or_finalize`` for bounded retry
+#: (Req 6.3/6.4).
+_NON_REENQUEUE_TERMINALS = frozenset({"succeeded", "cancelled", "denied"})
 
 
 def _finalize_terminal(
@@ -106,6 +110,7 @@ def execute_claimed_task(
     heartbeat_interval: float = DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
     clock: Callable[[], float] = time.monotonic,
     zaf_exec: Optional[Callable[[Dict[str, Any]], Any]] = None,
+    zaf_response: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """Execute one claimed task to a terminal status; return the terminal dict.
 
@@ -140,6 +145,21 @@ def execute_claimed_task(
       - the requested operation
       - the payload shape — the task payload's sorted top-level key names only,
         never the payload values
+
+    ZAF response seam (Req 5.1 — post-execution interposition): ``zaf_response``
+    is an injectable automated-response service (a
+    ``zaf.response_service.ResponseService``, built by
+    ``zaf.wiring.build_response_service``) consulted once at the task's terminal
+    handling when the execution COMPLETED successfully. It is invoked through
+    its ``respond(...)`` method with only non-secret context (tenant id, the
+    agent's authenticated identity/db id, a benign severity/risk for a normal
+    completion, and the operation as the rule id) so the completed execution
+    yields an OBS-linked audit record via ``event_service`` (``respond`` emits
+    through ``event_service`` and opens incidents via ``obs_repository``). The
+    default is ``None`` (inert): a worker constructed without this collaborator
+    behaves exactly as before, so Phase 1/2 suites are unaffected. The call is
+    isolated in its own guard so an audit/response failure can never turn a
+    successful task into a failure or abort the loop.
     """
     tenant_id = task["tenant_id"]
     task_id = task["id"]
@@ -202,14 +222,30 @@ def execute_claimed_task(
     # only — never the payload values).
     zaf = zaf_exec or (lambda ctx: None)
     payload = task.get("payload") or {}
-    zaf(
-        {
-            "tenant_id": tenant_id,
-            "agent_id": task["agent_id"],
-            "operation": task["operation"],
-            "payload_keys": sorted(list(payload.keys())),
-        }
-    )
+    # Phase 3 ZAF enforcement (R1.6): a raised ``EnforcementError`` is a hard
+    # deny at this seam. It is turned into a ``denied`` terminal recorded
+    # DIRECTLY via ``repo.complete`` — deliberately bypassing
+    # ``_finalize_terminal``'s re-enqueue path so a policy deny is never retried
+    # — and ``adapter.execute`` is never reached. When no ``EnforcementError``
+    # is raised the seam keeps its Phase 2 inert no-op behavior (the return
+    # value is discarded).
+    try:
+        zaf(
+            {
+                "tenant_id": tenant_id,
+                "agent_id": task["agent_id"],
+                "operation": task["operation"],
+                "payload_keys": sorted(list(payload.keys())),
+            }
+        )
+    except EnforcementError as exc:
+        repo.complete(tenant_id, task_id, "denied",
+                      {"error": "policy denied", "reason": exc.reason})
+        es.emit(events_repo, tenant_id, "task.denied", "zaf-exec",
+                agent_id=agent["identity"], execution_id=task["task_ref"],
+                action={"operation": task["operation"], "reason": exc.reason},
+                decision=exc.decision, severity="HIGH", correlation_id=corr)
+        return {"status": "denied", "reason": exc.reason}
 
     try:
         handle = adapter.execute(agent["identity"], payload)
@@ -267,6 +303,27 @@ def execute_claimed_task(
             agent_id=agent["identity"], execution_id=task["task_ref"],
             action={"returncode": result.returncode},
             severity="INFO" if result.success else "MEDIUM", correlation_id=corr)
+
+    # ZAF post-execution interposition (Req 5.1). On a COMPLETED (succeeded)
+    # execution, consult the injected automated-response service so the
+    # terminal yields an OBS-linked audit record via event_service. A normal
+    # completion carries a benign severity/risk, so ResponseService.plan_response
+    # plans only an "alert" (no containment collaborators are driven). Isolated
+    # so an audit/response failure never turns a success into a failure.
+    if result.success and zaf_response is not None:
+        try:
+            zaf_response.respond(
+                tenant_id,
+                agent_identity=agent["identity"],
+                agent_db_id=agent.get("id"),
+                severity="INFO",
+                risk_score=0,
+                rule_id=f"task.completed.{task['operation']}",
+                evidence=[task["task_ref"]],
+            )
+        except Exception:  # noqa: BLE001 - response/audit must never fail the task
+            pass
+
     return {"status": status, "output": result.output, **extra}
 
 
@@ -296,6 +353,7 @@ class AgentTaskWorker:
         max_in_flight: int = 1,
         clock: Callable[[], float] = time.monotonic,
         zaf_exec: Optional[Callable[[Dict[str, Any]], Any]] = None,
+        zaf_response: Optional[Any] = None,
     ):
         self.worker_id = worker_id
         self._adapter_for = adapter_for
@@ -320,6 +378,12 @@ class AgentTaskWorker:
         #: Phase 3 decision inputs (AC 8.3): tenant id, agent id, operation,
         #: payload shape (top-level key names only, never values).
         self._zaf_exec = zaf_exec
+        #: Injected automated-response service (``ResponseService``) consulted
+        #: from ``execute_claimed_task``'s terminal handling on a COMPLETED
+        #: execution (Req 5.1). Defaults to ``None`` (inert) so a worker built
+        #: without it behaves exactly as before. Built by
+        #: ``zaf.wiring.build_response_service`` in the live process.
+        self._zaf_response = zaf_response
         self._last_reap = 0.0
         #: Max-in-flight cap (Req 6.9). While ``in_flight >= max_in_flight`` the
         #: worker skips claiming until an in-flight task reaches a terminal
@@ -501,6 +565,7 @@ class AgentTaskWorker:
                 heartbeat_interval=self._heartbeat_interval,
                 clock=self._clock,
                 zaf_exec=self._zaf_exec,
+                zaf_response=self._zaf_response,
             )
         finally:
             # The task has reached a terminal status; free its slot (Req 6.9).

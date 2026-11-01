@@ -25,20 +25,98 @@ from cryptography.fernet import Fernet, InvalidToken
 
 _ENV_KEY = "ZAF_SECRET_KEY"
 
+# Current at-rest encryption scheme for NEW writes (R4.3). Legacy ciphertext
+# written before versioning (no ``vN$`` prefix) is read as v0 (R4.4).
+CURRENT_KEY_VERSION = "v1"
+
+# v1 KDF parameters (PBKDF2-HMAC-SHA256 with a per-ciphertext salt). A salted KDF
+# means two encryptions of the same plaintext differ and a stolen DB does not
+# expose the derived key for other ciphertexts.
+_V1_SALT_BYTES = 16
+_V1_PBKDF2_ITERATIONS = 200_000
+
 
 class VaultError(Exception):
     """Raised for vault misuse (e.g. attempting to store empty plaintext)."""
 
 
+class SecretWrapper:
+    """A non-leaking holder for a secret plaintext value (R4.5, R12.1).
+
+    The wrapped value is accessible only through an explicit :meth:`reveal`
+    opt-in. Every implicit stringification (``repr``/``str``/f-strings/logging)
+    renders ``***REDACTED***`` rather than the secret, and serialization is
+    refused (``__reduce__`` raises), so a ``SecretWrapper`` cannot be pickled or
+    coerced into a JSON-friendly form. There is no ``__iter__`` and no default
+    ``__dict__`` (``__slots__`` is set), so there is no incidental way to read
+    the value back out other than :meth:`reveal`.
+    """
+
+    __slots__ = ("_value",)
+
+    _REDACTED = "***REDACTED***"
+
+    def __init__(self, value: str):
+        object.__setattr__(self, "_value", value)
+
+    def reveal(self) -> str:
+        """Return the wrapped plaintext. Explicit, auditable opt-in."""
+        return self._value
+
+    def zeroize(self) -> None:
+        """Clear the wrapped value in place (best-effort scrubbing)."""
+        object.__setattr__(self, "_value", "")
+
+    def __repr__(self) -> str:
+        return f"SecretWrapper({self._REDACTED})"
+
+    __str__ = __repr__
+
+    def __reduce__(self):
+        # Refuse pickling / copy so the secret can never be serialized out.
+        raise TypeError("SecretWrapper is not serializable")
+
+    def __setattr__(self, name, value):
+        raise AttributeError("SecretWrapper is immutable")
+
+    def __eq__(self, other):
+        # Avoid leaking via equality probing against arbitrary values; only two
+        # wrappers with identical plaintext compare equal.
+        if not isinstance(other, SecretWrapper):
+            return NotImplemented
+        return self._value == other._value
+
+    def __hash__(self):
+        # Hash the identity, not the secret, so the value is not exposed via
+        # hash collisions and the object remains usable as a dict/set member.
+        return object.__hash__(self)
+
+
 def _derive_fernet_key(raw: str) -> bytes:
     """Derive a urlsafe-base64 32-byte Fernet key from an arbitrary secret.
 
-    ``ZAF_SECRET_KEY`` may be any string; Fernet requires a 32-byte urlsafe
-    base64 key. We hash the secret to 32 bytes and base64-encode it. This is
-    deterministic so ciphertext written with a given secret decrypts across
-    restarts.
+    **Legacy v0 path (R4.4).** ``ZAF_SECRET_KEY`` may be any string; Fernet
+    requires a 32-byte urlsafe base64 key. We hash the secret to 32 bytes with
+    unsalted SHA-256 and base64-encode it. This is deterministic so ciphertext
+    written with a given secret decrypts across restarts.
+
+    This function is preserved EXACTLY so credential ciphertext written before
+    versioning (no ``vN$`` prefix) still decrypts.
     """
     digest = hashlib.sha256(raw.encode("utf-8")).digest()
+    return base64.urlsafe_b64encode(digest)
+
+
+def _derive_key_v1(raw: str, salt: bytes) -> bytes:
+    """Derive a urlsafe-base64 32-byte Fernet key via a salted KDF (v1, R4.3).
+
+    Uses PBKDF2-HMAC-SHA256 over the secret with a per-ciphertext ``salt`` so
+    the same plaintext encrypts to different ciphertext each time and the
+    derived key is unique per record.
+    """
+    digest = hashlib.pbkdf2_hmac(
+        "sha256", raw.encode("utf-8"), salt, _V1_PBKDF2_ITERATIONS, dklen=32
+    )
     return base64.urlsafe_b64encode(digest)
 
 
@@ -54,7 +132,12 @@ def _get_secret() -> str:
 
 
 class Cipher:
-    """Thin AEAD wrapper (Fernet) around a derived key. Pure, DB-free."""
+    """Thin AEAD wrapper (Fernet) around the legacy v0 derived key. Pure, DB-free.
+
+    Retained for the legacy unsalted path and so ``Cipher()`` still fails closed
+    when ``ZAF_SECRET_KEY`` is unset. New writes go through the module-level
+    :func:`encrypt`, which emits the versioned v1 envelope.
+    """
 
     def __init__(self, secret: Optional[str] = None):
         self._fernet = Fernet(_derive_fernet_key(secret or _get_secret()))
@@ -71,14 +154,45 @@ class Cipher:
             raise VaultError("credential ciphertext could not be decrypted") from exc
 
 
-def encrypt(plaintext: str, secret: Optional[str] = None) -> str:
-    """Encrypt plaintext to a storable ciphertext string."""
-    return Cipher(secret).encrypt(plaintext)
-
-
-def decrypt(ciphertext: str, secret: Optional[str] = None) -> str:
-    """Decrypt a ciphertext string produced by :func:`encrypt`."""
+def _decrypt_v0_legacy(ciphertext: str, secret: Optional[str] = None) -> str:
+    """Decrypt a legacy (v0) ciphertext via the preserved unsalted-SHA256 path."""
     return Cipher(secret).decrypt(ciphertext)
+
+
+def encrypt(plaintext: str, secret: Optional[str] = None) -> str:
+    """Encrypt plaintext to a storable ``v1$<b64salt>$<fernet_ct>`` envelope (R4.3).
+
+    New writes always use the current (v1) salted-KDF scheme. A fresh random
+    salt per call means two encryptions of the same plaintext differ.
+    """
+    if not isinstance(plaintext, str) or plaintext == "":
+        raise VaultError("refusing to encrypt empty credential plaintext")
+    salt = secrets.token_bytes(_V1_SALT_BYTES)
+    fernet = Fernet(_derive_key_v1(secret or _get_secret(), salt))
+    ct = fernet.encrypt(plaintext.encode("utf-8")).decode("ascii")
+    b64salt = base64.urlsafe_b64encode(salt).decode("ascii")
+    return f"{CURRENT_KEY_VERSION}${b64salt}${ct}"
+
+
+def decrypt(stored: str, secret: Optional[str] = None) -> str:
+    """Decrypt a stored envelope, dispatching on the version tag (R4.3, R4.4).
+
+    ``v1$``-prefixed values take the salted path; anything else is treated as a
+    legacy v0 ciphertext and decrypted via the preserved unsalted-SHA256 path.
+    """
+    if stored.startswith(f"{CURRENT_KEY_VERSION}$"):
+        try:
+            _, b64salt, ct = stored.split("$", 2)
+            salt = base64.urlsafe_b64decode(b64salt.encode("ascii"))
+        except Exception as exc:  # malformed envelope
+            raise VaultError("credential ciphertext could not be decrypted") from exc
+        fernet = Fernet(_derive_key_v1(secret or _get_secret(), salt))
+        try:
+            return fernet.decrypt(ct.encode("ascii")).decode("utf-8")
+        except InvalidToken as exc:  # wrong key / tampered ciphertext
+            raise VaultError("credential ciphertext could not be decrypted") from exc
+    # Legacy v0: no version prefix -> preserved unsalted-SHA256 path (R4.4).
+    return _decrypt_v0_legacy(stored, secret)
 
 
 def _hash_token(token: str) -> str:
@@ -112,18 +226,19 @@ def store(
     db = _get_db()
     row = db.execute_query(
         """
-        INSERT INTO agent_credentials (tenant_id, agent_id, name, kind, scope, ciphertext)
-        VALUES (%s, %s, %s, %s, %s, %s)
+        INSERT INTO agent_credentials (tenant_id, agent_id, name, kind, scope, ciphertext, key_version)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (tenant_id, name) DO UPDATE SET
             ciphertext = EXCLUDED.ciphertext,
             kind = EXCLUDED.kind,
             scope = EXCLUDED.scope,
             agent_id = EXCLUDED.agent_id,
+            key_version = EXCLUDED.key_version,
             status = 'active',
             rotated_at = CURRENT_TIMESTAMP
         RETURNING id
         """,
-        (tenant_id, agent_id, name, kind, scope, ciphertext),
+        (tenant_id, agent_id, name, kind, scope, ciphertext, CURRENT_KEY_VERSION),
         fetch_one=True,
     )
     return int(row[0])
@@ -133,8 +248,9 @@ def get(tenant_id: int, credential_id: int) -> Optional[Dict[str, Any]]:
     """Return a credential's decrypted plaintext + metadata, tenant-scoped.
 
     Returns None when the credential does not exist, belongs to another tenant,
-    or has been revoked. Callers must treat the returned ``plaintext`` as a
-    secret (never log or event it unredacted).
+    or has been revoked. The returned ``plaintext`` is a :class:`SecretWrapper`
+    (R4.5): callers must call ``.reveal()`` explicitly at the point of use, so
+    the secret cannot leak through logging, f-strings, or JSON serialization.
     """
     db = _get_db()
     row = db.execute_query(
@@ -154,21 +270,26 @@ def get(tenant_id: int, credential_id: int) -> Optional[Dict[str, Any]]:
         "name": row[3],
         "kind": row[4],
         "scope": row[5],
-        "plaintext": decrypt(row[6]),
+        "plaintext": SecretWrapper(decrypt(row[6])),
         "status": row[7],
     }
 
 
 def rotate(tenant_id: int, credential_id: int, new_plaintext: str) -> bool:
-    """Replace a credential's ciphertext with a freshly encrypted value."""
+    """Replace a credential's ciphertext with a freshly encrypted value.
+
+    ``encrypt`` always emits the current v1 envelope, so rotating a credential
+    that was stored under the legacy v0 scheme re-encrypts it forward to v1
+    (and stamps ``key_version = 'v1'``) without any data loss (R4.4).
+    """
     ciphertext = encrypt(new_plaintext)
     rows = _get_db().execute_query(
         """
         UPDATE agent_credentials
-        SET ciphertext = %s, rotated_at = CURRENT_TIMESTAMP, status = 'active'
+        SET ciphertext = %s, key_version = %s, rotated_at = CURRENT_TIMESTAMP, status = 'active'
         WHERE id = %s AND tenant_id = %s
         """,
-        (ciphertext, credential_id, tenant_id),
+        (ciphertext, CURRENT_KEY_VERSION, credential_id, tenant_id),
     )
     return bool(rows)
 
@@ -200,10 +321,14 @@ def mint_scoped_token(
 ) -> Dict[str, Any]:
     """Mint a short-lived scoped token bound to a credential.
 
-    Returns ``{token, expires_at, scope}``. The clear-text token is returned to
-    the caller exactly once; only its hash is stored. Minting a token for a
+    Returns ``{token, expires_at, scope}`` — only the scoped-token handle, never
+    the stored credential plaintext (R4.1, R4.6), so an audit event built from
+    this result can carry no secret. The clear-text token is returned to the
+    caller exactly once; only its hash is stored. Minting a token for a
     revoked/missing credential raises :class:`VaultError` (fail closed).
     """
+    # Existence/liveness check only; the resolved SecretWrapper plaintext is
+    # intentionally NOT read or returned here.
     cred = get(tenant_id, credential_id)
     if cred is None:
         raise VaultError("cannot mint token for missing or revoked credential")

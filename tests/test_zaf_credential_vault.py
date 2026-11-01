@@ -91,18 +91,20 @@ class StubDb:
     def execute_query(self, sql, params=None, fetch_one=False, fetch_all=False):
         s = " ".join(sql.split()).upper()
         if s.startswith("INSERT INTO AGENT_CREDENTIALS"):
-            tenant_id, agent_id, name, kind, scope, ciphertext = params
+            tenant_id, agent_id, name, kind, scope, ciphertext, key_version = params
             # emulate ON CONFLICT (tenant_id, name) upsert
             for c in self.creds.values():
                 if c["tenant_id"] == tenant_id and c["name"] == name:
                     c.update(ciphertext=ciphertext, kind=kind, scope=scope,
-                             agent_id=agent_id, status="active")
+                             agent_id=agent_id, key_version=key_version,
+                             status="active")
                     return (c["id"],)
             cid = self._cid
             self._cid += 1
             self.creds[cid] = dict(id=cid, tenant_id=tenant_id, agent_id=agent_id,
                                    name=name, kind=kind, scope=scope,
-                                   ciphertext=ciphertext, status="active")
+                                   ciphertext=ciphertext, key_version=key_version,
+                                   status="active")
             return (cid,)
         if s.startswith("SELECT ID, TENANT_ID, AGENT_ID, NAME, KIND, SCOPE, CIPHERTEXT, STATUS"):
             cid, tenant_id = params
@@ -112,10 +114,11 @@ class StubDb:
             return (c["id"], c["tenant_id"], c["agent_id"], c["name"], c["kind"],
                     c["scope"], c["ciphertext"], c["status"])
         if s.startswith("UPDATE AGENT_CREDENTIALS SET CIPHERTEXT"):
-            ciphertext, cid, tenant_id = params
+            ciphertext, key_version, cid, tenant_id = params
             c = self.creds.get(cid)
             if c and c["tenant_id"] == tenant_id:
                 c["ciphertext"] = ciphertext
+                c["key_version"] = key_version
                 c["status"] = "active"
                 return 1
             return 0
@@ -161,7 +164,9 @@ def test_store_writes_ciphertext_only(monkeypatch):
     stored = stub.creds[cid]["ciphertext"]
     assert "super-secret-value" not in stored  # plaintext never persisted
     got = vault.get(1, cid)
-    assert got["plaintext"] == "super-secret-value"
+    # get() now returns the plaintext inside a non-leaking SecretWrapper (R4.5);
+    # callers reveal() explicitly at the point of use.
+    assert got["plaintext"].reveal() == "super-secret-value"
     assert got["kind"] == "openstack"
 
 

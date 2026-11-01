@@ -5,6 +5,7 @@ import json
 import logging
 from datetime import datetime
 from ..config_postgres import TIMEOUT_SUBPROCESS_RUN, TIMEOUT_request_dev_ai_for_app_RUN, TIMEOUT_CLEAN_SHUTDOWN, TIMEOUT_QCHAT_OPERATOR_RUN, AI_ENGINE, PLTF_FOLDER, LINUX_USER_INSTALLATION
+from ..gitea_auth import gitea_clone_url
 
 # Path configuration functions
 def get_install_root():
@@ -350,7 +351,11 @@ def api_request_dev_ai_for_app():
             # Use provided app folder or default REPO_DIR
             repo_dir = application_folder if application_folder else f"/home/{LINUX_USER_INSTALLATION}/deployments/"
             repo_github_url = f"git@github.com:Sam9682/{application_name}" if application_name else "git@github.com:Sam9682/"
-            repo_gitea_url = f"http://gitadmin:password@localhost:3000/gitadmin/{branch_name}"
+            # Credential-free clone URL (R3.2): authentication is supplied
+            # out-of-band to git, never embedded in the URL. This value is what
+            # gets streamed over SSE (R3.4/R12.5) and persisted to
+            # deployments.gitea_branch_url / modification_history (R3.3).
+            repo_gitea_url = gitea_clone_url("localhost:3000", f"gitadmin/{branch_name}")
 
             yield f"data: {json.dumps({'chunk': f'App: {application_name}, Folder: {repo_gitea_url}'})}\n\n"
 

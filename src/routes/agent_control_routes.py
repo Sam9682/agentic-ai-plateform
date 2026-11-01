@@ -9,23 +9,26 @@ surface-agnostic :mod:`src.agent_control_service` (so the correctness properties
 hold regardless of source):
 
 - Default: the stored inventory from ``runtime_containers`` via
-  ``runtime_monitor_repository.list_containers()`` — fast, no SSH
+  ``runtime_monitor_repository.list_containers()`` -- fast, no SSH
   (Req 4.2, 4.4, 4.5, 4.7).
 - ``?live=1``: an on-demand scan across every managed server using the
   collector + classifier, adding one per-server error indicator for each
   unreachable host (Req 4.6).
 
-Auth follows the session pattern used across routes (``if 'user_id' not in
-session: return 401``); no repository or collector call is made when
-unauthenticated (Req 4.3). Messages resolve through a self-contained
-``get_text()`` (EN/FR, English fallback), mirroring ``sandbox_routes.py`` /
-``templates_routes.py``.
+Authorization converges on the deny-by-default ``role_required("admin")``
+decorator from :mod:`src.authz` (phase3-zaf-enforcement R6.1, R6.3, R6.4): it
+returns 401 when unauthenticated and 403 for an authenticated non-admin before
+the body runs, replacing the legacy magic ``username == 'admin'`` check. No
+repository or collector call is made when the request is not authorized.
+Messages resolve through a self-contained ``get_text()`` (EN/FR, English
+fallback), mirroring ``sandbox_routes.py`` / ``templates_routes.py``.
 """
 
 import logging
 
 from flask import Blueprint, jsonify, request, session
 
+from ..authz import role_required
 from ..config_postgres import TRANSLATIONS
 from .. import agent_control_service as svc
 from ..runtime_monitor import runtime_monitor_repository as repo
@@ -56,18 +59,20 @@ def get_text(key):
 
 
 @agent_control_bp.route('/agent-control/containers', methods=['GET'])
+@role_required("admin")
 def list_containers():
     """Return discovered containers + classifications (Req 4.2, 4.4, 4.5, 4.7).
 
     Default: stored inventory from ``runtime_containers``. ``?live=1`` runs an
     on-demand scan across managed servers, adding per-server error indicators
-    for unreachable hosts (Req 4.6). Auth required (Req 4.3): when there is no
-    authenticated session we return 401 without touching the repository or the
-    collector.
-    """
-    if 'user_id' not in session:
-        return jsonify({'error': get_text('authentication_required')}), 401
+    for unreachable hosts (Req 4.6).
 
+    Authorization is enforced by the ``role_required("admin")`` decorator
+    (phase3-zaf-enforcement R6.1, R6.3, R6.4): it returns 401 for an
+    unauthenticated caller and 403 for an authenticated non-admin before this
+    body runs, converging on the shared deny-by-default model and replacing the
+    legacy magic ``username == 'admin'`` check.
+    """
     live = request.args.get('live') in ('1', 'true', 'yes')
     if not live:
         return jsonify(svc.list_stored(repo)), 200
@@ -86,22 +91,18 @@ def list_containers():
         {'id': r[0], 'server_ip': r[1], 'server_name': r[2]} for r in rows
     ]
 
-    # Requester identity: there is no users.is_admin column, so we look up only
-    # the username and resolve admin from the session flag (serverless_routes
-    # convention) OR username == 'admin' (billing_routes / api_deployments
-    # convention). Either signal grants admin; neither means non-admin.
+    # Requester identity. Authorization is enforced by the
+    # ``role_required("admin")`` decorator above (R6.1, R6.3, R6.4): the caller
+    # is guaranteed to hold the admin role in the resolved tenant, so the legacy
+    # magic ``username == 'admin'`` check is removed and admin status derives
+    # from the authz decision rather than an inline username comparison.
     viewer_id = session['user_id']
-    viewer = db_manager.execute_query(
-        'SELECT username FROM users WHERE id = %s',
-        (viewer_id,), fetch_one=True,
-    )
-    viewer_username = viewer[0] if viewer else None
-    is_admin = bool(session.get('is_admin')) or viewer_username == 'admin'
+    is_admin = True
 
-    # Owner index: deployments ⋈ users (excluding failed/error rows). A DB
+    # Owner index: deployments JOIN users (excluding failed/error rows). A DB
     # failure here fails safe to an EMPTY index rather than raising: every
     # container then derives as Unowned, so admins still see all rows and
-    # non-admins see none — never leaking another user's container (Req 5.1,
+    # non-admins see none -- never leaking another user's container (Req 5.1,
     # 5.2, 5.3).
     try:
         deployment_rows = db_manager.execute_query(

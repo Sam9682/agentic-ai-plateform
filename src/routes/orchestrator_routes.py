@@ -7,6 +7,7 @@ import os
 import socket
 import logging
 from .. import config_postgres
+from ..gitea_auth import redact_credential_url
 
 # Configure logging for API activities
 logger = logging.getLogger(__name__)
@@ -93,7 +94,9 @@ def get_git_urls():
             ''', (user_id,))
             for row in cursor.fetchall():
                 if row[0]:
-                    urls.add(row[0])
+                    # Historical rows may still carry an embedded user:pass@
+                    # credential; redact on read before returning/displaying.
+                    urls.add(redact_credential_url(row[0]))
             
             # Get modification_history from deployments
             cursor.execute('''

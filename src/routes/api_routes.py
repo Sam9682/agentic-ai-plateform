@@ -12,6 +12,7 @@ import logging
 from datetime import datetime
 from .. import config_postgres
 from ..config_postgres import DOMAIN, TIMEOUT_GITEA_HTTP_POST, TIMEOUT_SUBPROCESS_RUN, LINUX_USER_INSTALLATION, ssh_target, chown_arg, deployments_prefix, is_under_deployments
+from ..gitea_auth import redact_credential_url
 
 # Configure logging for API activities
 logger = logging.getLogger(__name__)
@@ -2005,6 +2006,28 @@ def api_nginx_update_deployment():
         logger.error(f"[ROUTE_UPDATE] Exception for user {session_user_id}: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
+# URL-bearing keys that may appear inside a modification_history entry and
+# that could carry an embedded ``user:pass@`` credential in historical rows.
+_HISTORY_URL_KEYS = ('gitea_url', 'url', 'gitea_branch_url')
+
+
+def _redact_history_entry(entry):
+    """Return a copy of a modification_history entry with URL fields redacted.
+
+    Non-dict entries are returned unchanged. Each known URL-bearing field is
+    passed through ``redact_credential_url`` so any embedded credential in a
+    historical value is masked before the entry is returned (R3.6).
+    """
+    if not isinstance(entry, dict):
+        return entry
+
+    redacted = dict(entry)
+    for key in _HISTORY_URL_KEYS:
+        if key in redacted:
+            redacted[key] = redact_credential_url(redacted[key])
+    return redacted
+
+
 @api_bp.route('/deployments/<app_name>/gitea', methods=['GET'])
 def api_deployment_gitea(app_name):
     """Get Gitea branch info and modification history for application"""
@@ -2020,9 +2043,18 @@ def api_deployment_gitea(app_name):
         if not deployment:
             return jsonify({'gitea_branch_url': None, 'modification_history': []})
         
+        # Redact any embedded credentials on read (R3.6). Historical rows may
+        # still carry a ``user:pass@`` authority in the branch URL or inside a
+        # modification_history entry, so mask every URL-bearing field before it
+        # is returned.
+        history = deployment[1] if deployment[1] else []
+        redacted_history = [
+            _redact_history_entry(entry) for entry in history
+        ]
+
         return jsonify({
-            'gitea_branch_url': deployment[0],
-            'modification_history': deployment[1] if deployment[1] else []
+            'gitea_branch_url': redact_credential_url(deployment[0]),
+            'modification_history': redacted_history
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
