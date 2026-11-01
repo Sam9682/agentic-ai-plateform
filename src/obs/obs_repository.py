@@ -41,9 +41,34 @@ def record_anomaly(
     return int(row[0])
 
 
+def set_enforcement(
+    tenant_id: int, anomaly_db_id: int, status: str, *,
+    runtime_id: Optional[str] = None, session_id: Optional[str] = None,
+    recommended_action: Optional[str] = None,
+) -> bool:
+    """Update the additive enforcement/routing columns on the just-inserted
+    ``agent_anomalies`` row (Task 3.1, Req 1.3/3.4).
+
+    Tenant-scoped and parameterized in the repository style. The columns
+    (``enforcement_status``, ``runtime_id``, ``session_id``,
+    ``recommended_action``) are additive/defaulted, so this only ever
+    populates a row ``record_anomaly`` already created — it never changes the
+    backward-compatible insert path. Returns ``True`` when a row was updated.
+    """
+    rows = _get_db().execute_query(
+        "UPDATE agent_anomalies SET enforcement_status = %s, runtime_id = %s, "
+        "session_id = %s, recommended_action = %s "
+        "WHERE tenant_id = %s AND id = %s",
+        (status, runtime_id, session_id, recommended_action,
+         tenant_id, int(anomaly_db_id)),
+    )
+    return bool(rows)
+
+
 def list_anomalies(tenant_id: int, limit: int = 200) -> List[Dict[str, Any]]:
     rows = _get_db().execute_query(
-        "SELECT id, agent_identity, rule_id, severity, risk_score, evidence, status, detected_at "
+        "SELECT id, agent_identity, rule_id, severity, risk_score, evidence, status, detected_at, "
+        "enforcement_status, runtime_id, session_id, recommended_action "
         "FROM agent_anomalies WHERE tenant_id = %s ORDER BY detected_at DESC LIMIT %s",
         (tenant_id, max(1, min(int(limit), 1000))),
         fetch_all=True,
@@ -51,7 +76,9 @@ def list_anomalies(tenant_id: int, limit: int = 200) -> List[Dict[str, Any]]:
     return [
         {"id": int(r[0]), "agent_identity": r[1], "rule_id": r[2], "severity": r[3],
          "risk_score": int(r[4]), "evidence": _as_json(r[5]), "status": r[6],
-         "detected_at": r[7].isoformat() if r[7] else None}
+         "detected_at": r[7].isoformat() if r[7] else None,
+         "enforcement_status": r[8], "runtime_id": r[9], "session_id": r[10],
+         "recommended_action": r[11]}
         for r in (rows or [])
     ]
 

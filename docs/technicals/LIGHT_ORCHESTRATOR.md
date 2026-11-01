@@ -145,12 +145,12 @@ python3 ./scripts/sync_reverse_proxy.py
 
 #### Lister les Services
 ```bash
-curl https://www.swautomorph.com/api/orchestrator/services
+curl https://agentic-ai-plateform.com/api/orchestrator/services
 ```
 
 #### Créer un Service
 ```bash
-curl -X POST https://www.swautomorph.com/api/orchestrator/services \
+curl -X POST https://agentic-ai-plateform.com/api/orchestrator/services \
   -H "Content-Type: application/json" \
   -H "Cookie: session=your-session-cookie" \
   -d '{
@@ -166,7 +166,7 @@ curl -X POST https://www.swautomorph.com/api/orchestrator/services \
 
 #### Scaler un Service
 ```bash
-curl -X POST https://www.swautomorph.com/api/orchestrator/services/my-app/scale \
+curl -X POST https://agentic-ai-plateform.com/api/orchestrator/services/my-app/scale \
   -H "Content-Type: application/json" \
   -H "Cookie: session=your-session-cookie" \
   -d '{"replicas": 3}'
@@ -174,18 +174,18 @@ curl -X POST https://www.swautomorph.com/api/orchestrator/services/my-app/scale 
 
 #### Supprimer un Service
 ```bash
-curl -X DELETE https://www.swautomorph.com/api/orchestrator/services/my-app \
+curl -X DELETE https://agentic-ai-plateform.com/api/orchestrator/services/my-app \
   -H "Cookie: session=your-session-cookie"
 ```
 
 #### Statut de l'Orchestrateur
 ```bash
-curl https://www.swautomorph.com/api/orchestrator/status
+curl https://agentic-ai-plateform.com/api/orchestrator/status
 ```
 
 #### Synchroniser les Routes Traefik
 ```bash
-curl -X POST https://www.swautomorph.com/api/nginx/sync \
+curl -X POST https://agentic-ai-plateform.com/api/nginx/sync \
   -H "Cookie: session=your-session-cookie"
 ```
 

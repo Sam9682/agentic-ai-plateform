@@ -4,7 +4,7 @@
 
 set -e
 
-DOMAIN="www.swautomorph.com"
+DOMAIN="agentic-ai-plateform.com"
 EMAIL="admin@swautomorph.com"
 SSL_DIR="./ssl"
 

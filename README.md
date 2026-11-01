@@ -199,16 +199,16 @@ curl -X POST https://www.agentic-ai-plateform.com/api/deployments \
 ### Enhanced Server Management
 ```bash
 # List servers with capacity information
-curl https://www.swautomorph.com/api/servers
+curl https://agentic-ai-plateform.com/api/servers
 
 # Allocate server for deployment (automatic capacity-based selection)
-curl -X POST https://www.swautomorph.com/api/server/allocate \
+curl -X POST https://agentic-ai-plateform.com/api/server/allocate \
   -H "Content-Type: application/json" \
   -H "Cookie: session=your-session-cookie" \
   -d '{"application_name":"MyApp"}'
 
 # Add new server (admin required)
-curl -X POST https://www.swautomorph.com/api/servers \
+curl -X POST https://agentic-ai-plateform.com/api/servers \
   -H "Content-Type: application/json" \
   -H "Cookie: session=your-session-cookie" \
   -d '{"SERVER_IP":"192.168.1.100","SERVER_NAME":"worker-01","SERVER_CAPACITY_USER_MAX":20,"SERVER_CAPACITY_APPLI_MAX":100,"SERVER_STATUS":"STAND_BY","SERVER_TYPE":"worker"}'
@@ -217,44 +217,44 @@ curl -X POST https://www.swautomorph.com/api/servers \
 ### MIG Shared GPU Management
 ```bash
 # Enable shared GPU on a server (admin required)
-curl -X PUT https://www.swautomorph.com/api/servers/1/gpu/enabled \
+curl -X PUT https://agentic-ai-plateform.com/api/servers/1/gpu/enabled \
   -H "Content-Type: application/json" \
   -H "Cookie: session=your-session-cookie" \
   -d '{"enabled": true}'
 
 # List available MIG profiles from GPU hardware
-curl https://www.swautomorph.com/api/servers/1/gpu/profiles \
+curl https://agentic-ai-plateform.com/api/servers/1/gpu/profiles \
   -H "Cookie: session=your-session-cookie"
 
 # Create MIG instances (1-7 profile IDs)
-curl -X POST https://www.swautomorph.com/api/servers/1/gpu/instances \
+curl -X POST https://agentic-ai-plateform.com/api/servers/1/gpu/instances \
   -H "Content-Type: application/json" \
   -H "Cookie: session=your-session-cookie" \
   -d '{"profile_ids": ["9", "14", "9"]}'
 
 # List active MIG instances
-curl https://www.swautomorph.com/api/servers/1/gpu/instances \
+curl https://agentic-ai-plateform.com/api/servers/1/gpu/instances \
   -H "Cookie: session=your-session-cookie"
 
 # Destroy all MIG instances on a server
-curl -X DELETE https://www.swautomorph.com/api/servers/1/gpu/instances \
+curl -X DELETE https://agentic-ai-plateform.com/api/servers/1/gpu/instances \
   -H "Cookie: session=your-session-cookie"
 ```
 
 ### Serverless Docker Execution
 ```bash
 # Submit a serverless Docker job
-curl -X POST https://www.swautomorph.com/api/jobs \
+curl -X POST https://agentic-ai-plateform.com/api/jobs \
   -H "Content-Type: application/json" \
   -H "Cookie: session=your-session-cookie" \
   -d '{"image": "python:3.11", "command": "python -c \"print(hello)\"", "timeout": 60}'
 
 # Check job status
-curl https://www.swautomorph.com/api/jobs/<job_id> \
+curl https://agentic-ai-plateform.com/api/jobs/<job_id> \
   -H "Cookie: session=your-session-cookie"
 
 # List user jobs
-curl https://www.swautomorph.com/api/jobs \
+curl https://agentic-ai-plateform.com/api/jobs \
   -H "Cookie: session=your-session-cookie"
 ```
 
@@ -275,11 +275,11 @@ Built-in templates:
 
 ```bash
 # List available deploy templates
-curl https://www.swautomorph.com/api/templates \
+curl https://agentic-ai-plateform.com/api/templates \
   -H "Cookie: session=your-session-cookie"
 
 # Deploy an application from a template
-curl -X POST https://www.swautomorph.com/api/templates/fastapi-starter/deploy \
+curl -X POST https://agentic-ai-plateform.com/api/templates/fastapi-starter/deploy \
   -H "Content-Type: application/json" \
   -H "Cookie: session=your-session-cookie" \
   -d '{"application_name":"my-api"}'
@@ -346,12 +346,12 @@ Response-body `sub_filter` rewriting of HTML/CSS/JS is gone. Apps are now **path
 
 ```bash
 # Access user applications via dynamic URLs
-# Format: https://www.swautomorph.com/{USER_ID}/{APPLICATION_NAME}
+# Format: https://agentic-ai-plateform.com/{USER_ID}/{APPLICATION_NAME}
 # Example: User 2's ai-staticwebsite
-curl https://www.swautomorph.com/2/ai-staticwebsite
+curl https://agentic-ai-plateform.com/2/ai-staticwebsite
 
 # Sync all Traefik routes from database (admin required)
-curl -X POST https://www.swautomorph.com/api/nginx/sync \
+curl -X POST https://agentic-ai-plateform.com/api/nginx/sync \
   -H "Cookie: session=your-session-cookie"
 
 # Or via CLI
@@ -361,19 +361,19 @@ python3 ./scripts/sync_reverse_proxy.py
 ### Virtual AI Agents Integration
 ```bash
 # AI Chat Developer Agent (code modifications)
-curl -X POST https://www.swautomorph.com/api/request_dev_ai_for_app \
+curl -X POST https://agentic-ai-plateform.com/api/request_dev_ai_for_app \
   -H "Content-Type: application/json" \
   -H "Cookie: session=your-session-cookie" \
   -d '{"message":"Add a new API endpoint for user management","application_name":"MyApp","application_folder":"/path/to/app","action_operation":"MODIFY_CODE"}'
 
 # AI Chat Operations Agent (deployment operations)
-curl -X POST https://www.swautomorph.com/api/request_ops_ai_for_app \
+curl -X POST https://agentic-ai-plateform.com/api/request_ops_ai_for_app \
   -H "Content-Type: application/json" \
   -H "Cookie: session=your-session-cookie" \
   -d '{"message":"[START] Start the application","application_name":"MyApp","application_folder":"/path/to/app","action_operation":"START"}'
 
 # Streaming deployment with real-time logs
-curl -X POST https://www.swautomorph.com/api/deployments \
+curl -X POST https://agentic-ai-plateform.com/api/deployments \
   -H "Content-Type: application/json" \
   -H "Cookie: session=your-session-cookie" \
   -d '{"application_name":"MyApp","action":"start","stream":true}'
@@ -460,16 +460,16 @@ python3 ./scripts/mcp_server.py
 ### Enhanced Health Checks
 ```bash
 # API health check
-curl https://www.swautomorph.com/api/auth/status
+curl https://agentic-ai-plateform.com/api/auth/status
 
 # Database health check with statistics (admin required)
-curl https://www.swautomorph.com/api/health/database
+curl https://agentic-ai-plateform.com/api/health/database
 
 # Check Docker services
 docker-compose ps
 
 # Check deployment logs with streaming
-curl https://www.swautomorph.com/api/deployments/1/logs
+curl https://agentic-ai-plateform.com/api/deployments/1/logs
 ```
 
 ### Database Management
@@ -486,9 +486,9 @@ python3 ./scripts/controller_cli.py db-health
 
 ## Default Configuration
 
-- **Web Interface**: https://www.swautomorph.com (or https://localhost)
-- **API Endpoint**: https://www.swautomorph.com/api
-- **Gitea Server**: https://www.swautomorph.com/gitea (port 3000)
+- **Web Interface**: https://agentic-ai-plateform.com (or https://localhost)
+- **API Endpoint**: https://agentic-ai-plateform.com/api
+- **Gitea Server**: https://agentic-ai-plateform.com/gitea (port 3000)
 - **MCP Server**: Available via scripts/mcp_server.py
 - **Database**: **PostgreSQL with connection pooling** (enterprise-grade performance and scalability)
 - **Deployment Directory**: /home/<LINUX_USER_INSTALLATION>/deployments/[username]/[appname] (user from conf/deploy.ini)

@@ -3,7 +3,7 @@
 
 import os
 
-GITEA_SERVER = "http://www.swautomorph.com/gitea"  # Your Gitea server URL
+GITEA_SERVER = "http://agentic-ai-plateform.com/gitea"  # Your Gitea server URL
 USERNAME = "gitadmin"
 EMAIL = "admin@swautomorph.com"
 PASSWORD = "password"       # Password for the user

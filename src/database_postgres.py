@@ -616,6 +616,8 @@ def init_db():
                 'add_approvals.sql',
                 'add_mcp_registry.sql',
                 'add_incidents.sql',
+                'add_agent_cost_records.sql',
+                'add_supervisor.sql',
             ):
                 try:
                     migration_path = os.path.join(

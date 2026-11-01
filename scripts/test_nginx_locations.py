@@ -26,7 +26,7 @@ from src.frontend_manager import (
 )
 
 # Explicit public domain so the assertions do not depend on deploy.ini.
-DOMAIN = "www.swautomorph.com"
+DOMAIN = "agentic-ai-plateform.com"
 
 
 def test_generate_location():

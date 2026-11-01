@@ -76,12 +76,12 @@ python3 ./scripts/orchestrator_cli.py nginx --output /tmp/upstreams.conf
 ### API REST
 ```bash
 # Créer un service
-curl -X POST https://www.swautomorph.com/api/orchestrator/services \
+curl -X POST https://agentic-ai-plateform.com/api/orchestrator/services \
   -H "Content-Type: application/json" \
   -d '{"name":"my-app","image":"nginx:alpine","desired_replicas":2}'
 
 # Scaler
-curl -X POST https://www.swautomorph.com/api/orchestrator/services/my-app/scale \
+curl -X POST https://agentic-ai-plateform.com/api/orchestrator/services/my-app/scale \
   -H "Content-Type: application/json" \
   -d '{"replicas":3}'
 ```

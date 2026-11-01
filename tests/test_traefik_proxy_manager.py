@@ -34,7 +34,7 @@ from src.frontend_manager import _build_route_config
 _DNS_LABEL = st.from_regex(r"[a-z0-9][a-z0-9-]{0,30}", fullmatch=True)
 
 # Domains are dotted DNS names built from one or more labels (e.g.
-# ``www.swautomorph.com``).
+# ``agentic-ai-plateform.com``).
 _DOMAIN = st.lists(_DNS_LABEL, min_size=1, max_size=4).map(".".join)
 
 # Backend hosts are a hostname label, a dotted DNS name, or a docker service

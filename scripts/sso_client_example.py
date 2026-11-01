@@ -9,7 +9,7 @@ from flask import Flask, request, jsonify, session, redirect
 from urllib.parse import parse_qs, urlparse
 
 # SSO Identity Provider URL
-SSO_PROVIDER_URL = 'http://www.swautomorph.com:80'
+SSO_PROVIDER_URL = 'http://agentic-ai-plateform.com:80'
 
 def validate_sso_token(token):
     """Validate SSO token with the identity provider"""

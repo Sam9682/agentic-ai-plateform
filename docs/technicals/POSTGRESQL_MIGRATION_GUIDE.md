@@ -344,7 +344,7 @@ export USE_SQLITE=true
 sqlite3 softfluid/db/ai_swautomorph.db "PRAGMA integrity_check;"
 
 # 3. Test application functionality
-curl -s https://www.swautomorph.com/api/auth/status
+curl -s https://agentic-ai-plateform.com/api/auth/status
 
 # 4. If successful, remove PostgreSQL configuration
 # If issues persist, investigate and fix before re-attempting migration

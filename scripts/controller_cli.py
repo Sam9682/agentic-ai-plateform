@@ -9,7 +9,7 @@ import sys
 # Add the parent directory to the path so we can import from src
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-BASE_URL = 'http://www.swautomorph.com:80'
+BASE_URL = 'http://agentic-ai-plateform.com:80'
 
 def select_from_list(items, title="Select an option"):
     """Interactive selection using arrow keys"""

@@ -207,7 +207,7 @@ DISCOVERY_TIMEOUT = 5
 
 ```bash
 # Via API
-curl https://www.swautomorph.com/api/platform/status
+curl https://agentic-ai-plateform.com/api/platform/status
 
 # Via CLI
 python3 ./scripts/platform_cli.py status

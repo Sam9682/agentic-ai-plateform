@@ -49,7 +49,7 @@ python3 ./scripts/controller_cli.py migrate-to-postgres
 
 2. **Via API** (Admin only):
 ```bash
-curl -X POST https://www.swautomorph.com/api/database/migrate \
+curl -X POST https://agentic-ai-plateform.com/api/database/migrate \
   -H "Cookie: session=your-session-cookie" \
   -H "Content-Type: application/json"
 ```

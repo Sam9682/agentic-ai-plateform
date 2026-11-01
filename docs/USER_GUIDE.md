@@ -52,7 +52,7 @@ The platform provides **two specialized virtual AI agents** with context-aware p
 - 💰 Automatic billing activity recording for START/STOP actions
 - 🔄 Fallback Q&A mode for invalid actions
 
-![Virtual Operations](https://www.swautomorph.com/static/VirtualOperations.png)
+![Virtual Operations](https://agentic-ai-plateform.com/static/VirtualOperations.png)
 
 ### 🔧 AI Chat Developer Agent
 
@@ -207,27 +207,27 @@ All GPU endpoints require admin authentication and use the prefix `/api/servers/
 
 ```bash
 # Enable shared GPU on a server
-curl -X PUT https://www.swautomorph.com/api/servers/1/gpu/enabled \
+curl -X PUT https://agentic-ai-plateform.com/api/servers/1/gpu/enabled \
   -H "Content-Type: application/json" \
   -H "Cookie: session=your-session-cookie" \
   -d '{"enabled": true}'
 
 # List available MIG profiles
-curl https://www.swautomorph.com/api/servers/1/gpu/profiles \
+curl https://agentic-ai-plateform.com/api/servers/1/gpu/profiles \
   -H "Cookie: session=your-session-cookie"
 
 # Create MIG instances (1-7 profile IDs)
-curl -X POST https://www.swautomorph.com/api/servers/1/gpu/instances \
+curl -X POST https://agentic-ai-plateform.com/api/servers/1/gpu/instances \
   -H "Content-Type: application/json" \
   -H "Cookie: session=your-session-cookie" \
   -d '{"profile_ids": ["9", "14", "9"]}'
 
 # List active instances
-curl https://www.swautomorph.com/api/servers/1/gpu/instances \
+curl https://agentic-ai-plateform.com/api/servers/1/gpu/instances \
   -H "Cookie: session=your-session-cookie"
 
 # Destroy all instances
-curl -X DELETE https://www.swautomorph.com/api/servers/1/gpu/instances \
+curl -X DELETE https://agentic-ai-plateform.com/api/servers/1/gpu/instances \
   -H "Cookie: session=your-session-cookie"
 ```
 
@@ -249,25 +249,25 @@ Submit Docker-based jobs on-demand without managing infrastructure. The platform
 
 ```bash
 # Submit a job
-curl -X POST https://www.swautomorph.com/api/jobs \
+curl -X POST https://agentic-ai-plateform.com/api/jobs \
   -H "Content-Type: application/json" \
   -H "Cookie: session=your-session-cookie" \
   -d '{"image": "python:3.11-slim", "command": ["python", "-c", "print(hello)"], "timeout": 60}'
 
 # Check job status
-curl https://www.swautomorph.com/api/jobs/<job_id> \
+curl https://agentic-ai-plateform.com/api/jobs/<job_id> \
   -H "Cookie: session=your-session-cookie"
 
 # Get job result (stdout/stderr)
-curl https://www.swautomorph.com/api/jobs/<job_id>/result \
+curl https://agentic-ai-plateform.com/api/jobs/<job_id>/result \
   -H "Cookie: session=your-session-cookie"
 
 # Cancel a job
-curl -X POST https://www.swautomorph.com/api/jobs/<job_id>/cancel \
+curl -X POST https://agentic-ai-plateform.com/api/jobs/<job_id>/cancel \
   -H "Cookie: session=your-session-cookie"
 
 # List all user jobs
-curl https://www.swautomorph.com/api/jobs?page=1&per_page=20 \
+curl https://agentic-ai-plateform.com/api/jobs?page=1&per_page=20 \
   -H "Cookie: session=your-session-cookie"
 ```
 
@@ -289,10 +289,10 @@ Built-in templates: `static-site` (nginx), `fastapi-starter`, `n8n`, `ollama`, `
 
 ```bash
 # List available templates
-curl https://www.swautomorph.com/api/templates -H "Cookie: session=your-session-cookie"
+curl https://agentic-ai-plateform.com/api/templates -H "Cookie: session=your-session-cookie"
 
 # Deploy from a template
-curl -X POST https://www.swautomorph.com/api/templates/fastapi-starter/deploy -H "Content-Type: application/json" -H "Cookie: session=your-session-cookie" -d '{"application_name":"my-api"}'
+curl -X POST https://agentic-ai-plateform.com/api/templates/fastapi-starter/deploy -H "Content-Type: application/json" -H "Cookie: session=your-session-cookie" -d '{"application_name":"my-api"}'
 ```
 
 ### 🛡️ Container Runtime
@@ -345,19 +345,19 @@ On first run, a guided setup wizard writes `conf/deploy.ini` safely (timestamped
 #### 🔍 Debug Commands
 ```bash
 # 🔍 Check authentication status
-curl https://www.swautomorph.com/api/auth/status
+curl https://agentic-ai-plateform.com/api/auth/status
 
 # 📱 Verify applications
-curl https://www.swautomorph.com/api/applications
+curl https://agentic-ai-plateform.com/api/applications
 
 # 🖥️ Check server capacity and allocation
-curl https://www.swautomorph.com/api/servers
+curl https://agentic-ai-plateform.com/api/servers
 
 # 💰 Check billing activities
-curl https://www.swautomorph.com/api/billing/activities
+curl https://agentic-ai-plateform.com/api/billing/activities
 
 # 🗄️ Database health check (admin only)
-curl https://www.swautomorph.com/api/health/database
+curl https://agentic-ai-plateform.com/api/health/database
 
 # 🧪 Test developer agent
 curl -X POST /api/request_dev_ai_for_app \
@@ -372,11 +372,11 @@ curl -X POST /api/request_ops_ai_for_app \
   -d '{"message":"[START] test","application_name":"test"}'
 
 # 🎮 Check GPU status on a server
-curl https://www.swautomorph.com/api/servers/1/gpu/instances \
+curl https://agentic-ai-plateform.com/api/servers/1/gpu/instances \
   -H "Cookie: session=your-session-cookie"
 
 # ⚡ Check serverless job metrics (admin)
-curl https://www.swautomorph.com/api/jobs/metrics \
+curl https://agentic-ai-plateform.com/api/jobs/metrics \
   -H "Cookie: session=your-session-cookie"
 ```
 
@@ -427,7 +427,7 @@ AI-SwAutoMorph est une **plateforme centralisée de déploiement et de gestion d
 - 🚀 Exécute les scripts et configurations de déploiement
 - 📈 Fournit des mises à jour de statut en temps réel et journaux en streaming
 
-![Virtual Operations](https://www.swautomorph.com/static/VirtualOperations.png)
+![Virtual Operations](https://agentic-ai-plateform.com/static/VirtualOperations.png)
 
 ### 🔧 Agent Développeur AI Chat
 

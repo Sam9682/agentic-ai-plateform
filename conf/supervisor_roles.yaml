@@ -1,0 +1,88 @@
+# Agent Supervisor — configurable Role model (Phase 5, Req 7).
+#
+# Roles are DATA, not code. supervisor.load_roles() reads this file and turns
+# each entry into a Role(name, capabilities, default_scope). Adding a role here
+# makes it selectable by the Supervisor with no code change (Req 7.2, 7.4).
+#
+#   name          : the Role identifier matched during role selection.
+#   capabilities  : action globs this Role may request (matched with fnmatch
+#                   against a Child_Task's requested actions, Req 9.1, 10).
+#   default_scope : resource globs this Role defaults to when a Child_Task does
+#                   not request an explicit resource scope (Req 10).
+#
+# These seven entries are the example Roles of Req 7.3. They are illustrative
+# defaults — tune the globs per deployment policy. All scope is still bounded at
+# runtime by scope_intersection(parent, child_requested): a Role can never widen
+# a child beyond what its parent already holds.
+
+roles:
+  - name: Architect
+    capabilities:
+      - "design:*"
+      - "read:*"
+      - "plan:*"
+    default_scope:
+      - "repo:*"
+      - "docs:*"
+
+  - name: Developer
+    capabilities:
+      - "code:*"
+      - "build:*"
+      - "test:*"
+      - "read:*"
+    default_scope:
+      - "repo:*"
+      - "artifact:*"
+
+  - name: DevOps
+    capabilities:
+      - "deploy:*"
+      - "build:*"
+      - "config:*"
+      - "read:logs"
+    default_scope:
+      - "staging-*"
+      - "prod-*"
+      - "pipeline:*"
+
+  - name: Security
+    capabilities:
+      - "scan:*"
+      - "audit:*"
+      - "quarantine:*"
+      - "read:*"
+    default_scope:
+      - "repo:*"
+      - "runtime:*"
+      - "credential:*"
+
+  - name: FinOps
+    capabilities:
+      - "cost:read"
+      - "budget:*"
+      - "read:*"
+    default_scope:
+      - "cost:*"
+      - "billing:read"
+
+  - name: SRE
+    capabilities:
+      - "monitor:*"
+      - "remediate:*"
+      - "restart:*"
+      - "read:logs"
+    default_scope:
+      - "runtime:*"
+      - "prod-*"
+      - "incident:*"
+
+  - name: Supervisor
+    capabilities:
+      - "delegate:*"
+      - "aggregate:*"
+      - "read:*"
+    default_scope:
+      - "repo:*"
+      - "runtime:*"
+      - "cost:*"

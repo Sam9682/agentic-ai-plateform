@@ -45,6 +45,7 @@ from typing import Any, Callable, Dict, Optional
 
 from . import event_service as es
 from . import task_repository as task_repo
+from ..obs.detection_pass import DetectionError
 from ..zaf.enforcement import EnforcementError
 from ..execution_policy import (
     CancelledError as _PolicyCancelled,
@@ -435,6 +436,7 @@ class AgentTaskWorker:
         clock: Callable[[], float] = time.monotonic,
         zaf_exec: Optional[Callable[[Dict[str, Any]], Any]] = None,
         zaf_response: Optional[Any] = None,
+        detection_pass: Optional[Any] = None,
     ):
         self.worker_id = worker_id
         self._adapter_for = adapter_for
@@ -465,6 +467,16 @@ class AgentTaskWorker:
         #: without it behaves exactly as before. Built by
         #: ``zaf.wiring.build_response_service`` in the live process.
         self._zaf_response = zaf_response
+        #: Optional OBS Detection_Pass collaborator (Phase 5, R1.1). When
+        #: provided, ``run_once`` runs one bounded ``detection_pass.run_cycle()``
+        #: per poll BEFORE the in-flight cap check and before any ML scoring
+        #: (R1.7). Defaults to ``None`` (inert): a worker built without it
+        #: behaves exactly as before, so Phase 1–4 suites are unaffected. Unlike
+        #: ``reap_step`` (which deliberately swallows to keep the loop alive),
+        #: ``_maybe_detect`` does NOT swallow — a ``DetectionError`` propagates
+        #: through ``run_once`` and the top-level ``run`` handler re-raises it so
+        #: enforcement is never left silently disabled (R1.8).
+        self._detection_pass = detection_pass
         self._last_reap = 0.0
         #: Max-in-flight cap (Req 6.9). While ``in_flight >= max_in_flight`` the
         #: worker skips claiming until an in-flight task reaches a terminal
@@ -608,6 +620,27 @@ class AgentTaskWorker:
             self._last_reap = now
             self.reap_step()
 
+    def _maybe_detect(self) -> None:
+        """Run one bounded OBS detection cycle when a pass is wired (Phase 5).
+
+        Invoked from :meth:`run_once` BEFORE the in-flight cap check and before
+        any ML scoring (R1.7). When no ``detection_pass`` collaborator was
+        injected this is a no-op, so a worker built without it behaves exactly
+        as before (inert default).
+
+        Deliberate contrast with :meth:`reap_step`: the reaper swallows every
+        exception so a transient error can never kill the loop, but detection
+        is enforcement — a failure here MUST surface rather than be hidden
+        (R1.8). This method therefore does NOT guard ``run_cycle()``; a
+        ``DetectionError`` propagates through ``run_once`` and is re-raised by
+        the top-level ``run`` handler, so the worker never silently continues
+        with enforcement disabled.
+        """
+        if self._detection_pass is None:
+            return
+        # NOT guarded against exceptions: a detection failure must surface (R1.8).
+        self._detection_pass.run_cycle()
+
     def run_once(self) -> bool:
         """Claim and execute a single task. Returns True when one was handled.
 
@@ -622,6 +655,10 @@ class AgentTaskWorker:
         task's tenant becomes the new ``last_served`` cursor.
         """
         self._maybe_reap()
+        # Bounded OBS detection step (Phase 5, R1.1) BEFORE the in-flight cap
+        # check and before any ML scoring (R1.7). A DetectionError propagates
+        # out of run_once — deliberately NOT swallowed (R1.8).
+        self._maybe_detect()
         # Max-in-flight cap: do not claim new work while at capacity (Req 6.9).
         if self.in_flight >= self._max_in_flight:
             return False
@@ -658,6 +695,14 @@ class AgentTaskWorker:
         while self.running:
             try:
                 handled = self.run_once()
+            except DetectionError:
+                # A detection failure is enforcement being silently disabled —
+                # it must NOT be treated as a normal empty cycle (R1.8). Unlike
+                # the broad handler below (which keeps the loop alive through
+                # transient task-execution errors), a DetectionError is
+                # re-raised so the worker surfaces it instead of polling on with
+                # enforcement off.
+                raise
             except Exception:  # noqa: BLE001 - never let the loop die
                 handled = False
             if not handled:
