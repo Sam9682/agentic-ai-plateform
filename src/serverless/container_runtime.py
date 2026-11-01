@@ -4,11 +4,30 @@ Provides an abstract base class for Docker and Podman container runtimes,
 allowing the worker service to execute jobs using whichever runtime is available.
 """
 
+import logging
 import shutil
 import subprocess
 import uuid
 from abc import ABC, abstractmethod
 from typing import Dict, List, Optional
+
+from src.aro.execution_manager import assert_image_pinned
+from src.execution_policy import (
+    BackoffParams,
+    OutcomeStatus,
+    run_with_policy,
+    ssh_is_transient,
+)
+from src.ssh_utils import _redact
+
+logger = logging.getLogger(__name__)
+
+# Bounded wall-clock budget for a single image pull attempt and the number of
+# attempts a transient pull failure is retried through the shared policy (R5.3).
+PULL_TIMEOUT_DEFAULT = 300
+PULL_MAX_ATTEMPTS = 3
+# Bounded budget for a one-shot ``docker logs`` capture (R5.1).
+LOGS_TIMEOUT_DEFAULT = 60
 
 
 class ContainerRuntime(ABC):
@@ -180,22 +199,61 @@ class DockerRuntime(ContainerRuntime):
     _binary = "docker"
 
     def pull_image(self, image: str) -> None:
-        """Pull a container image using docker pull.
+        """Pull a digest-pinned container image using docker pull.
+
+        The image must be digest-pinned (``name@sha256:...``) before any pull
+        runs: an unpinned reference is a deterministic policy failure that is
+        rejected with no pull and no retry (R5.2). The pull itself is wrapped in
+        the shared execution policy so a transient registry failure (5xx,
+        connection reset, timeout) is retried with bounded backoff while a
+        deterministic failure (unknown manifest, denied) fails immediately
+        (R5.3). Log output carries only the redacted command summary so pull
+        credentials embedded in the reference never reach the log (R5.8).
 
         Args:
-            image: Full image reference (e.g. 'docker.io/library/python:3.11').
+            image: Full image reference, digest-pinned
+                (e.g. 'docker.io/library/python@sha256:...').
 
         Raises:
-            RuntimeError: If the image pull fails.
+            ExecutionPolicyError: If the image is not digest-pinned.
+            RuntimeError: If the image pull fails after exhausting retries.
         """
-        result = subprocess.run(
-            [self._binary, "pull", image],
-            capture_output=True,
-            text=True,
+        # Digest pin gate: deterministic failure, no pull, no retry (R5.2).
+        assert_image_pinned(image)
+
+        cmd = [self._binary, "pull", image]
+        logger.info("Pulling image: %s", _redact(cmd))
+
+        def _pull(_token):
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=PULL_TIMEOUT_DEFAULT,
+            )
+            if result.returncode != 0:
+                # Raise an error whose text carries the registry stderr so the
+                # transient classifier can route connect/timeout/reset failures
+                # to a retry and leave deterministic failures terminal (R5.3).
+                err = RuntimeError(
+                    f"Failed to pull image '{image}': {result.stderr.strip()}"
+                )
+                err.stderr = result.stderr
+                raise err
+            return result
+
+        outcome = run_with_policy(
+            _pull,
+            timeout=PULL_TIMEOUT_DEFAULT,
+            max_attempts=PULL_MAX_ATTEMPTS,
+            backoff=BackoffParams(),
+            is_transient=ssh_is_transient,
         )
-        if result.returncode != 0:
+        if outcome.status is not OutcomeStatus.SUCCEEDED:
+            if outcome.error is not None:
+                raise outcome.error
             raise RuntimeError(
-                f"Failed to pull image '{image}': {result.stderr.strip()}"
+                f"Failed to pull image '{image}': {outcome.status.value}"
             )
 
     def run_container(
@@ -292,24 +350,20 @@ class DockerRuntime(ContainerRuntime):
         Raises:
             RuntimeError: If logs cannot be retrieved.
         """
-        if stream == "stdout":
-            cmd = [self._binary, "logs", "--stdout", container_id]
-        else:
-            cmd = [self._binary, "logs", "--stderr", container_id]
-
-        # We need to separate stdout and stderr from docker logs.
-        # When using --stdout, we capture stdout only.
-        # When using --stderr, we capture stderr only.
-        if stream == "stdout":
-            result = subprocess.run(
-                cmd, capture_output=True, text=True
-            )
-            return result.stdout
-        else:
-            result = subprocess.run(
-                cmd, capture_output=True, text=True
-            )
-            return result.stderr
+        # ``docker logs`` multiplexes the container's stdout onto the
+        # subprocess's stdout and the container's stderr onto the subprocess's
+        # stderr. There is no reliable ``--stdout``/``--stderr`` filter: the
+        # old ``docker logs --stderr`` branch returned the docker CLI's own
+        # error channel, not the container's stderr. Run the command once and
+        # read the correct subprocess stream for the requested logical stream
+        # (R5.1).
+        result = subprocess.run(
+            [self._binary, "logs", container_id],
+            capture_output=True,
+            text=True,
+            timeout=LOGS_TIMEOUT_DEFAULT,
+        )
+        return result.stdout if stream == "stdout" else result.stderr
 
     def wait(self, container_id: str, timeout: int) -> int:
         """Wait for a container to finish execution using docker wait.

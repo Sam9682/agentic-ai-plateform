@@ -46,10 +46,34 @@ from typing import Any, Callable, Dict, Optional
 from . import event_service as es
 from . import task_repository as task_repo
 from ..zaf.enforcement import EnforcementError
+from ..execution_policy import (
+    CancelledError as _PolicyCancelled,
+    CancelToken,
+    DeadlineExceeded as _PolicyDeadline,
+    OutcomeStatus,
+    run_with_policy,
+)
 
 #: Default heartbeat interval (seconds). MUST be strictly less than the lease
 #: TTL so a live worker always renews its lease before it can expire (Req 6.5).
 DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 20
+
+class _AdapterError(Exception):
+    """Wraps any exception escaping the adapter's streamed execution.
+
+    The streamed attempt runs inside :func:`execution_policy.run_with_policy`,
+    which classifies ``TimeoutError`` / ``DeadlineExceeded`` as TIMED_OUT and
+    ``CancelledError`` as CANCELLED. The ARO worker, however, reaches the
+    ``timed_out`` / ``cancelled`` terminals ONLY through its own wall-clock
+    deadline and cancel-probe checks — a bare ``TimeoutError`` bubbling out of
+    an adapter has always been a plain ``failed`` terminal. Wrapping every
+    adapter-originated exception in this type keeps that mapping exact: the
+    policy never mistakes an adapter error for a timeout/cancel, so it routes
+    through the deterministic FAILED path (``is_transient`` is constant
+    ``False``) just as the prior ``except Exception`` block did. The original
+    exception is preserved as ``__cause__`` for logging/debugging.
+    """
+
 
 #: Terminal statuses that are never re-enqueued. ``succeeded`` is terminal
 #: success; ``cancelled`` is a deliberate user decision; ``denied`` is a ZAF
@@ -247,44 +271,100 @@ def execute_claimed_task(
                 decision=exc.decision, severity="HIGH", correlation_id=corr)
         return {"status": "denied", "reason": exc.reason}
 
-    try:
-        handle = adapter.execute(agent["identity"], payload)
-        # Wall-clock deadline measured from the start of streamed execution
-        # (AC 6.1). A missing/non-positive budget means no deadline is imposed.
-        timeout_seconds = task.get("timeout_seconds")
-        deadline = (
-            clock() + timeout_seconds
-            if timeout_seconds and timeout_seconds > 0
-            else None
-        )
-        for chunk in handle.stream():
-            if chunk.channel in ("stdout", "stderr") and chunk.data:
-                collected.append(chunk.data)
-            if cancel_probe(task_id):
-                handle.cancel()
-                repo.complete(tenant_id, task_id, "cancelled", {"output": "".join(collected)})
-                es.emit(events_repo, tenant_id, "task.cancelled", "worker",
-                        agent_id=agent["identity"], execution_id=task["task_ref"], correlation_id=corr)
-                return {"status": "cancelled", "output": "".join(collected)}
-            if deadline is not None and clock() >= deadline:
-                # Deadline reached before completion: cancel the handle and
-                # set the task to the timed_out terminal (AC 6.2). timed_out is
-                # a non-success terminal so bounded retry applies (Req 6.3/6.4).
-                handle.cancel()
-                extra = _finalize_terminal(
-                    repo, tenant_id, task_id, "timed_out",
-                    {"error": "deadline exceeded", "output": "".join(collected)},
-                    reason="deadline exceeded")
-                es.emit(events_repo, tenant_id, "task.timed_out", "worker",
-                        agent_id=agent["identity"], execution_id=task["task_ref"],
-                        severity="MEDIUM", correlation_id=corr)
-                return {"status": "timed_out", "output": "".join(collected), **extra}
-            # Renew the lease between stream reads so the reaper never reclaims a
-            # task this worker is actively processing (Req 6.5).
-            _maybe_heartbeat()
-        result = handle.result()
-    except Exception as exc:  # noqa: BLE001 - adapter errors are terminal for the attempt
+    # Wall-clock deadline measured from the start of streamed execution
+    # (AC 6.1). A missing/non-positive budget means no deadline is imposed —
+    # the same branch as before, now expressed as the policy's ``timeout``
+    # (``None`` => no wall-clock bound).
+    timeout_seconds = task.get("timeout_seconds")
+    policy_timeout = (
+        timeout_seconds if (timeout_seconds and timeout_seconds > 0) else None
+    )
+
+    # The streamed attempt is expressed as the policy's ``op``. It owns the
+    # adapter handle and performs the per-chunk cancel/deadline checks and the
+    # ``handle.cancel()`` side effect exactly as the inline loop did; it signals
+    # the two early terminals to the policy by raising the cooperative-cancel /
+    # deadline sentinels so the returned ``Outcome`` carries CANCELLED /
+    # TIMED_OUT. All event emission and ``_finalize_terminal`` routing stay in
+    # the worker below so the observable behavior is unchanged.
+    #
+    # Mapping notes (behavior-equivalent, R1.8/R6.2):
+    #   * ``max_attempts=1`` — ``execute_claimed_task`` performs exactly one
+    #     attempt; bounded retry lives OUTSIDE this call in the task store's
+    #     ``reenqueue_or_finalize`` (via ``_finalize_terminal``), so the policy
+    #     must never retry internally.
+    #   * The cancel probe is consulted via a direct ``cancel_probe(task_id)``
+    #     call inside the op (not through the token's probe) so the exact
+    #     sequence and count of probe calls — the pre-start check plus one per
+    #     stream read — is preserved bit-for-bit.
+    #   * The op re-raises an adapter exception unchanged; ``is_transient`` is a
+    #     constant ``False`` so the policy classifies every adapter error as a
+    #     deterministic terminal FAILED after exactly one attempt, matching the
+    #     prior single-attempt ``except Exception`` path.
+    def _op(_token: CancelToken):
+        try:
+            handle = adapter.execute(agent["identity"], payload)
+            deadline = (
+                clock() + policy_timeout if policy_timeout is not None else None
+            )
+            for chunk in handle.stream():
+                if chunk.channel in ("stdout", "stderr") and chunk.data:
+                    collected.append(chunk.data)
+                if cancel_probe(task_id):
+                    handle.cancel()
+                    raise _PolicyCancelled()
+                if deadline is not None and clock() >= deadline:
+                    # Deadline reached before completion: cancel the handle and
+                    # signal the timed_out terminal (AC 6.2).
+                    handle.cancel()
+                    raise _PolicyDeadline()
+                # Renew the lease between stream reads so the reaper never
+                # reclaims a task this worker is actively processing (Req 6.5).
+                _maybe_heartbeat()
+            return handle.result()
+        except (_PolicyCancelled, _PolicyDeadline):
+            # Our own deliberate cancel/deadline signals — let the policy map
+            # them to the CANCELLED / TIMED_OUT terminals.
+            raise
+        except Exception as exc:  # noqa: BLE001 - any adapter error is terminal
+            # Wrap so the policy cannot mis-classify a bare adapter TimeoutError
+            # as a timeout; it stays the deterministic ``failed`` terminal the
+            # prior ``except Exception`` block produced.
+            raise _AdapterError() from exc
+
+    outcome = run_with_policy(
+        _op,
+        timeout=policy_timeout,
+        max_attempts=1,
+        is_transient=lambda _exc: False,
+        cancel_token=CancelToken(),
+        clock=clock,
+    )
+
+    if outcome.status is OutcomeStatus.CANCELLED:
+        repo.complete(tenant_id, task_id, "cancelled", {"output": "".join(collected)})
+        es.emit(events_repo, tenant_id, "task.cancelled", "worker",
+                agent_id=agent["identity"], execution_id=task["task_ref"], correlation_id=corr)
+        return {"status": "cancelled", "output": "".join(collected)}
+
+    if outcome.status is OutcomeStatus.TIMED_OUT:
+        # timed_out is a non-success terminal so bounded retry applies (Req 6.3/6.4).
+        extra = _finalize_terminal(
+            repo, tenant_id, task_id, "timed_out",
+            {"error": "deadline exceeded", "output": "".join(collected)},
+            reason="deadline exceeded")
+        es.emit(events_repo, tenant_id, "task.timed_out", "worker",
+                agent_id=agent["identity"], execution_id=task["task_ref"],
+                severity="MEDIUM", correlation_id=corr)
+        return {"status": "timed_out", "output": "".join(collected), **extra}
+
+    if outcome.status is OutcomeStatus.FAILED:
         # Adapter error is a non-success terminal → bounded retry (Req 6.3/6.4).
+        # Unwrap the adapter wrapper so the recorded ``type(exc).__name__: exc``
+        # matches the prior ``except Exception`` behavior bit-for-bit.
+        exc = outcome.error
+        if isinstance(exc, _AdapterError) and exc.__cause__ is not None:
+            exc = exc.__cause__
         extra = _finalize_terminal(
             repo, tenant_id, task_id, "failed",
             {"error": f"{type(exc).__name__}: {exc}"},
@@ -294,6 +374,7 @@ def execute_claimed_task(
                 action={"error": str(exc)}, severity="MEDIUM", correlation_id=corr)
         return {"status": "failed", "error": str(exc), **extra}
 
+    result = outcome.value
     status = "succeeded" if result.success else "failed"
     # succeeded → recorded directly; failed → routed through bounded retry.
     extra = _finalize_terminal(

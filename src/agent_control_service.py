@@ -5,7 +5,36 @@ property-testable without Flask: serialize discovered containers to the
 API contract and aggregate across managed servers with per-server error
 indicators. Mirrors the surface-agnostic style of TemplateDeployService /
 SandboxManager.
+
+Phase 4 hardening (R5) adds two surface-agnostic capabilities alongside the
+inventory logic, both with their collaborators injected so they are unit-
+testable without live Docker, PostgreSQL, or SSH (R5.9):
+
+* :func:`actuate` — live start/stop/restart of a container. It builds the
+  docker argv and dispatches through the hardened ``ssh_utils`` argv transport;
+  the ``ssh`` callable is injected so command-building and server-selection are
+  testable with a fake runner (R5.6, R5.9).
+* :func:`scan_live_parallel` — the parallel counterpart of :func:`scan_live`.
+  It fans ``collect(server)`` out across a thread pool with a per-server
+  deadline so one slow/unreachable server costs at most that deadline rather
+  than serializing the whole scan (R5.7). The serial :func:`scan_live` is kept
+  unchanged for back-compat; both share :func:`serialize_container`.
 """
+
+from concurrent.futures import ThreadPoolExecutor
+
+# Allowed actuation verbs and the docker argv each one builds (Req 5.6). The
+# container reference is appended at dispatch time.
+_ACTUATE_ACTIONS = ("start", "stop", "restart")
+
+# Default per-container actuation timeout (seconds), matching the SSH container
+# default used by the hardened ssh_utils transport (Req 5.6).
+ACTUATE_TIMEOUT_DEFAULT = 120
+
+# Parallel-scan defaults (Req 5.7). A conservative worker cap and a per-server
+# deadline so one slow/unreachable server never serializes the scan.
+SCAN_MAX_WORKERS_DEFAULT = 8
+SCAN_PER_SERVER_DEADLINE_DEFAULT = 10.0
 
 # Required per-container fields in the API contract (Req 4.4).
 CONTAINER_FIELDS = (
@@ -126,16 +155,165 @@ def scan_live(servers, collect, classify, owner_for=None):
         if error:
             errors.append({"server_id": server.get("id"), "error": error})
             continue  # no containers from an unreachable server (Req 4.6)
-        for obs in (observations or []):
-            result = classify(obs)
-            merged = dict(obs)
-            merged["server_name"] = server.get("server_name")
-            merged["classification"] = result["classification"]
-            merged["confidence_score"] = result["score"]
-            merged["classification_evidence"] = result.get("evidence", [])
-            owner = owner_for(merged) if owner_for else None
-            containers.append(serialize_container(merged, owner=owner))
+        containers.extend(
+            _serialize_observations(server, observations, classify, owner_for)
+        )
     return {"success": True, "containers": containers, "errors": errors}
+
+
+def _serialize_observations(server, observations, classify, owner_for):
+    """Classify + serialize one server's observations (shared by both scans).
+
+    Factored out of :func:`scan_live` so the serial and parallel paths produce
+    identical per-container output from the same inputs. Returns a list of
+    serialized container dicts (empty when there are no observations).
+    """
+    serialized = []
+    for obs in (observations or []):
+        result = classify(obs)
+        merged = dict(obs)
+        merged["server_name"] = server.get("server_name")
+        merged["classification"] = result["classification"]
+        merged["confidence_score"] = result["score"]
+        merged["classification_evidence"] = result.get("evidence", [])
+        owner = owner_for(merged) if owner_for else None
+        serialized.append(serialize_container(merged, owner=owner))
+    return serialized
+
+
+def scan_live_parallel(
+    servers,
+    collect,
+    classify,
+    owner_for=None,
+    *,
+    max_workers=SCAN_MAX_WORKERS_DEFAULT,
+    per_server_deadline=SCAN_PER_SERVER_DEADLINE_DEFAULT,
+    executor_factory=ThreadPoolExecutor,
+):
+    """Parallel live scan with a per-server deadline (Req 5.7, 5.9).
+
+    Fans ``collect(server)`` out across a thread pool and waits on each future
+    with ``future.result(timeout=per_server_deadline)`` so one slow or
+    unreachable server costs at most ``per_server_deadline`` rather than
+    serializing the whole scan. Reachable servers' containers are aggregated;
+    every server that errors, times out, or raises contributes **no** containers
+    and records a ``{"server_id", "error"}`` entry — exactly the serial error
+    path's contract (Req 4.6). Results are aggregated in the input server order
+    so the payload is deterministic regardless of completion order.
+
+    servers: list of server dicts ({'id','server_ip','server_name', ...}).
+    collect: callable(server) -> (observations, error|None)  (collector).
+    classify: callable(observation) -> {'classification','score','evidence'}.
+    owner_for: optional callable(merged) -> owner dict|None (Req 2.2, 2.4).
+    max_workers: thread-pool size cap.
+    per_server_deadline: wall-clock budget (seconds) for a single server's
+        ``collect``; exceeding it records a per-server timeout error.
+    executor_factory: injected so the fan-out/deadline/aggregation is unit-
+        testable with a fake executor and a fake slow collector (no SSH).
+
+    Returns the same envelope shape as :func:`scan_live`:
+    ``{"success": True, "containers": [...], "errors": [...]}``.
+    """
+    server_list = list(servers or [])
+    if not server_list:
+        return {"success": True, "containers": [], "errors": []}
+
+    # Keep each server's slot so results aggregate in input order regardless of
+    # the order futures complete. Each slot holds (containers, error_or_None).
+    results = [None] * len(server_list)
+    workers = max(1, min(int(max_workers), len(server_list)))
+
+    executor = executor_factory(max_workers=workers)
+    try:
+        futures = {}
+        for index, server in enumerate(server_list):
+            futures[executor.submit(collect, server)] = index
+
+        for future, index in futures.items():
+            server = server_list[index]
+            try:
+                observations, error = future.result(timeout=per_server_deadline)
+            except Exception as exc:  # noqa: BLE001 - any failure -> per-server error
+                # A timeout or collector exception for one server is isolated:
+                # it contributes no containers and records a per-server error,
+                # mirroring the serial unreachable-server path (Req 4.6).
+                results[index] = ([], str(exc) or exc.__class__.__name__)
+                continue
+
+            if error:
+                results[index] = ([], error)
+                continue
+
+            serialized = _serialize_observations(
+                server, observations, classify, owner_for
+            )
+            results[index] = (serialized, None)
+    finally:
+        # Do not block on stragglers: a server still running past its deadline
+        # must not extend the total wait (the whole point of the per-server
+        # deadline, R5.7). Shut the pool down without waiting and cancel any
+        # not-yet-started work. ``cancel_futures`` is Python 3.9+; fall back to
+        # a plain non-blocking shutdown on older runtimes.
+        try:
+            executor.shutdown(wait=False, cancel_futures=True)
+        except TypeError:  # pragma: no cover - Python < 3.9
+            executor.shutdown(wait=False)
+
+    containers, errors = [], []
+    for index, server in enumerate(server_list):
+        slot = results[index]
+        if slot is None:
+            # Defensive: a future that never produced a slot is treated as an
+            # unreachable server rather than silently dropped.
+            errors.append({"server_id": server.get("id"), "error": "no result"})
+            continue
+        slot_containers, slot_error = slot
+        if slot_error:
+            errors.append({"server_id": server.get("id"), "error": slot_error})
+            continue
+        containers.extend(slot_containers)
+
+    return {"success": True, "containers": containers, "errors": errors}
+
+
+def actuate(server_ip, container_ref, action, *, ssh=None, timeout=ACTUATE_TIMEOUT_DEFAULT):
+    """Live start/stop/restart of a container on a managed server (Req 5.6, 5.9).
+
+    Builds the docker argv for ``action`` and dispatches it through the injected
+    ``ssh`` callable (defaulting to the hardened
+    :func:`src.ssh_utils.ssh_execute_argv`). ``ssh`` is injected so the
+    command-building and server-selection logic is unit-testable with a fake
+    runner, without live Docker or SSH (R5.9).
+
+    server_ip: IP address of the target server.
+    container_ref: container id or name to act on.
+    action: one of ``"start"``, ``"stop"``, ``"restart"``.
+    ssh: callable(server_ip, argv, timeout=...) -> (success, stdout, stderr).
+        Defaults to :func:`src.ssh_utils.ssh_execute_argv` (resolved lazily so
+        importing this module never requires the SSH stack).
+    timeout: per-command timeout (seconds).
+
+    Returns the ``(success, stdout, stderr)`` tuple from ``ssh`` so callers get
+    the same contract as the rest of the remote-execution surface.
+
+    Raises ``ValueError`` for an unsupported action or a blank container
+    reference so a bad request fails fast rather than building a broken argv.
+    """
+    if action not in _ACTUATE_ACTIONS:
+        raise ValueError(
+            f"Unsupported actuation action: {action!r} "
+            f"(expected one of {_ACTUATE_ACTIONS})"
+        )
+    ref = (container_ref or "").strip() if isinstance(container_ref, str) else container_ref
+    if not ref:
+        raise ValueError("container_ref must be a non-empty container id or name")
+
+    if ssh is None:
+        from .ssh_utils import ssh_execute_argv as ssh  # lazy: no SSH import cost
+
+    argv = ["docker", action, ref]
+    return ssh(server_ip, argv, timeout=timeout)
 
 
 def build_deployments_index(rows):

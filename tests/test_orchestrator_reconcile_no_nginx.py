@@ -53,9 +53,20 @@ def _make_fake_db(service_rows):
         def __init__(self, rows):
             self._rows = rows
             self.executed = []
+            self._last_sql = ""
 
         def execute(self, sql, *args):
             self.executed.append(sql)
+            self._last_sql = sql
+
+        def fetchone(self):
+            # The reconcile loop wraps each pass in a non-blocking advisory lock
+            # (pg_try_advisory_lock) and releases it (pg_advisory_unlock); both
+            # issue a single-row SELECT. Return a truthy acquired result so the
+            # fake process always "wins" the try-lock and runs the pass.
+            if "pg_try_advisory_lock" in self._last_sql:
+                return (True,)
+            return (1,)
 
         def fetchall(self):
             # The reconcile loop issues a single SELECT then fetchall(); return

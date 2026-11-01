@@ -1,4 +1,18 @@
-"""Serverless Docker Execution Service - Configuration"""
+"""Serverless Docker Execution Service - Configuration
+
+Configuration keys consumed by the serverless worker (Phase 4):
+
+* ``max_concurrent_jobs`` (R5.4) — upper bound on serverless jobs executing
+  simultaneously for a worker. ``ServerlessWorker`` reads this as the default
+  for its ``max_concurrent`` cap and defers claiming new work while
+  ``in_flight >= max_concurrent_jobs``.
+* ``db_pool_min_conn`` / ``db_pool_max_conn`` (R5.5) — sizing for the worker's
+  pooled PostgreSQL access (``_WorkerConnectionPool`` /
+  ``psycopg2.pool.ThreadedConnectionPool``). Surfaced here so the pool bounds
+  are documented and configurable in one place. The defaults (``1`` / ``10``)
+  are behavior-identical to the pool's existing hardcoded defaults, so exposing
+  them changes nothing unless an operator overrides them.
+"""
 
 SERVERLESS_CONFIG = {
     'registry_whitelist': [
@@ -16,6 +30,10 @@ SERVERLESS_CONFIG = {
     'container_stop_timeout': 10,
     'warm_pool_enabled': False,
     'warm_pool_size': 0,
+    # Pooled DB access sizing (R5.5). Defaults match the worker pool's existing
+    # minconn=1/maxconn=10 so surfacing them is behavior-neutral.
+    'db_pool_min_conn': 1,
+    'db_pool_max_conn': 10,
 }
 
 
