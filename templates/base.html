@@ -18,31 +18,31 @@
                         <div class="nav-dropdown">
                             <a href="javascript:void(0)" class="nav-dropdown-btn" id="navApps" onclick="toggleNavDropdown('apps')">{{ get_text('applications') }} ▼</a>
                             <div class="nav-dropdown-content" id="navAppsDropdown">
-                                <a href="javascript:void(0)" onclick="showTab('apps')" id="navAppsDashboard">📊 {{ get_text('am_dashboard') }}</a>
-                                <a href="javascript:void(0)" onclick="showTab('agentControl')" id="navAgentControl">📦 {{ get_text('control_of_applications') }}</a>
+                                <a href="javascript:void(0)" onclick="showTab('apps')" id="navAppsDashboard">{{ get_text('am_dashboard') }}</a>
+                                <a href="javascript:void(0)" onclick="showTab('agentControl')" id="navAgentControl">{{ get_text('control_of_applications') }}</a>
                                 {% if username == 'admin' %}
-                                <a href="javascript:void(0)" onclick="showTab('appManagement')" id="navAppManagement">📱 {{ get_text('applications_management') }}</a>
-                                <a href="javascript:void(0)" onclick="showTab('orchestrator')" id="navAppOrchestrator">🎯 {{ get_text('applications_orchestrator') }}</a>
-                                <a href="javascript:void(0)" onclick="showTab('deployments')" id="navDeployments">🚀 {{ get_text('deployments_management') }}</a>
+                                <a href="javascript:void(0)" onclick="showTab('appManagement')" id="navAppManagement">{{ get_text('applications_management') }}</a>
+                                <a href="javascript:void(0)" onclick="showTab('orchestrator')" id="navAppOrchestrator">{{ get_text('applications_orchestrator') }}</a>
+                                <a href="javascript:void(0)" onclick="showTab('deployments')" id="navDeployments">{{ get_text('deployments_management') }}</a>
                                 {% endif %}
                             </div>
                         </div>
                         <div class="nav-dropdown">
-                            <a href="javascript:void(0)" class="nav-dropdown-btn" id="navAgents" onclick="toggleNavDropdown('agents')">🛰️ {{ get_text('agents') }} ▼</a>
+                            <a href="javascript:void(0)" class="nav-dropdown-btn" id="navAgents" onclick="toggleNavDropdown('agents')">{{ get_text('agents') }} ▼</a>
                             <div class="nav-dropdown-content" id="navAgentsDropdown">
-                                <a href="javascript:void(0)" onclick="showTab('agentManagement')" id="navAgentManagement">🛰️ {{ get_text('agent_management') }}</a>
-                                <a href="javascript:void(0)" onclick="openAgentInstances()" id="navAgentInstances">🤖 {{ get_text('am_instances') }}</a>
-                                <a href="javascript:void(0)" onclick="openAgentPanel('tasks')" id="navAgentTasks">📋 {{ get_text('am_tasks') }}</a>
-                                <a href="javascript:void(0)" onclick="openAgentPanel('observability')" id="navAgentObservability">📡 {{ get_text('am_observability') }}</a>
+                                <a href="javascript:void(0)" onclick="showTab('agentManagement')" id="navAgentManagement">{{ get_text('agent_management') }}</a>
+                                <a href="javascript:void(0)" onclick="openAgentInstances()" id="navAgentInstances">{{ get_text('am_instances') }}</a>
+                                <a href="javascript:void(0)" onclick="openAgentPanel('tasks')" id="navAgentTasks">{{ get_text('am_tasks') }}</a>
+                                <a href="javascript:void(0)" onclick="openAgentPanel('observability')" id="navAgentObservability">{{ get_text('am_observability') }}</a>
                             </div>
                         </div>
-                        <a href="javascript:void(0)" onclick="showTab('orchestratorServerless')" id="navOrchestratorServerless">🚀 Serverless</a>
+                        <a href="javascript:void(0)" onclick="showTab('orchestratorServerless')" id="navOrchestratorServerless">Serverless</a>
                         <div class="nav-dropdown">
-                            <a href="javascript:void(0)" class="nav-dropdown-btn" id="navTooling" onclick="toggleNavDropdown('tooling')">🛠️ {{ get_text('tooling') }} ▼</a>
+                            <a href="javascript:void(0)" class="nav-dropdown-btn" id="navTooling" onclick="toggleNavDropdown('tooling')">{{ get_text('tooling') }} ▼</a>
                             <div class="nav-dropdown-content" id="navToolingDropdown">
-                                <a href="javascript:void(0)" onclick="showTab('sandbox')" id="navSandbox">🧪 {{ get_text('sandbox') }}</a>
-                                <a href="javascript:void(0)" onclick="showTab('marketplace')" id="navMarketplace">🛒 {{ get_text('marketplace') }}</a>
-                                <a href="javascript:void(0)" onclick="showTab('billing')" id="navBilling">💳 {{ get_text('billing') }}</a>
+                                <a href="javascript:void(0)" onclick="showTab('sandbox')" id="navSandbox">{{ get_text('sandbox') }}</a>
+                                <a href="javascript:void(0)" onclick="showTab('marketplace')" id="navMarketplace">{{ get_text('marketplace') }}</a>
+                                <a href="javascript:void(0)" onclick="showTab('billing')" id="navBilling">{{ get_text('billing') }}</a>
                             </div>
                         </div>
                         <a href="javascript:void(0)" onclick="showTab('security')" id="navSecurity">🔐</a>
@@ -50,10 +50,10 @@
                         <div class="nav-dropdown">
                             <a href="javascript:void(0)" class="nav-dropdown-btn" onclick="toggleNavDropdown('config')">{{ get_text('configuration') }} ▼</a>
                             <div class="nav-dropdown-content" id="navConfigDropdown">
-                                <a href="javascript:void(0)" onclick="showTab('users')">👥 {{ get_text('user_management') }}</a>
-                                <a href="javascript:void(0)" onclick="showTab('servers')">🖥️ {{ get_text('server_management') }}</a>
-                                <a href="javascript:void(0)" onclick="showTab('database')">🗄️ {{ get_text('database_management') }}</a>
-                                <a href="javascript:void(0)" onclick="showTab('settings')">⚙️ Settings</a>
+                                <a href="javascript:void(0)" onclick="showTab('users')">{{ get_text('user_management') }}</a>
+                                <a href="javascript:void(0)" onclick="showTab('servers')">{{ get_text('server_management') }}</a>
+                                <a href="javascript:void(0)" onclick="showTab('database')">{{ get_text('database_management') }}</a>
+                                <a href="javascript:void(0)" onclick="showTab('settings')">Settings</a>
                             </div>
                         </div>
                         {% endif %}
@@ -101,27 +101,27 @@
                 {% if session.user_id %}
                     {% if username %}<span class="nav-user">{{ get_text('welcome') }}, {{ username }}</span>{% endif %}
                     <span class="mobile-nav-group-label">{{ get_text('applications') }}</span>
-                    <a href="javascript:void(0)" onclick="showTab('apps')">📊 {{ get_text('am_dashboard') }}</a>
-                    <a href="javascript:void(0)" onclick="showTab('agentControl')">📦 {{ get_text('control_of_applications') }}</a>
+                    <a href="javascript:void(0)" onclick="showTab('apps')">{{ get_text('am_dashboard') }}</a>
+                    <a href="javascript:void(0)" onclick="showTab('agentControl')">{{ get_text('control_of_applications') }}</a>
                     {% if username == 'admin' %}
-                    <a href="javascript:void(0)" onclick="showTab('appManagement')">📱 {{ get_text('applications_management') }}</a>
-                    <a href="javascript:void(0)" onclick="showTab('orchestrator')">🎯 {{ get_text('applications_orchestrator') }}</a>
-                    <a href="javascript:void(0)" onclick="showTab('deployments')">🚀 {{ get_text('deployments_management') }}</a>
+                    <a href="javascript:void(0)" onclick="showTab('appManagement')">{{ get_text('applications_management') }}</a>
+                    <a href="javascript:void(0)" onclick="showTab('orchestrator')">{{ get_text('applications_orchestrator') }}</a>
+                    <a href="javascript:void(0)" onclick="showTab('deployments')">{{ get_text('deployments_management') }}</a>
                     {% endif %}
-                    <span class="mobile-nav-group-label">🛰️ {{ get_text('agents') }}</span>
-                    <a href="javascript:void(0)" onclick="showTab('agentManagement')">🛰️ {{ get_text('agent_management') }}</a>
-                    <a href="javascript:void(0)" onclick="showTab('orchestratorServerless')">🚀 Serverless</a>
-                    <span class="mobile-nav-group-label">🛠️ {{ get_text('tooling') }}</span>
-                    <a href="javascript:void(0)" onclick="showTab('sandbox')">🧪 {{ get_text('sandbox') }}</a>
-                    <a href="javascript:void(0)" onclick="showTab('marketplace')">🛒 {{ get_text('marketplace') }}</a>
-                    <a href="javascript:void(0)" onclick="showTab('billing')">💳 {{ get_text('billing') }}</a>
+                    <span class="mobile-nav-group-label">{{ get_text('agents') }}</span>
+                    <a href="javascript:void(0)" onclick="showTab('agentManagement')">{{ get_text('agent_management') }}</a>
+                    <a href="javascript:void(0)" onclick="showTab('orchestratorServerless')">Serverless</a>
+                    <span class="mobile-nav-group-label">{{ get_text('tooling') }}</span>
+                    <a href="javascript:void(0)" onclick="showTab('sandbox')">{{ get_text('sandbox') }}</a>
+                    <a href="javascript:void(0)" onclick="showTab('marketplace')">{{ get_text('marketplace') }}</a>
+                    <a href="javascript:void(0)" onclick="showTab('billing')">{{ get_text('billing') }}</a>
                     <a href="javascript:void(0)" onclick="showTab('security')">🔐 {{ get_text('account_security') }}</a>
                     {% if username == 'admin' %}
                     <span class="mobile-nav-group-label">{{ get_text('configuration') }}</span>
-                    <a href="javascript:void(0)" onclick="showTab('users')">👥 {{ get_text('user_management') }}</a>
-                    <a href="javascript:void(0)" onclick="showTab('servers')">🖥️ {{ get_text('server_management') }}</a>
-                    <a href="javascript:void(0)" onclick="showTab('database')">🗄️ {{ get_text('database_management') }}</a>
-                    <a href="javascript:void(0)" onclick="showTab('settings')">⚙️ Settings</a>
+                    <a href="javascript:void(0)" onclick="showTab('users')">{{ get_text('user_management') }}</a>
+                    <a href="javascript:void(0)" onclick="showTab('servers')">{{ get_text('server_management') }}</a>
+                    <a href="javascript:void(0)" onclick="showTab('database')">{{ get_text('database_management') }}</a>
+                    <a href="javascript:void(0)" onclick="showTab('settings')">Settings</a>
                     {% endif %}
                     <a href="{{ url_for('main.view_doc', filename='ARCHITECTURE_GUIDE.md') }}">Architecture Guide</a>
                     <a href="{{ url_for('main.view_doc', filename='DEPLOYMENT_GUIDE.md') }}">Deployment Guide</a>

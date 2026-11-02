@@ -2218,14 +2218,14 @@ async function triggerAgentLifecycle(agentId, op) {
  * Connect to an agent's live activity.
  *
  * 'Connect' is a read-only view: this system has no interactive attach/shell.
- * Connecting opens the agent's unified event feed (the same events the SSE
- * task stream and the Observability panel surface) and renders it as a live,
- * auto-refreshing log panel below the Instances table. It performs NO
- * lifecycle transition. Implemented with an EventSource against the agent's
- * observability timeline when available, falling back to a polled fetch of
- * the events endpoint filtered by agent id so it works even where SSE is not
- * proxied. Plain top-level declaration so the inline onclick resolves it;
- * exported for the jsdom harness.
+ * Connecting opens the agent's unified event feed (the same events the
+ * Observability panel surfaces) and renders it as a live, auto-refreshing log
+ * panel below the Instances table. It performs NO lifecycle transition.
+ * The platform exposes agent events only as a plain JSON endpoint
+ * (GET /api/v1/observability/events?agent_id=...), with no agent-level SSE
+ * stream, so 'live' is implemented by polling that endpoint on an interval
+ * and re-rendering. Plain top-level declaration so the inline onclick resolves
+ * it; exported for the jsdom harness.
  *
  * @param {number|string} agentId - the agent's id.
  * @returns {void}
@@ -2238,24 +2238,20 @@ function connectAgent(agentId) {
     const fb = document.getElementById('amInstancesFeedback');
     if (!fb) return;
 
-    // Render a dedicated live-stream panel with a Close control. The log body
-    // is appended to; all server-provided text is HTML-escaped on write.
+    // Tear down any previous live view before opening a new one.
+    disconnectAgent();
+
+    // Render a dedicated live-activity panel with a Close control. The log
+    // body is replaced on each refresh; all server text is HTML-escaped on
+    // write (textContent).
     fb.innerHTML =
         '<div id="amConnectPanel" style="margin-top:8px; border:1px solid #b8daff; border-radius:5px; background:#f8fbff;">'
         + '<div style="display:flex; justify-content:space-between; align-items:center; padding:6px 10px; background:#eef6ff;">'
         + '<strong>' + escapeHtml('Live activity \u2014 agent #' + id) + '</strong>'
         + '<button type="button" onclick="disconnectAgent()">Close</button></div>'
         + '<div id="amConnectLog" style="max-height:240px; overflow:auto; padding:8px 10px; font-family:monospace; font-size:12px;">'
-        + escapeHtml('Connecting to live activity stream...') + '</div></div>';
+        + escapeHtml('Loading activity...') + '</div></div>';
 
-    const logEl = document.getElementById('amConnectLog');
-    const append = function (line) {
-        if (!logEl) return;
-        const row = document.createElement('div');
-        row.textContent = String(line);  // textContent escapes implicitly
-        logEl.appendChild(row);
-        logEl.scrollTop = logEl.scrollHeight;
-    };
     const fmt = function (ev) {
         const e = ev || {};
         const when = e.occurred_at || e.decided_at || '';
@@ -2264,41 +2260,53 @@ function connectAgent(agentId) {
         return '[' + when + '] ' + type + (extra ? ' - ' + extra : '');
     };
 
-    // Prefer a native EventSource (true SSE, no polling) when the browser
-    // supports it; otherwise degrade to a single fetch of recent events.
-    if (typeof EventSource !== 'undefined') {
-        try {
-            if (window.__amConnectSource) { window.__amConnectSource.close(); }
-            const src = new EventSource('/api/v1/observability/events?agent_id=' + id + '&stream=1');
-            window.__amConnectSource = src;
-            if (logEl) logEl.textContent = '';
-            src.onmessage = function (m) {
-                try { append(fmt(JSON.parse(m.data))); } catch (e) { append(m.data); }
-            };
-            src.onerror = function () {
-                append('Live stream ended.');
-                src.close();
-                if (window.__amConnectSource === src) window.__amConnectSource = null;
-            };
+    // The platform exposes agent events as a plain JSON endpoint (there is no
+    // agent-level SSE stream), so 'live' here means polling that endpoint on an
+    // interval and re-rendering the recent events. This avoids the broken
+    // EventSource connection to a non-streaming URL. The interval id is kept
+    // on window so disconnectAgent() can stop it; a guard flag prevents
+    // overlapping in-flight refreshes.
+    let inFlight = false;
+    const refresh = async function () {
+        const logEl = document.getElementById('amConnectLog');
+        // If the panel was closed/removed, stop polling.
+        if (!logEl) { disconnectAgent(); return; }
+        if (inFlight) return;
+        inFlight = true;
+        const data = await amGet('/api/v1/observability/events?agent_id=' + id + '&limit=100');
+        inFlight = false;
+        // The panel may have been closed while the request was in flight.
+        const el = document.getElementById('amConnectLog');
+        if (!el) return;
+        if (data && data.__error) {
+            el.textContent = 'Could not load activity (' + String(data.__error) + ').';
             return;
-        } catch (e) { /* fall through to the polled fallback */ }
-    }
-
-    // Fallback: one-shot fetch of the recent events for this agent.
-    amGet('/api/v1/observability/events?agent_id=' + id + '&limit=100').then(function (data) {
-        if (logEl) logEl.textContent = '';
-        if (data && data.__error) { append('Could not open the live activity stream.'); return; }
+        }
         const events = (data && data.events) || [];
-        if (events.length === 0) { append('No activity yet.'); return; }
-        events.slice().reverse().forEach(function (ev) { append(fmt(ev)); });
-    });
+        el.textContent = '';
+        if (events.length === 0) {
+            el.textContent = 'No activity yet.';
+            return;
+        }
+        // events are newest-first; show oldest-first for a log feel.
+        events.slice().reverse().forEach(function (ev) {
+            const row = document.createElement('div');
+            row.textContent = fmt(ev);
+            el.appendChild(row);
+        });
+        el.scrollTop = el.scrollHeight;
+    };
+
+    refresh();
+    // Poll every 5s. Guarded so a stuck request never stacks up.
+    window.__amConnectTimer = setInterval(refresh, 5000);
 }
 
-/** Close the live-activity panel and tear down any open EventSource. */
+/** Close the live-activity panel and stop the polling interval. */
 function disconnectAgent() {
-    if (window.__amConnectSource) {
-        try { window.__amConnectSource.close(); } catch (e) { /* ignore */ }
-        window.__amConnectSource = null;
+    if (window.__amConnectTimer) {
+        try { clearInterval(window.__amConnectTimer); } catch (e) { /* ignore */ }
+        window.__amConnectTimer = null;
     }
     const panel = document.getElementById('amConnectPanel');
     if (panel && panel.parentNode) panel.parentNode.removeChild(panel);
