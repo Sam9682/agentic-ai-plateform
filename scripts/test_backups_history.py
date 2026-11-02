@@ -11,7 +11,7 @@ import json
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.database_postgres import DatabaseManager
+from src.database_postgres import db_manager
 
 def test_backups_history():
     """Test backups_history functionality"""
@@ -19,8 +19,6 @@ def test_backups_history():
     print("=" * 60)
     print("Testing Backups History Feature")
     print("=" * 60)
-    
-    db_manager = DatabaseManager()
     
     # Test 1: Check if backups_history column exists
     print("\n[Test 1] Checking if backups_history column exists...")

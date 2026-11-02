@@ -299,7 +299,11 @@ def api_request_dev_ai_for_app():
         return jsonify({'error': 'Authentication required'}), 401
 
     data = request.get_json()
-    message = data.get('message', '').strip()
+    # Judge emptiness against the raw, un-stripped message. Python's str.strip()
+    # treats valid-but-unusual unicode (e.g. NEL \x85) as whitespace and would
+    # collapse such a message to empty, rejecting it with a spurious early 400.
+    raw_message = data.get('message', '')
+    message = raw_message
     application_name = data.get('application_name', '')
     application_folder = data.get('application_folder', '')
     detected_action = data.get('action_operation', '')
@@ -321,7 +325,7 @@ def api_request_dev_ai_for_app():
         )
         agentic_command = config_result[0] if config_result else ''
 
-    if not message:
+    if not raw_message:
         return jsonify({'error': 'Message required'}), 400
 
     user_details = db_manager.execute_query(
@@ -500,7 +504,11 @@ def api_request_ops_ai_for_app():
         return jsonify({'error': 'Authentication required'}), 401
 
     data = request.get_json()
-    message = data.get('message', '').strip()
+    # Judge emptiness against the raw, un-stripped message. Python's str.strip()
+    # treats valid-but-unusual unicode (e.g. NEL \x85) as whitespace and would
+    # collapse such a message to empty, rejecting it with a spurious early 400.
+    raw_message = data.get('message', '')
+    message = raw_message
     application_name = data.get('application_name', '')
     application_folder = data.get('application_folder', '')
     detected_action = data.get('action_operation', '')
@@ -522,7 +530,7 @@ def api_request_ops_ai_for_app():
         )
         agentic_command = config_result[0] if config_result else ''
 
-    if not message:
+    if not raw_message:
         return jsonify({'error': 'Message required'}), 400
 
     user_details = db_manager.execute_query(

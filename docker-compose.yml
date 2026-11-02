@@ -96,6 +96,25 @@ services:
   gitea:
     image: gitea/gitea:1.21.3
     container_name: ${PLTF_FOLDER:-agentic-ai-plateform}-gitea
+    # Compose profiles (Phase 6 integration harness).
+    #
+    # The harness-relevant subset is postgres + app + traefik. Those three are
+    # intentionally left WITHOUT a `profiles` key so they remain "always
+    # enabled" (a profile-less service starts for every invocation, whether or
+    # not a profile is active). This keeps them selected by
+    # `docker compose --profile integration up` (the form the harness uses) and
+    # preserves the pre-profiles default `docker compose up` behavior for them.
+    #
+    # gitea is NOT part of the harness subset, so it is placed behind the
+    # `full` profile. `docker compose --profile integration up` therefore brings
+    # up only the harness subset (postgres, app, traefik). To bring up the
+    # complete stack including gitea, activate the `full` profile, e.g.
+    # `docker compose --profile full up` (or combine
+    # `--profile integration --profile full`). This change is additive: no
+    # existing service's profile membership changed except gitea, which is a
+    # non-harness service.
+    profiles:
+      - full
     ports:
       - "3000:3000"
     volumes:

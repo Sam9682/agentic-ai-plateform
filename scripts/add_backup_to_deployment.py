@@ -16,12 +16,10 @@ from datetime import datetime
 # Add parent directory to path to import database manager
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.database_postgres import DatabaseManager
+from src.database_postgres import db_manager
 
 def add_backup_entry(deployment_id, backup_file, s3_location, backup_size=None, server_ip=None, user_id=None):
     """Add a backup entry to deployment's backups_history"""
-    
-    db_manager = DatabaseManager()
     
     try:
         # Create backup entry
