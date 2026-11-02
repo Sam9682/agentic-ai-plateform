@@ -1,0 +1,104 @@
+# pyproject.toml - packaging for `uv tool install`
+#
+# Install directly from the repository with uv, which builds a wheel and exposes
+# the console scripts below as standalone commands on your PATH:
+#
+#   uv tool install git+https://github.com/Sam9682/agentic-ai-plateform
+#   # or, from a local checkout:
+#   uv tool install .
+#
+# Exposed commands:
+#   agentic-ai-plateform   -> runs the Flask control-plane app (src.main:main)
+#   aiswautomorph          -> same app entry point (short alias)
+#   aiswautomorph-cli      -> the Click admin CLI (controller_cli:cli)
+#
+# The runtime imports modules under the top-level `src` package (e.g.
+# `from src.ControlPlanFlaskApp_postgres import create_app`), so the build
+# packages `src` as an importable top-level package and ships the admin CLI as a
+# top-level `controller_cli` module.
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agentic-ai-plateform"
+version = "0.0.2"
+description = "Centralized application deployment and management platform for humans and GenAI agents (Agentic-AI-Powered Store / AI-SwAutoMorph)."
+readme = "README.md"
+license = { file = "LICENSE.txt" }
+requires-python = ">=3.10"
+authors = [{ name = "SoftFluid" }]
+keywords = ["genai", "agents", "deployment", "orchestration", "flask", "mcp"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Framework :: Flask",
+    "Operating System :: POSIX :: Linux",
+]
+
+# Runtime dependencies (mirrors requirements.txt; pytest/hypothesis moved to the
+# optional `dev` group below since they are test-only, not runtime deps).
+dependencies = [
+    "Flask",
+    "Werkzeug",
+    "click",
+    "requests",
+    "Flask-CORS",
+    "simple-term-menu",
+    "gunicorn",
+    "psycopg2-binary",
+    "python-dotenv",
+    "pyotp",
+    "PyYAML",
+    "mcp",
+    "cryptography",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "hypothesis",
+]
+
+[project.urls]
+Homepage = "https://github.com/Sam9682/agentic-ai-plateform"
+Repository = "https://github.com/Sam9682/agentic-ai-plateform"
+
+[project.scripts]
+agentic-ai-plateform = "src.main:main"
+aiswautomorph = "src.main:main"
+aiswautomorph-cli = "controller_cli:cli"
+
+# --- Build configuration (hatchling) --------------------------------------
+# Package the `src` tree as the importable top-level `src` package, and ship the
+# standalone admin CLI module so the `aiswautomorph-cli` entry point resolves.
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"scripts/controller_cli.py" = "controller_cli.py"
+
+# Bundle the templates, static assets, config, and docs the app serves at
+# runtime so an installed copy is self-contained.
+[tool.hatch.build.targets.wheel.shared-data]
+"templates" = "share/agentic-ai-plateform/templates"
+"static" = "share/agentic-ai-plateform/static"
+"conf" = "share/agentic-ai-plateform/conf"
+"docs" = "share/agentic-ai-plateform/docs"
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/**",
+    "scripts/controller_cli.py",
+    "templates/**",
+    "static/**",
+    "conf/**",
+    "docs/**",
+    "migration/**",
+    "requirements.txt",
+    "README.md",
+    "LICENSE.txt",
+]

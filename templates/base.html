@@ -23,6 +23,7 @@
                                 {% if username == 'admin' %}
                                 <a href="javascript:void(0)" onclick="showTab('appManagement')" id="navAppManagement">📱 {{ get_text('applications_management') }}</a>
                                 <a href="javascript:void(0)" onclick="showTab('orchestrator')" id="navAppOrchestrator">🎯 {{ get_text('applications_orchestrator') }}</a>
+                                <a href="javascript:void(0)" onclick="showTab('deployments')" id="navDeployments">🚀 {{ get_text('deployments_management') }}</a>
                                 {% endif %}
                             </div>
                         </div>
@@ -51,7 +52,6 @@
                             <div class="nav-dropdown-content" id="navConfigDropdown">
                                 <a href="javascript:void(0)" onclick="showTab('users')">👥 {{ get_text('user_management') }}</a>
                                 <a href="javascript:void(0)" onclick="showTab('servers')">🖥️ {{ get_text('server_management') }}</a>
-                                <a href="javascript:void(0)" onclick="showTab('deployments')">🚀 {{ get_text('deployments_management') }}</a>
                                 <a href="javascript:void(0)" onclick="showTab('database')">🗄️ {{ get_text('database_management') }}</a>
                                 <a href="javascript:void(0)" onclick="showTab('settings')">⚙️ Settings</a>
                             </div>
@@ -106,6 +106,7 @@
                     {% if username == 'admin' %}
                     <a href="javascript:void(0)" onclick="showTab('appManagement')">📱 {{ get_text('applications_management') }}</a>
                     <a href="javascript:void(0)" onclick="showTab('orchestrator')">🎯 {{ get_text('applications_orchestrator') }}</a>
+                    <a href="javascript:void(0)" onclick="showTab('deployments')">🚀 {{ get_text('deployments_management') }}</a>
                     {% endif %}
                     <span class="mobile-nav-group-label">🛰️ {{ get_text('agents') }}</span>
                     <a href="javascript:void(0)" onclick="showTab('agentManagement')">🛰️ {{ get_text('agent_management') }}</a>
@@ -119,7 +120,6 @@
                     <span class="mobile-nav-group-label">{{ get_text('configuration') }}</span>
                     <a href="javascript:void(0)" onclick="showTab('users')">👥 {{ get_text('user_management') }}</a>
                     <a href="javascript:void(0)" onclick="showTab('servers')">🖥️ {{ get_text('server_management') }}</a>
-                    <a href="javascript:void(0)" onclick="showTab('deployments')">🚀 {{ get_text('deployments_management') }}</a>
                     <a href="javascript:void(0)" onclick="showTab('database')">🗄️ {{ get_text('database_management') }}</a>
                     <a href="javascript:void(0)" onclick="showTab('settings')">⚙️ Settings</a>
                     {% endif %}
