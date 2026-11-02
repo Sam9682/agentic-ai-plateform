@@ -1640,6 +1640,22 @@ const AM_PANELS = ['dashboard', 'runtimes', 'instances', 'tasks', 'policies',
  * Show one Agent Management sub-panel and lazily load its content.
  * @param {string} name - panel id suffix (e.g. 'runtimes')
  */
+/**
+ * Deep-link helpers for the Agents nav-menu entries. Each switches to the
+ * Agent Management tab, then opens a specific sub-panel. Declared as plain
+ * globals so the inline onclick handlers in base.html resolve them, and so
+ * they call the runtime-resolved global showTab() defined in dashboard.html.
+ */
+function openAgentPanel(panel) {
+    if (typeof showTab === 'function') showTab('agentManagement');
+    showAmPanel(panel || 'dashboard');
+}
+
+/** Open Agent Management directly on the Instances panel (Start/Stop/Restart/Release/Connect). */
+function openAgentInstances() {
+    openAgentPanel('instances');
+}
+
 function showAmPanel(name) {
     for (const p of AM_PANELS) {
         const el = document.getElementById('amPanel-' + p);
@@ -1776,7 +1792,12 @@ function lifecycleControlState(status) {
     const stop = status === 'RUNNING' || status === 'UNHEALTHY';
     const restart = status === 'RUNNING' || status === 'READY' || status === 'STOPPED'
         || status === 'FAILED' || status === 'UNHEALTHY';
-    return { start, stop, restart };
+    // release is legal only from QUARANTINED -> READY (admin-gated server side).
+    const release = status === 'QUARANTINED';
+    // connect (open the live activity stream) is always available; it is a
+    // read-only view and performs no lifecycle transition.
+    const connect = true;
+    return { start, stop, restart, release, connect };
 }
 
 /*
@@ -1794,6 +1815,8 @@ const AM_LIFECYCLE_OPS = [
     { op: 'start', label: 'Start' },
     { op: 'stop', label: 'Stop' },
     { op: 'restart', label: 'Restart' },
+    { op: 'release', label: 'Release' },
+    { op: 'connect', label: 'Connect' },
 ];
 
 /**
@@ -1836,10 +1859,18 @@ function renderAgentInstanceRows(agents) {
         for (const entry of AM_LIFECYCLE_OPS) {
             const enabled = !!state[entry.op];
             const disabledAttr = enabled ? '' : ' disabled';
+            // Build the disabled-reason title. The attribute value is placed
+            // inside double quotes, so escape the data for an ATTRIBUTE context:
+            // escapeHtml() (text-node based) does not escape the double quote,
+            // which a status/label containing a quote would otherwise use to
+            // break out of the attribute. Escape the quote explicitly and keep
+            // the closing quote OUTSIDE the escaped value so the attribute is
+            // always well-formed.
+            const titleText = entry.label + ' is not allowed while '
+                + (status || 'in this state');
             const titleAttr = enabled
                 ? ''
-                : ' title="' + escapeHtml(entry.label + ' is not allowed while '
-                    + (status || 'in this state') + '"');
+                : ' title="' + escapeHtml(titleText).replace(/"/g, '&quot;') + '"';
             html += '<button type="button"' + disabledAttr + titleAttr
                 + ' onclick="triggerAgentLifecycle(' + onclickId + ', \'' + entry.op + '\')"'
                 + ' style="margin-right:4px;">' + escapeHtml(entry.label) + '</button>';
@@ -1945,9 +1976,18 @@ async function amPostLifecycle(agentId, op) {
  */
 async function triggerAgentLifecycle(agentId, op) {
     // Guard: only the three known operations, and a present (non-empty) id.
-    const validOp = op === 'start' || op === 'stop' || op === 'restart';
+    // 'connect' is a read-only view, routed to a separate handler below.
+    if (op === 'connect') { connectAgent(agentId); return; }
+    const validOp = op === 'start' || op === 'stop' || op === 'restart' || op === 'release';
     const hasId = agentId !== undefined && agentId !== null && agentId !== '';
     if (!validOp || !hasId) return;
+
+    // Release restores a QUARANTINED agent to READY; confirm before the
+    // admin-gated transition. A declined confirm performs no request.
+    if (op === 'release' && typeof confirm === 'function'
+            && !confirm('Release this quarantined agent back to READY?')) {
+        return;
+    }
 
     const result = await amPostLifecycle(agentId, op);
 
@@ -1969,6 +2009,96 @@ async function triggerAgentLifecycle(agentId, op) {
     // Success: refresh the panel so the new status is shown, then confirm.
     await loadAmInstances();
     writeFeedback('green', 'Agent ' + op + ' succeeded.');
+}
+
+/*
+ * Connect to an agent's live activity.
+ *
+ * 'Connect' is a read-only view: this system has no interactive attach/shell.
+ * Connecting opens the agent's unified event feed (the same events the SSE
+ * task stream and the Observability panel surface) and renders it as a live,
+ * auto-refreshing log panel below the Instances table. It performs NO
+ * lifecycle transition. Implemented with an EventSource against the agent's
+ * observability timeline when available, falling back to a polled fetch of
+ * the events endpoint filtered by agent id so it works even where SSE is not
+ * proxied. Plain top-level declaration so the inline onclick resolves it;
+ * exported for the jsdom harness.
+ *
+ * @param {number|string} agentId - the agent's id.
+ * @returns {void}
+ */
+function connectAgent(agentId) {
+    const hasId = agentId !== undefined && agentId !== null && agentId !== '';
+    if (!hasId) return;
+    const idNum = parseInt(agentId, 10);
+    const id = Number.isFinite(idNum) ? idNum : 0;
+    const fb = document.getElementById('amInstancesFeedback');
+    if (!fb) return;
+
+    // Render a dedicated live-stream panel with a Close control. The log body
+    // is appended to; all server-provided text is HTML-escaped on write.
+    fb.innerHTML =
+        '<div id="amConnectPanel" style="margin-top:8px; border:1px solid #b8daff; border-radius:5px; background:#f8fbff;">'
+        + '<div style="display:flex; justify-content:space-between; align-items:center; padding:6px 10px; background:#eef6ff;">'
+        + '<strong>' + escapeHtml('Live activity \u2014 agent #' + id) + '</strong>'
+        + '<button type="button" onclick="disconnectAgent()">Close</button></div>'
+        + '<div id="amConnectLog" style="max-height:240px; overflow:auto; padding:8px 10px; font-family:monospace; font-size:12px;">'
+        + escapeHtml('Connecting to live activity stream...') + '</div></div>';
+
+    const logEl = document.getElementById('amConnectLog');
+    const append = function (line) {
+        if (!logEl) return;
+        const row = document.createElement('div');
+        row.textContent = String(line);  // textContent escapes implicitly
+        logEl.appendChild(row);
+        logEl.scrollTop = logEl.scrollHeight;
+    };
+    const fmt = function (ev) {
+        const e = ev || {};
+        const when = e.occurred_at || e.decided_at || '';
+        const type = e.event_type || e.kind || 'event';
+        const extra = e.decision || e.severity || e.summary || '';
+        return '[' + when + '] ' + type + (extra ? ' - ' + extra : '');
+    };
+
+    // Prefer a native EventSource (true SSE, no polling) when the browser
+    // supports it; otherwise degrade to a single fetch of recent events.
+    if (typeof EventSource !== 'undefined') {
+        try {
+            if (window.__amConnectSource) { window.__amConnectSource.close(); }
+            const src = new EventSource('/api/v1/observability/events?agent_id=' + id + '&stream=1');
+            window.__amConnectSource = src;
+            if (logEl) logEl.textContent = '';
+            src.onmessage = function (m) {
+                try { append(fmt(JSON.parse(m.data))); } catch (e) { append(m.data); }
+            };
+            src.onerror = function () {
+                append('Live stream ended.');
+                src.close();
+                if (window.__amConnectSource === src) window.__amConnectSource = null;
+            };
+            return;
+        } catch (e) { /* fall through to the polled fallback */ }
+    }
+
+    // Fallback: one-shot fetch of the recent events for this agent.
+    amGet('/api/v1/observability/events?agent_id=' + id + '&limit=100').then(function (data) {
+        if (logEl) logEl.textContent = '';
+        if (data && data.__error) { append('Could not open the live activity stream.'); return; }
+        const events = (data && data.events) || [];
+        if (events.length === 0) { append('No activity yet.'); return; }
+        events.slice().reverse().forEach(function (ev) { append(fmt(ev)); });
+    });
+}
+
+/** Close the live-activity panel and tear down any open EventSource. */
+function disconnectAgent() {
+    if (window.__amConnectSource) {
+        try { window.__amConnectSource.close(); } catch (e) { /* ignore */ }
+        window.__amConnectSource = null;
+    }
+    const panel = document.getElementById('amConnectPanel');
+    if (panel && panel.parentNode) panel.parentNode.removeChild(panel);
 }
 
 async function loadAmTasks() {
@@ -2082,6 +2212,11 @@ if (typeof module !== 'undefined' && module.exports) {
         // Lifecycle POST helper + per-row action handler (Req 2.2, 2.3, 2.4)
         amPostLifecycle,
         triggerAgentLifecycle,
+        // Agent connect (live SSE activity) + nav deep-link helpers
+        connectAgent,
+        disconnectAgent,
+        openAgentPanel,
+        openAgentInstances,
         loadAmTasks,
         loadAmPolicies,
         loadAmMcp,

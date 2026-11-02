@@ -128,6 +128,68 @@ POST /api/request_ops_ai_for_app
 - 🔄 Manage application lifecycle (start/stop/restart)
 - 🖥️ Handle server capacity and resource allocation
 
+### 🛰️ Agent Management (ARO + ZAF)
+
+Beyond the two conversational agents above, the platform includes the **Agent
+Runtime Orchestrator (ARO)** and the **Zero-trust Agent Firewall (ZAF)**: a
+governed control plane for registering, running, and supervising heterogeneous
+AI agent runtimes (Kiro over ACP, SHAI over CLI/HTTP-SSE). Open it from the
+navbar **🛰️ Agents → Agent Management**.
+
+The section is organized into sub-panels:
+
+- **📊 Dashboard** — live counts of total / running / failed agents, pending
+  approvals, incidents, and events.
+- **🧩 Runtime Registry** — the registered runtimes (identifier, version,
+  supported protocols, status). Registration validates pinned versions and
+  integrity-verified installs (admin).
+- **🤖 Agent Instances** — one row per agent with its identity and status, plus
+  the per-agent lifecycle controls described below.
+- **📋 Executions & Tasks**, **📜 Governance Policies**, **🔌 MCP Registry**,
+  **✅ Approvals**, **📡 Observability**, **🚨 Security Incidents**.
+
+#### 🎛️ Agent lifecycle controls (Instances panel)
+
+Each agent row exposes state-aware controls. A control is only enabled when the
+backend transition graph permits it (an action that would be rejected with a
+`409` is shown disabled, with a tooltip explaining why):
+
+| Control | Action | Enabled from |
+|---|---|---|
+| ▶️ **Start** | drive the agent to RUNNING | READY, STOPPED, FAILED |
+| ⏹️ **Stop** | stop a running agent | RUNNING, UNHEALTHY |
+| 🔄 **Restart** | stop-then-start | RUNNING, READY, STOPPED, FAILED, UNHEALTHY |
+| 🩹 **Release** | return a quarantined agent to READY (admin) | QUARANTINED |
+| 🔌 **Connect** | open the agent's live activity stream (read-only) | any state |
+
+**Connect** opens a live, auto-scrolling view of the agent's unified event feed
+(lifecycle, task, and governance events) using Server-Sent Events, with a
+one-shot fallback where SSE is unavailable. It performs no lifecycle transition
+and can be closed at any time. Start/Stop/Restart/Release each confirm their
+outcome inline and refresh the row's status; Release asks for confirmation
+first because it lifts an agent out of security containment.
+
+#### 🔌 Agent lifecycle API
+
+The controls map to the ARO REST API under `/api/v1/agents` (auth + tenant
+scoped; lifecycle operations require the `operator` role, `release` requires
+`admin`):
+
+```
+GET    /api/v1/agents/                 # list agents
+POST   /api/v1/agents/{id}/start       # -> STARTING
+POST   /api/v1/agents/{id}/stop        # -> STOPPING
+POST   /api/v1/agents/{id}/restart     # stop-then-start
+POST   /api/v1/agents/{id}/release     # QUARANTINED -> READY (admin)
+GET    /api/v1/agents/{id}/status      # current status
+```
+
+Live activity is read from the observability event stream
+(`GET /api/v1/observability/events?agent_id={id}`) and the per-task SSE stream
+(`GET /api/v1/agents/tasks/{id}/events`). See
+[agent_runtime_orchestrator.md](agent_runtime_orchestrator.md) for the full API,
+the governance/policy model, and the end-to-end governed scenario.
+
 ### 🎯 Platform Features
 
 #### 🌍 Multi-Language Support
@@ -139,6 +201,7 @@ POST /api/request_ops_ai_for_app
 
 #### 🧭 Enhanced Navigation Architecture
 - **📱 Applications Tab:** Main application management interface with real-time status
+- **🛰️ Agents Dropdown:** Agent Management (ARO/ZAF), Agent Instances, Executions & Tasks, and Observability
 - **💰 Billing Tab:** Comprehensive cost tracking and invoice management
 - **⚙️ Configuration Dropdown:** Admin access to Users, Servers, Database management
 - **❓ Help Dropdown:** Direct access to Architecture, Deployment, and User guides
@@ -503,6 +566,56 @@ POST /api/request_ops_ai_for_app
 - 🔄 Gérer le cycle de vie de l'application (start/stop/restart)
 - 🖥️ Gérer la capacité serveur et l'allocation des ressources
 
+### 🛰️ Gestion des Agents (ARO + ZAF)
+
+Au-dela des deux agents conversationnels ci-dessus, la plateforme inclut
+l'**Orchestrateur de Runtimes d'Agents (ARO)** et le **Pare-feu d'Agents
+Zero-trust (ZAF)** : un plan de controle gouverne pour enregistrer, executer et
+superviser des runtimes d'agents heterogenes (Kiro via ACP, SHAI via CLI/HTTP-SSE).
+Ouvrez-le depuis la navbar **🛰️ Agents → Gestion des agents**.
+
+La section est organisee en sous-panneaux : Tableau de bord, Registre des
+runtimes, Instances d'agents, Executions et taches, Politiques de gouvernance,
+Registre MCP, Approbations, Observabilite et Incidents de securite.
+
+#### 🎛️ Controles de cycle de vie (panneau Instances)
+
+Chaque ligne d'agent expose des controles sensibles a l'etat. Un controle n'est
+actif que lorsque le graphe de transitions du backend l'autorise (une action qui
+serait rejetee par un `409` est affichee desactivee, avec une info-bulle) :
+
+| Controle | Action | Actif depuis |
+|---|---|---|
+| ▶️ **Demarrer** | amener l'agent a RUNNING | READY, STOPPED, FAILED |
+| ⏹️ **Arreter** | arreter un agent en cours | RUNNING, UNHEALTHY |
+| 🔄 **Redemarrer** | arret puis demarrage | RUNNING, READY, STOPPED, FAILED, UNHEALTHY |
+| 🩹 **Liberer** | sortir un agent en quarantaine vers READY (admin) | QUARANTINED |
+| 🔌 **Connecter** | ouvrir le flux d'activite en direct (lecture seule) | tout etat |
+
+**Connecter** ouvre une vue en direct du flux d'evenements unifie de l'agent
+(cycle de vie, taches, decisions de gouvernance) via Server-Sent Events, avec un
+repli ponctuel si le SSE n'est pas disponible. Cette action n'effectue aucune
+transition de cycle de vie et peut etre fermee a tout moment. Liberer demande
+une confirmation car elle sort l'agent d'un confinement de securite.
+
+#### 🔌 API de cycle de vie des agents
+
+Les controles correspondent a l'API REST ARO sous `/api/v1/agents` (authentifiee
+et cloisonnee par locataire ; les operations de cycle de vie exigent le role
+`operator`, `release` exige `admin`) :
+
+```
+GET    /api/v1/agents/                 # lister les agents
+POST   /api/v1/agents/{id}/start       # -> STARTING
+POST   /api/v1/agents/{id}/stop        # -> STOPPING
+POST   /api/v1/agents/{id}/restart     # arret puis demarrage
+POST   /api/v1/agents/{id}/release     # QUARANTINED -> READY (admin)
+GET    /api/v1/agents/{id}/status      # statut actuel
+```
+
+Voir [agent_runtime_orchestrator.md](agent_runtime_orchestrator.md) pour l'API
+complete, le modele de gouvernance et le scenario gouverne de bout en bout.
+
 ### 🎯 Fonctionnalités de la Plateforme
 
 #### 🌍 Support Multi-Langues
@@ -513,6 +626,7 @@ POST /api/request_ops_ai_for_app
 
 #### 🧭 Organisation de Navigation
 - **📱 Onglet Applications:** Interface principale de gestion d'applications
+- **🛰️ Menu Agents:** Gestion des agents (ARO/ZAF), Instances d'agents, Exécutions et tâches, et Observabilité
 - **💰 Onglet Facturation:** Suivi des coûts et surveillance d'utilisation
 - **⚙️ Menu Déroulant Configuration:** Accès admin aux Utilisateurs, Serveurs, Base de données
 - **❓ Menu Déroulant Aide:** Accès direct aux guides Architecture, Déploiement et Utilisateur

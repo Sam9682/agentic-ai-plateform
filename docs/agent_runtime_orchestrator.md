@@ -60,9 +60,13 @@ endpoints require the tenant `admin` role; agent/task operations require
 - `GET /` · `POST /` · `GET /{id}` · `DELETE /{id}`
 - `POST /{id}/ready` — install + configure to READY
 - `POST /{id}/start` · `POST /{id}/stop` · `POST /{id}/restart`
+- `POST /{id}/release` — return a `QUARANTINED` agent to `READY` (admin)
 - `GET /{id}/status`
 
-Illegal lifecycle transitions return `409`.
+Lifecycle operations require the `operator` role; `release` (restoring an agent
+from security containment) requires `admin`. Illegal lifecycle transitions
+return `409`, and the dashboard presents each control disabled when the current
+status would make the transition illegal.
 
 ### Tasks — `/api/v1/agents/tasks`
 - `POST /tasks` — submit (idempotent on `idempotency_key`)
@@ -79,6 +83,21 @@ Illegal lifecycle transitions return `409`.
 ### Observability — `/api/v1/observability`
 - `GET /events` · `GET /metrics` · `GET /anomalies` · `GET /incidents`
 - `GET /agents/{identity}/timeline` · `GET /agents/{identity}/risk`
+
+### Dashboard controls (Agent Management section)
+
+The **🛰️ Agents → Agent Management** dashboard section surfaces the API above as
+sub-panels (Dashboard, Runtime Registry, Agent Instances, Executions & Tasks,
+Governance Policies, MCP Registry, Approvals, Observability, Security Incidents).
+The **Agent Instances** panel renders per-agent, state-aware lifecycle controls
+whose enabled/disabled state is derived from the same transition graph the API
+enforces (so a would-be-`409` action is shown disabled):
+
+- **Start / Stop / Restart / Release** — POST the matching lifecycle endpoint and
+  refresh the row; Release confirms first and is admin-gated.
+- **Connect** — a read-only live view of the agent's unified event feed over SSE
+  (`/api/v1/observability/events?agent_id={id}`), with a one-shot fetch fallback.
+  It performs no transition.
 
 ## Policy language
 

@@ -42,16 +42,20 @@ const STOP_STATES = ['RUNNING', 'UNHEALTHY'];
 // Transient / unknown states that enable nothing.
 const INERT_STATES = [
     'REGISTERED', 'INSTALLING', 'INSTALLED', 'CONFIGURING',
-    'STARTING', 'STOPPING', 'QUARANTINED', 'TERMINATED',
+    'STARTING', 'STOPPING', 'TERMINATED',
     'TOTALLY_UNKNOWN', '', 'running', 'ready',
 ];
+// States from which Release (QUARANTINED -> READY) is legal.
+const RELEASE_STATES = ['QUARANTINED'];
 
-/** Expected {start,stop,restart} for a status, per the documented contract. */
+/** Expected {start,stop,restart,release,connect} for a status, per the documented contract. */
 function expectedState(status) {
     const start = START_STATES.indexOf(status) !== -1;
     const stop = STOP_STATES.indexOf(status) !== -1;
     const restart = start || stop; // restart legal from every start- or stop-able state
-    return { start, stop, restart };
+    const release = RELEASE_STATES.indexOf(status) !== -1; // QUARANTINED -> READY
+    const connect = true; // read-only live-activity view, always available
+    return { start, stop, restart, release, connect };
 }
 
 // ---------------------------------------------------------------------------
@@ -144,7 +148,7 @@ test('lifecycleControlState: READY / STOPPED / FAILED enable Start + Restart (no
     for (const status of START_STATES) {
         assert.deepStrictEqual(
             lifecycleControlState(status),
-            { start: true, stop: false, restart: true },
+            { start: true, stop: false, restart: true, release: false, connect: true },
             'unexpected control state for ' + status
         );
     }
@@ -154,7 +158,7 @@ test('lifecycleControlState: RUNNING / UNHEALTHY enable Stop + Restart (not Star
     for (const status of STOP_STATES) {
         assert.deepStrictEqual(
             lifecycleControlState(status),
-            { start: false, stop: true, restart: true },
+            { start: false, stop: true, restart: true, release: false, connect: true },
             'unexpected control state for ' + status
         );
     }
@@ -164,15 +168,25 @@ test('lifecycleControlState: transient and unknown states enable nothing', () =>
     for (const status of INERT_STATES) {
         assert.deepStrictEqual(
             lifecycleControlState(status),
-            { start: false, stop: false, restart: false },
-            'transient/unknown state should enable nothing: "' + status + '"'
+            { start: false, stop: false, restart: false, release: false, connect: true },
+            'transient/unknown state should enable nothing but connect: "' + status + '"'
+        );
+    }
+});
+
+test('lifecycleControlState: QUARANTINED enables Release (and Connect) only', () => {
+    for (const status of RELEASE_STATES) {
+        assert.deepStrictEqual(
+            lifecycleControlState(status),
+            { start: false, stop: false, restart: false, release: true, connect: true },
+            'QUARANTINED should enable only Release + Connect: ' + status
         );
     }
 });
 
 test('lifecycleControlState: null / undefined status enable nothing', () => {
-    assert.deepStrictEqual(lifecycleControlState(undefined), { start: false, stop: false, restart: false });
-    assert.deepStrictEqual(lifecycleControlState(null), { start: false, stop: false, restart: false });
+    assert.deepStrictEqual(lifecycleControlState(undefined), { start: false, stop: false, restart: false, release: false, connect: true });
+    assert.deepStrictEqual(lifecycleControlState(null), { start: false, stop: false, restart: false, release: false, connect: true });
 });
 
 // ===========================================================================
@@ -216,14 +230,14 @@ test('renderAgentInstanceRows: columns render ID / Identity / Name / Status in o
     assert.strictEqual(cells[3].textContent.trim(), 'STOPPED');
 });
 
-test('renderAgentInstanceRows: Actions cell carries exactly three buttons (Start/Stop/Restart)', () => {
+test('renderAgentInstanceRows: Actions cell carries five controls (Start/Stop/Restart/Release/Connect)', () => {
     const agents = [{ id: 1, identity: 'x', name: 'y', status: 'READY' }];
     const rows = parseRows(renderAgentInstanceRows(agents));
     const buttons = rows[0].querySelectorAll('button');
-    assert.strictEqual(buttons.length, 3, 'three lifecycle buttons');
+    assert.strictEqual(buttons.length, 5, 'five controls: start/stop/restart/release/connect');
     assert.deepStrictEqual(
         Array.from(buttons).map((b) => b.textContent.trim()),
-        ['Start', 'Stop', 'Restart']
+        ['Start', 'Stop', 'Restart', 'Release', 'Connect']
     );
 });
 
@@ -233,20 +247,26 @@ test('renderAgentInstanceRows: each button disabled state matches lifecycleContr
         const rows = parseRows(renderAgentInstanceRows([{ id: 1, identity: 'i', name: 'n', status }]));
         const buttons = rows[0].querySelectorAll('button');
         const exp = expectedState(status);
-        // Button order is Start, Stop, Restart.
+        // Button order is Start, Stop, Restart, Release, Connect.
         assert.strictEqual(buttons[0].disabled, !exp.start, 'Start disabled mismatch for ' + status);
         assert.strictEqual(buttons[1].disabled, !exp.stop, 'Stop disabled mismatch for ' + status);
         assert.strictEqual(buttons[2].disabled, !exp.restart, 'Restart disabled mismatch for ' + status);
+        // Release is enabled only from QUARANTINED; Connect is always enabled.
+        assert.strictEqual(buttons[3].disabled, status !== 'QUARANTINED', 'Release disabled mismatch for ' + status);
+        assert.strictEqual(buttons[4].disabled, false, 'Connect must always be enabled for ' + status);
     }
 });
 
 test('renderAgentInstanceRows: disabled buttons carry an explanatory title; enabled ones do not', () => {
     const rows = parseRows(renderAgentInstanceRows([{ id: 1, identity: 'i', name: 'n', status: 'READY' }]));
     const buttons = rows[0].querySelectorAll('button');
-    // READY -> Start enabled (no title), Stop disabled (has title), Restart enabled (no title).
+    // READY -> Start enabled (no title), Stop disabled (has title), Restart enabled (no title),
+    // Release disabled (has title, only QUARANTINED), Connect enabled (no title, always on).
     assert.strictEqual(buttons[0].getAttribute('title'), null);
     assert.ok(buttons[1].getAttribute('title'), 'disabled Stop button should have a title');
     assert.strictEqual(buttons[2].getAttribute('title'), null);
+    assert.ok(buttons[3].getAttribute('title'), 'disabled Release button should have a title');
+    assert.strictEqual(buttons[4].getAttribute('title'), null);
 });
 
 test('renderAgentInstanceRows: an XSS attempt in Name/Identity renders as text, not markup', () => {
@@ -280,10 +300,10 @@ test('renderAgentInstanceRows: non-numeric id coerces the onclick argument to 0'
     // The attacker payload must not appear inside any triggerAgentLifecycle(...)
     // call — only the numeric 0 is ever passed as the id argument.
     const onclickCalls = (html.match(/triggerAgentLifecycle\([^)]*\)/g) || []);
-    assert.strictEqual(onclickCalls.length, 3, 'three onclick handlers, one per button');
+    assert.strictEqual(onclickCalls.length, 5, 'five onclick handlers, one per control');
     for (const call of onclickCalls) {
         assert.ok(call.indexOf('alert(1)') === -1, 'attacker id markup must not leak into the onclick: ' + call);
-        assert.ok(/^triggerAgentLifecycle\(0, '(start|stop|restart)'\)$/.test(call), 'onclick uses numeric id 0: ' + call);
+        assert.ok(/^triggerAgentLifecycle\(0, '(start|stop|restart|release|connect)'\)$/.test(call), 'onclick uses numeric id 0: ' + call);
     }
 });
 

@@ -30,6 +30,9 @@
                             <a href="javascript:void(0)" class="nav-dropdown-btn" id="navAgents" onclick="toggleNavDropdown('agents')">🛰️ {{ get_text('agents') }} ▼</a>
                             <div class="nav-dropdown-content" id="navAgentsDropdown">
                                 <a href="javascript:void(0)" onclick="showTab('agentManagement')" id="navAgentManagement">🛰️ {{ get_text('agent_management') }}</a>
+                                <a href="javascript:void(0)" onclick="openAgentInstances()" id="navAgentInstances">🤖 {{ get_text('am_instances') }}</a>
+                                <a href="javascript:void(0)" onclick="openAgentPanel('tasks')" id="navAgentTasks">📋 {{ get_text('am_tasks') }}</a>
+                                <a href="javascript:void(0)" onclick="openAgentPanel('observability')" id="navAgentObservability">📡 {{ get_text('am_observability') }}</a>
                             </div>
                         </div>
                         <a href="javascript:void(0)" onclick="showTab('orchestratorServerless')" id="navOrchestratorServerless">🚀 Serverless</a>

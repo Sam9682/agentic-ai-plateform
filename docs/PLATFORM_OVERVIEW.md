@@ -6,11 +6,12 @@ Agentic-AI-Powered Store (a.k.a. AI-SwAutoMorph) is a centralized application de
 
 - Application deployment lifecycle: clone, build, start, stop, restart, status, logs (streamed via Server-Sent Events).
 - App Orchestrator with a reconciliation loop for replica lifecycle management.
+- Agent Runtime Orchestrator (ARO) + Zero-trust Agent Firewall (ZAF): a governed control plane to register, run, and supervise heterogeneous AI agent runtimes (Kiro over ACP, SHAI over CLI/HTTP-SSE) with lifecycle control, policy-based authorization, approvals, audit, and observability. Managed from the Agent Management dashboard.
 - Serverless Docker execution: on-demand, sandboxed container jobs with a PostgreSQL-backed queue.
 - MIG Shared GPU: partition an NVIDIA GPU (H100/A100/A30) into up to 7 isolated instances, per-server, via the web UI or API.
 - Configurable container runtime: `runc` (default) or `kata` (optional MicroVM isolation).
 - Multi-server with capacity-based allocation and peer-to-peer database replication.
-- Dynamic nginx locations: automatic reverse-proxy blocks per user/app.
+- Traefik reverse proxy (single :80/:443 entrypoint): dynamic routes per user/app via the Docker label and file providers. Deployed apps are exposed at `https://{domain}/{USER_ID}/{APPLICATION_NAME}`.
 - Deploy Templates catalog (static site, FastAPI, n8n, Ollama, Jupyter, Qdrant) shared across Dashboard, CLI, MCP and REST.
 - Onboarding setup wizard that safely writes `conf/deploy.ini`, plus a labeled Sandbox demo account.
 - 12 consecutive ports (6 HTTP + 6 HTTPS) reserved per application.
@@ -27,7 +28,7 @@ Clients:  Web Dashboard  |  REST API  |  CLI  |  MCP (AI agents)
                          v
    Orchestrator | Serverless workers | GPU/MIG mgr | Replication
                          v
-   PostgreSQL  .  Nginx  .  Docker  .  Gitea  .  S3 (OVHcloud)
+   PostgreSQL  .  Traefik  .  Docker  .  Gitea  .  S3 (OVHcloud)
 ```
 
 ## Access Interfaces
@@ -52,6 +53,7 @@ Clients:  Web Dashboard  |  REST API  |  CLI  |  MCP (AI agents)
 - [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md) — deploying applications
 - [ARCHITECTURE_GUIDE.md](./ARCHITECTURE_GUIDE.md) — system architecture
 - [USER_GUIDE.md](./USER_GUIDE.md) — using the platform and agents
+- [agent_runtime_orchestrator.md](./agent_runtime_orchestrator.md) — Agent Runtime Orchestrator (ARO) + Zero-trust Agent Firewall (ZAF)
 - [SERVERLESS.md](./SERVERLESS.md) — serverless Docker execution
 - [SHARE_GPU_DOCKER.md](./SHARE_GPU_DOCKER.md) — shared GPU via Docker
 - [LIST_OF_APP_AVAILABLE.md](./LIST_OF_APP_AVAILABLE.md) — default applications

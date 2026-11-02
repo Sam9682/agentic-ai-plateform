@@ -49,6 +49,8 @@ const LEGAL = {
     start: new Set(['READY', 'STOPPED', 'FAILED']),
     stop: new Set(['RUNNING', 'UNHEALTHY']),
     restart: new Set(['RUNNING', 'READY', 'STOPPED', 'FAILED', 'UNHEALTHY']),
+    // release restores a QUARANTINED agent to READY (admin-gated server side).
+    release: new Set(['QUARANTINED']),
 };
 
 const KNOWN_STATES = [
@@ -209,7 +211,7 @@ test('Property B: lifecycleControlState enables a control only for a legally-per
             const s = status === undefined || status === null ? '' : String(status);
             const state = lifecycleControlState(s);
 
-            for (const op of ['start', 'stop', 'restart']) {
+            for (const op of ['start', 'stop', 'restart', 'release']) {
                 if (state[op]) {
                     // If enabled, the state MUST be in the documented legal set.
                     assert.ok(
@@ -218,11 +220,15 @@ test('Property B: lifecycleControlState enables a control only for a legally-per
                     );
                 }
             }
-            // Returns exactly the three boolean flags.
+            // connect is a read-only view (opens the live activity stream) and
+            // performs no transition, so it is state-independent (always true).
+            assert.strictEqual(state.connect, true, 'connect must be state-independent');
+            // Returns exactly the five flags: the three core lifecycle controls
+            // plus release (QUARANTINED->READY) and the read-only connect view.
             assert.deepStrictEqual(
                 Object.keys(state).sort(),
-                ['restart', 'start', 'stop'],
-                'lifecycleControlState must return { start, stop, restart }'
+                ['connect', 'release', 'restart', 'start', 'stop'],
+                'lifecycleControlState must return { start, stop, restart, release, connect }'
             );
         }),
         { numRuns: 500 }
@@ -232,7 +238,7 @@ test('Property B: lifecycleControlState enables a control only for a legally-per
 test('Property B: every legal state enables its control (coverage of the forward direction)', () => {
     // Complements the above: for each documented legal state, the matching
     // control must be enabled. Keeps the mapping from trivially disabling all.
-    for (const op of ['start', 'stop', 'restart']) {
+    for (const op of ['start', 'stop', 'restart', 'release']) {
         for (const s of LEGAL[op]) {
             const state = lifecycleControlState(s);
             assert.ok(

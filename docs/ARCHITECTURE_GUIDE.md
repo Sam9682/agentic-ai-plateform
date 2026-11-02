@@ -42,6 +42,12 @@ AI-SwAutoMorph is a **centralized application deployment and management platform
 │       ├── 🔒 security_routes.py   # Password reset & 2FA
 │       ├── ⚡ serverless_routes.py  # Serverless Docker job execution
 │       ├── 🎮 gpu_routes.py         # MIG shared GPU management
+│       ├── 🛰️ aro_runtime_routes.py # Agent runtime registry (ARO)
+│       ├── 🤖 aro_agent_routes.py   # Agent lifecycle: start/stop/restart/release
+│       ├── 📋 aro_task_routes.py    # Agent tasks + SSE event stream
+│       ├── 🛡️ zaf_governance_routes.py # Policies, decisions, approvals (ZAF)
+│       ├── 📡 obs_routes.py         # Agent observability: events, metrics, incidents
+│       ├── 🎛️ agent_control_routes.py # Discovered-container control feed
        ├── 🧩 templates_routes.py   # Deploy Templates REST API
        ├── 🧙 wizard_routes.py      # Onboarding setup wizard API
        └── 🧪 sandbox_routes.py     # Sandbox demo provision/reset/teardown
@@ -191,6 +197,8 @@ The platform provides **two specialized AI agents** with advanced features:
 
 **📋 Navbar Organization**:
 - 📱 Applications and 💰 Billing tabs in main navigation
+- 🛰️ Agents dropdown (Agent Management, Agent Instances, Executions & Tasks, Observability)
+- 🛠️ Tooling dropdown (Sandbox, Marketplace, Billing)
 - ⚙️ Configuration dropdown (👥 Users, 🖥️ Servers, 🗄️ Database) for admin
 - ❓ Help dropdown with direct links to documentation
 - 🌍 Language toggle (FR/EN) with session persistence
@@ -203,6 +211,28 @@ The platform provides **two specialized AI agents** with advanced features:
 - ✨ Streamlined user experience with unified virtual agents interface
 - 📊 Real-time application status updates
 - 📈 Streaming logs with Server-Sent Events
+
+#### 5b. 🛰️ Agent Runtime Orchestrator (ARO) + Zero-trust Agent Firewall (ZAF)
+
+A governed control plane for heterogeneous AI agent runtimes, layered on the
+same Flask app and PostgreSQL store. It is distinct from the two conversational
+agents in section 2: ARO manages the full lifecycle of *registered* agent
+runtimes, and ZAF enforces zero-trust governance over the infrastructure actions
+those agents take.
+
+**Components**:
+- **Runtime registry** (`aro_runtime_routes.py`, `src/aro/runtime_registry_*`): register/validate runtimes (Kiro over ACP, SHAI over CLI/HTTP-SSE) with pinned versions and integrity-verified installs.
+- **Lifecycle service** (`aro_agent_routes.py`, `src/aro/lifecycle*`): the transition graph REGISTERED->...->READY->RUNNING->STOPPED/FAILED/QUARANTINED, exposed as `start`/`stop`/`restart`/`release`; illegal transitions return `409`.
+- **Task worker** (`aro_task_routes.py`, `src/aro/agent_worker.py`): submit/track/cancel tasks with an SSE event stream.
+- **Governance (ZAF)** (`zaf_governance_routes.py`, `src/zaf/*`): policy decision point (ALLOW/DENY/REQUIRE_APPROVAL/QUARANTINE, deny precedence, fail-closed), approvals bound to exact action+params, an infra API proxy, and a governed MCP gateway.
+- **Observability** (`obs_routes.py`, `src/obs/*`): unified event + audit stream, anomaly detection, explainable risk scoring, and incident containment.
+
+**Dashboard**: the **Agents -> Agent Management** section exposes these as
+sub-panels; the **Agent Instances** panel renders per-agent, state-aware controls
+(Start / Stop / Restart / Release / Connect) whose enabled state mirrors the
+transition graph. **Connect** opens a read-only live event stream over SSE. See
+[agent_runtime_orchestrator.md](agent_runtime_orchestrator.md) for the full API,
+policy language, and the end-to-end governed scenario.
 
 #### 6. 💰 Comprehensive Billing System
 
@@ -325,6 +355,12 @@ AI-SwAutoMorph est une **plateforme centralisée de déploiement et de gestion d
 │       ├── 🔒 security_routes.py   # Password reset & 2FA
 │       ├── ⚡ serverless_routes.py  # Serverless Docker job execution
 │       ├── 🎮 gpu_routes.py         # MIG shared GPU management
+│       ├── 🛰️ aro_runtime_routes.py # Agent runtime registry (ARO)
+│       ├── 🤖 aro_agent_routes.py   # Agent lifecycle: start/stop/restart/release
+│       ├── 📋 aro_task_routes.py    # Agent tasks + SSE event stream
+│       ├── 🛡️ zaf_governance_routes.py # Policies, decisions, approvals (ZAF)
+│       ├── 📡 obs_routes.py         # Agent observability: events, metrics, incidents
+│       ├── 🎛️ agent_control_routes.py # Discovered-container control feed
        ├── 🧩 templates_routes.py   # Deploy Templates REST API
        ├── 🧙 wizard_routes.py      # Onboarding setup wizard API
        └── 🧪 sandbox_routes.py     # Sandbox demo provision/reset/teardown
@@ -431,6 +467,8 @@ La plateforme fournit **deux agents IA spécialisés** avec fonctionnalités ava
 
 **📋 Organisation Navbar**:
 - 📱 Onglets Applications et 💰 Facturation dans la navigation principale
+- 🛰️ Menu déroulant Agents (Gestion des agents, Instances d'agents, Exécutions et tâches, Observabilité)
+- 🛠️ Menu déroulant Outils (Sandbox, Marketplace, Facturation)
 - ⚙️ Menu déroulant Configuration (👥 Utilisateurs, 🖥️ Serveurs, 🗄️ Base de données) pour admin
 - ❓ Menu déroulant Aide avec liens directs vers la documentation
 - 🌍 Basculement de langue (FR/EN) avec persistance de session
@@ -443,6 +481,27 @@ La plateforme fournit **deux agents IA spécialisés** avec fonctionnalités ava
 - ✨ Expérience utilisateur rationalisée avec interface agents virtuels unifiée
 - 📊 Mises à jour de statut d'application en temps réel
 - 📈 Journaux en streaming avec Server-Sent Events
+
+#### 5b. 🛰️ Orchestrateur de Runtimes d'Agents (ARO) + Pare-feu d'Agents Zero-trust (ZAF)
+
+Un plan de controle gouverne pour des runtimes d'agents heterogenes, construit
+sur la meme application Flask et la meme base PostgreSQL. Il se distingue des deux
+agents conversationnels de la section 2 : ARO gere le cycle de vie complet des
+runtimes d'agents *enregistres*, et ZAF applique une gouvernance zero-trust sur
+les actions d'infrastructure de ces agents.
+
+**Composants** :
+- **Registre des runtimes** (`aro_runtime_routes.py`) : enregistrement/validation (Kiro via ACP, SHAI via CLI/HTTP-SSE), versions epinglees et installations verifiees.
+- **Service de cycle de vie** (`aro_agent_routes.py`) : graphe de transitions expose via `start`/`stop`/`restart`/`release` ; les transitions illegales renvoient `409`.
+- **Worker de taches** (`aro_task_routes.py`) : soumission/suivi/annulation de taches avec flux d'evenements SSE.
+- **Gouvernance (ZAF)** (`zaf_governance_routes.py`) : point de decision (ALLOW/DENY/REQUIRE_APPROVAL/QUARANTINE, priorite au refus, fail-closed), approbations liees a l'action+parametres exacts, proxy d'API d'infra et passerelle MCP gouvernee.
+- **Observabilite** (`obs_routes.py`) : flux unifie d'evenements et d'audit, detection d'anomalies, score de risque explicable et confinement d'incidents.
+
+**Tableau de bord** : la section **Agents -> Gestion des agents** expose ces
+capacites en sous-panneaux ; le panneau **Instances d'agents** affiche des
+controles par agent sensibles a l'etat (Demarrer / Arreter / Redemarrer / Liberer
+/ Connecter). **Connecter** ouvre un flux d'evenements en direct en lecture seule
+via SSE. Voir [agent_runtime_orchestrator.md](agent_runtime_orchestrator.md).
 
 #### 6. 💰 Système de Facturation Complet
 
