@@ -1050,6 +1050,10 @@
                     <label style="display:block; font-size:13px; font-weight:600;">{{ get_text('am_runtime') }}</label>
                     <select id="newAgentRuntime" style="width:100%; max-width:360px;"></select>
                 </div>
+                <div id="amNoRuntimesHint" style="display:none; margin:-4px 0 8px 0; padding:8px 10px; background:#fff3cd; border:1px solid #ffe08a; border-radius:4px;">
+                    <p style="margin:0 0 6px 0; font-size:12px; color:#664d03;">{{ get_text('am_no_runtimes_hint') }}</p>
+                    <button class="btn btn-secondary btn-sm" onclick="registerDefaultRuntimes()">🧩 {{ get_text('am_register_runtimes') }}</button>
+                </div>
                 <div style="margin-bottom:8px;">
                     <label style="display:block; font-size:13px; font-weight:600;">{{ get_text('am_skill_profile') }}</label>
                     <select id="newAgentSkillKind" onchange="onNewAgentSkillKindChange()" style="width:100%; max-width:360px;">

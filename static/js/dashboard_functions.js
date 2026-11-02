@@ -1778,6 +1778,57 @@ async function loadAmInstances() {
  * load it: configuration.skill_profile (standard) or configuration.custom_skill.
  * ========================================================================= */
 
+/*
+ * Built-in runtime definitions used to seed an empty registry from the UI.
+ * Versions are pinned (the registry rejects 'latest'/empty) and protocols are
+ * limited to the set the adapters implement (acp -> Kiro, cli -> SHAI). This
+ * is what fills the New Agent runtime list box when no runtime exists yet.
+ */
+const AM_DEFAULT_RUNTIMES = [
+    { identifier: 'kiro', name: 'Kiro (ACP)', version: '1.0.0', vendor: 'Kiro',
+      supported_protocols: ['acp'] },
+    { identifier: 'shai', name: 'SHAI (CLI)', version: '0.2.2', vendor: 'SHAI',
+      supported_protocols: ['cli'] },
+];
+
+/**
+ * Register the built-in runtimes (admin only) so the runtime list box can be
+ * populated, then refresh the dropdown. POSTs each definition to
+ * /api/v1/agents/runtimes; a 409 (already registered) is treated as success
+ * so re-running is harmless. A 401/403 reports that the admin role is needed.
+ */
+async function registerDefaultRuntimes() {
+    amNewAgentFeedback('#333', 'Registering default runtimes...');
+    let anyOk = false;
+    let forbidden = false;
+    for (const def of AM_DEFAULT_RUNTIMES) {
+        try {
+            const resp = await fetch('/api/v1/agents/runtimes', {
+                method: 'POST', credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(def),
+            });
+            if (resp.ok || resp.status === 409) {
+                anyOk = true;
+            } else if (resp.status === 401 || resp.status === 403) {
+                forbidden = true;
+            }
+        } catch (e) { /* network: fall through to the summary below */ }
+    }
+    if (forbidden && !anyOk) {
+        amNewAgentFeedback('red', 'Could not register the default runtimes (admin role required).');
+        return;
+    }
+    if (!anyOk) {
+        amNewAgentFeedback('red', 'Could not register the default runtimes.');
+        return;
+    }
+    await populateNewAgentRuntimes();
+    // If the registry list panel is open, refresh it too.
+    if (typeof loadAmRuntimes === 'function') { try { loadAmRuntimes(); } catch (e) {} }
+    amNewAgentFeedback('green', 'Default runtimes registered.');
+}
+
 /** Write a colored, HTML-escaped message into the New Agent form feedback area. */
 function amNewAgentFeedback(color, message) {
     const fb = document.getElementById('amNewAgentFeedback');
@@ -1800,11 +1851,14 @@ async function populateNewAgentRuntimes() {
     if (!sel) return;
     const data = await amGet('/api/v1/agents/runtimes');
     const runtimes = (data && data.runtimes) || [];
+    const hint = document.getElementById('amNoRuntimesHint');
     if (!runtimes.length) {
         sel.innerHTML = '';
-        amNewAgentFeedback('orange', 'No runtimes registered. Register a runtime first.');
+        if (hint) hint.style.display = 'block';
+        amNewAgentFeedback('orange', 'No runtimes registered. Use "Register default runtimes" below.');
         return;
     }
+    if (hint) hint.style.display = 'none';
     let html = '<option value="">Select a runtime</option>';
     for (const r of runtimes) {
         const rid = parseInt(r.id, 10);
@@ -2359,6 +2413,8 @@ if (typeof module !== 'undefined' && module.exports) {
         onNewAgentSkillKindChange,
         populateNewAgentRuntimes,
         populateNewAgentSkills,
+        AM_DEFAULT_RUNTIMES,
+        registerDefaultRuntimes,
         buildNewAgentConfiguration,
         submitNewAgent,
         // Pure status -> legal lifecycle-controls mapping (Req 2.5)

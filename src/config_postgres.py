@@ -561,6 +561,11 @@ TRANSLATIONS = {
         'am_agent_create_failed': 'Could not create the agent.',
         'am_select_runtime': 'Select a runtime',
         'am_no_runtimes': 'No runtimes registered. Register a runtime first.',
+        'am_register_runtimes': 'Register default runtimes',
+        'am_registering_runtimes': 'Registering default runtimes...',
+        'am_runtimes_registered': 'Default runtimes registered.',
+        'am_register_runtimes_failed': 'Could not register the default runtimes (admin role required).',
+        'am_no_runtimes_hint': 'The runtime registry is empty. Register the built-in runtimes to populate this list (admin only).',
         'not_found': 'Not found',
         'authentication_required': 'Authentication required',
         # Onboarding: Sandbox / Demo Mode panel (Req 1.6, 2.1, 2.2, 3.3)
@@ -913,6 +918,11 @@ TRANSLATIONS = {
         'am_agent_create_failed': "Impossible de creer l'agent.",
         'am_select_runtime': 'Selectionner un runtime',
         'am_no_runtimes': "Aucun runtime enregistre. Enregistrez d'abord un runtime.",
+        'am_register_runtimes': 'Enregistrer les runtimes par defaut',
+        'am_registering_runtimes': 'Enregistrement des runtimes par defaut...',
+        'am_runtimes_registered': 'Runtimes par defaut enregistres.',
+        'am_register_runtimes_failed': "Impossible d'enregistrer les runtimes par defaut (role admin requis).",
+        'am_no_runtimes_hint': "Le registre des runtimes est vide. Enregistrez les runtimes integres pour remplir cette liste (admin uniquement).",
         'not_found': 'Introuvable',
         'authentication_required': "Authentification requise",
         # Onboarding: Mode Bac à sable / Démo (Req 1.6, 2.1, 2.2, 3.3)
