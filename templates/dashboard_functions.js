@@ -1766,6 +1766,155 @@ async function loadAmInstances() {
     renderAgentInstancesTable('amInstancesContent', data && data.agents, 'amInstancesFeedback');
 }
 
+/* ========================================================================= *
+ * New Agent form (Instances panel): create an agent and attach a profile
+ * skill (a standard {NAME}_context.md skill, or a custom one), then
+ * optionally drive it to READY and start it. Backed by the ARO REST API:
+ *   GET  /api/v1/agents/runtimes   -> runtime choices
+ *   GET  /api/v1/agents/skills     -> standard skill profiles
+ *   POST /api/v1/agents/           -> create (name, runtime_id, configuration)
+ *   POST /api/v1/agents/{id}/ready, /start  -> launch
+ * The chosen skill is stored in the agent's configuration so the runtime can
+ * load it: configuration.skill_profile (standard) or configuration.custom_skill.
+ * ========================================================================= */
+
+/** Write a colored, HTML-escaped message into the New Agent form feedback area. */
+function amNewAgentFeedback(color, message) {
+    const fb = document.getElementById('amNewAgentFeedback');
+    if (fb) fb.innerHTML = '<span style="color:' + color + ';">' + escapeHtml(message) + '</span>';
+}
+
+/** Toggle the standard/custom skill inputs based on the selected skill kind. */
+function onNewAgentSkillKindChange() {
+    const kindEl = document.getElementById('newAgentSkillKind');
+    const kind = kindEl ? kindEl.value : 'none';
+    const std = document.getElementById('newAgentSkillStandardWrap');
+    const cust = document.getElementById('newAgentSkillCustomWrap');
+    if (std) std.style.display = (kind === 'standard') ? 'block' : 'none';
+    if (cust) cust.style.display = (kind === 'custom') ? 'block' : 'none';
+}
+
+/** Populate the runtime <select> from the registry; disable submit if none. */
+async function populateNewAgentRuntimes() {
+    const sel = document.getElementById('newAgentRuntime');
+    if (!sel) return;
+    const data = await amGet('/api/v1/agents/runtimes');
+    const runtimes = (data && data.runtimes) || [];
+    if (!runtimes.length) {
+        sel.innerHTML = '';
+        amNewAgentFeedback('orange', 'No runtimes registered. Register a runtime first.');
+        return;
+    }
+    let html = '<option value="">Select a runtime</option>';
+    for (const r of runtimes) {
+        const rid = parseInt(r.id, 10);
+        if (!Number.isFinite(rid)) continue;
+        const label = (r.name || r.identifier || ('runtime ' + rid))
+            + (r.version ? (' (' + r.version + ')') : '');
+        html += '<option value="' + rid + '">' + escapeHtml(label) + '</option>';
+    }
+    sel.innerHTML = html;
+}
+
+/** Populate the standard skill-profile <select> from GET /api/v1/agents/skills. */
+async function populateNewAgentSkills() {
+    const sel = document.getElementById('newAgentSkillStandard');
+    if (!sel) return;
+    const data = await amGet('/api/v1/agents/skills');
+    const skills = (data && data.skills) || [];
+    let html = '';
+    for (const s of skills) {
+        if (!s || !s.id) continue;
+        html += '<option value="' + escapeHtml(String(s.id)) + '">'
+            + escapeHtml(String(s.name || s.id)) + '</option>';
+    }
+    sel.innerHTML = html || '<option value="">(none available)</option>';
+}
+
+/** Reveal the New Agent form and (re)load its runtime + skill choices. */
+function showNewAgentForm() {
+    const form = document.getElementById('amNewAgentForm');
+    if (!form) return;
+    form.style.display = 'block';
+    amNewAgentFeedback('', '');
+    const name = document.getElementById('newAgentName');
+    if (name) name.value = '';
+    const custom = document.getElementById('newAgentSkillCustom');
+    if (custom) custom.value = '';
+    const kind = document.getElementById('newAgentSkillKind');
+    if (kind) kind.value = 'none';
+    onNewAgentSkillKindChange();
+    populateNewAgentRuntimes();
+    populateNewAgentSkills();
+}
+
+/** Hide the New Agent form. */
+function hideNewAgentForm() {
+    const form = document.getElementById('amNewAgentForm');
+    if (form) form.style.display = 'none';
+}
+
+/** Build the configuration object carrying the selected profile skill. */
+function buildNewAgentConfiguration() {
+    const kindEl = document.getElementById('newAgentSkillKind');
+    const kind = kindEl ? kindEl.value : 'none';
+    if (kind === 'standard') {
+        const sel = document.getElementById('newAgentSkillStandard');
+        const val = sel ? sel.value : '';
+        if (val) return { skill_profile: val };
+    } else if (kind === 'custom') {
+        const inp = document.getElementById('newAgentSkillCustom');
+        const val = inp ? inp.value.trim() : '';
+        if (val) return { custom_skill: val };
+    }
+    return {};
+}
+
+/**
+ * Create the agent from the form inputs. POSTs name + runtime_id +
+ * configuration (the profile skill) to /api/v1/agents/, then, when 'start
+ * after creation' is checked, drives the new agent READY -> start. Refreshes
+ * the Instances table and reports the outcome. Validates inputs client-side
+ * and never leaves the form in a half-submitted state on error.
+ */
+async function submitNewAgent() {
+    const nameEl = document.getElementById('newAgentName');
+    const runtimeEl = document.getElementById('newAgentRuntime');
+    const startEl = document.getElementById('newAgentStart');
+    const name = nameEl ? nameEl.value.trim() : '';
+    const runtimeId = runtimeEl ? parseInt(runtimeEl.value, 10) : NaN;
+    if (!name) { amNewAgentFeedback('red', 'Agent name is required.'); return; }
+    if (!Number.isFinite(runtimeId)) { amNewAgentFeedback('red', 'Select a runtime'); return; }
+
+    const payload = { name: name, runtime_id: runtimeId, configuration: buildNewAgentConfiguration() };
+    let created;
+    try {
+        const resp = await fetch('/api/v1/agents/', {
+            method: 'POST', credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        let body = {};
+        try { const t = await resp.text(); body = t ? JSON.parse(t) : {}; } catch (e) { body = {}; }
+        if (!resp.ok) { amNewAgentFeedback('red', 'Could not create the agent. (' + resp.status + ')'); return; }
+        created = body;
+    } catch (e) {
+        amNewAgentFeedback('red', 'Could not create the agent. (network)');
+        return;
+    }
+
+    // Optionally launch: drive READY then start. Failures here are reported
+    // but the agent already exists, so the table still refreshes.
+    if (startEl && startEl.checked && created && created.id !== undefined) {
+        await amPostLifecycle(created.id, 'ready');
+        await amPostLifecycle(created.id, 'start');
+    }
+
+    amNewAgentFeedback('green', 'Agent created.');
+    hideNewAgentForm();
+    await loadAmInstances();
+}
+
 /*
  * Pure status -> legal-controls mapping for Agent Management lifecycle controls.
  *
@@ -2204,6 +2353,14 @@ if (typeof module !== 'undefined' && module.exports) {
         loadAmDashboard,
         loadAmRuntimes,
         loadAmInstances,
+        // New Agent form helpers (create + attach profile skill, then launch)
+        showNewAgentForm,
+        hideNewAgentForm,
+        onNewAgentSkillKindChange,
+        populateNewAgentRuntimes,
+        populateNewAgentSkills,
+        buildNewAgentConfiguration,
+        submitNewAgent,
         // Pure status -> legal lifecycle-controls mapping (Req 2.5)
         lifecycleControlState,
         // Dedicated Instances renderer with state-aware lifecycle controls (Req 2.1, 2.5, 3.3, 3.4)

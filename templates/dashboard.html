@@ -1035,7 +1035,45 @@
             <div id="amRuntimesContent"></div>
         </div>
         <div id="amPanel-instances" class="am-panel" style="display:none;">
-            <h3>🤖 {{ get_text('am_instances') }}</h3>
+            <div class="section-header" style="display:flex; align-items:center; justify-content:space-between;">
+                <h3>🤖 {{ get_text('am_instances') }}</h3>
+                <button class="btn btn-primary btn-sm" onclick="showNewAgentForm()">➕ {{ get_text('am_new_agent') }}</button>
+            </div>
+
+            <!-- New Agent form: create an agent and attach a standard or custom profile skill. -->
+            <div id="amNewAgentForm" style="display:none; margin:10px 0; padding:15px; background:#eef6ff; border:1px solid #b8daff; border-radius:5px;">
+                <div style="margin-bottom:8px;">
+                    <label style="display:block; font-size:13px; font-weight:600;">{{ get_text('am_agent_name') }}</label>
+                    <input type="text" id="newAgentName" style="width:100%; max-width:360px;" />
+                </div>
+                <div style="margin-bottom:8px;">
+                    <label style="display:block; font-size:13px; font-weight:600;">{{ get_text('am_runtime') }}</label>
+                    <select id="newAgentRuntime" style="width:100%; max-width:360px;"></select>
+                </div>
+                <div style="margin-bottom:8px;">
+                    <label style="display:block; font-size:13px; font-weight:600;">{{ get_text('am_skill_profile') }}</label>
+                    <select id="newAgentSkillKind" onchange="onNewAgentSkillKindChange()" style="width:100%; max-width:360px;">
+                        <option value="none">{{ get_text('am_skill_none') }}</option>
+                        <option value="standard">{{ get_text('am_skill_standard') }}</option>
+                        <option value="custom">{{ get_text('am_skill_custom') }}</option>
+                    </select>
+                </div>
+                <div id="newAgentSkillStandardWrap" style="display:none; margin-bottom:8px;">
+                    <select id="newAgentSkillStandard" style="width:100%; max-width:360px;"></select>
+                </div>
+                <div id="newAgentSkillCustomWrap" style="display:none; margin-bottom:8px;">
+                    <input type="text" id="newAgentSkillCustom" placeholder="{{ get_text('am_skill_custom_placeholder') }}" style="width:100%; max-width:360px;" />
+                </div>
+                <div style="margin-bottom:8px;">
+                    <label style="font-size:13px;"><input type="checkbox" id="newAgentStart" checked /> {{ get_text('am_start_after_create') }}</label>
+                </div>
+                <div>
+                    <button class="btn btn-success btn-sm" onclick="submitNewAgent()">{{ get_text('am_create_agent') }}</button>
+                    <button class="btn btn-secondary btn-sm" onclick="hideNewAgentForm()">{{ get_text('am_cancel') }}</button>
+                    <span id="amNewAgentFeedback" style="margin-left:10px;"></span>
+                </div>
+            </div>
+
             <div id="amInstancesContent"></div>
         </div>
         <div id="amPanel-tasks" class="am-panel" style="display:none;">

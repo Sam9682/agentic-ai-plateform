@@ -38,6 +38,22 @@ logger.propagate = False
 serverless_bp = Blueprint('serverless', __name__, url_prefix='/api')
 
 
+def is_admin_user(user_id):
+    """Resolve admin status from the database.
+
+    Admin status is NOT stored in the Flask session at login (see auth_routes /
+    sso_routes), so ``session.get('is_admin')`` is always False. Determine it the
+    same way the rest of the codebase does: the user whose username is 'admin'.
+    """
+    if not user_id:
+        return False
+    user = db_manager.execute_query(
+        'SELECT username FROM users WHERE id = %s',
+        (user_id,), fetch_one=True
+    )
+    return bool(user and user[0] == 'admin')
+
+
 # Map remote agentic-ai-plateform-serverless-brik statuses to local DB statuses
 REMOTE_STATUS_MAP = {
     'success': 'completed',
@@ -53,7 +69,7 @@ REMOTE_STATUS_MAP = {
 
 def sync_job_from_remote(job_id, target_link):
     """Poll the remote agentic-ai-plateform-serverless-brik endpoint to get actual job status and update local DB.
-    
+
     Returns the remote response data dict if successful, or None if the remote is unreachable.
     """
     if not target_link:
@@ -64,7 +80,7 @@ def sync_job_from_remote(job_id, target_link):
     # But user's curl shows http://agentic-ai-plateform.com:6132/jobs/{id} - use HTTP port
     # Convert https to http and port-1 for the API endpoint, or just try as-is
     remote_url = f"{target_link}/jobs/{job_id}"
-    
+
     # Also try HTTP variant (the remote brik typically serves on HTTP)
     http_url = remote_url.replace("https://", "http://")
     # Adjust port: if HTTPS port (e.g. 6133), the HTTP port is one less (6132)
@@ -88,12 +104,12 @@ def sync_job_from_remote(job_id, target_link):
                 remote_status = data.get('status', '')
                 local_status = REMOTE_STATUS_MAP.get(remote_status, remote_status)
                 exit_code = data.get('exit_code')
-                
+
                 # Update local DB if status changed from pending/running
                 if local_status in ('completed', 'failed', 'timeout'):
                     try:
                         db_manager.execute_query(
-                            '''UPDATE serverless_jobs 
+                            '''UPDATE serverless_jobs
                                SET status = %s, exit_code = %s, completed_at = CURRENT_TIMESTAMP
                                WHERE id = %s AND status IN ('pending', 'running')''',
                             (local_status, exit_code, job_id)
@@ -120,19 +136,19 @@ def sync_job_from_remote(job_id, target_link):
                 elif local_status == 'running':
                     try:
                         db_manager.execute_query(
-                            '''UPDATE serverless_jobs 
+                            '''UPDATE serverless_jobs
                                SET status = %s, started_at = COALESCE(started_at, CURRENT_TIMESTAMP)
                                WHERE id = %s AND status = 'pending' ''',
                             (local_status, job_id)
                         )
                     except Exception as e:
                         logger.warning(f"Failed to update running status for job {job_id}: {e}")
-                
+
                 return data
         except Exception as e:
             logger.debug(f"Failed to reach remote endpoint {url}: {e}")
             continue
-    
+
     return None
 
 
@@ -340,7 +356,7 @@ def list_jobs():
         return jsonify({"error": f"Invalid status filter. Must be one of: {', '.join(valid_statuses)}"}), 400
 
     # Build query based on user role
-    is_admin = session.get('is_admin', False)
+    is_admin = is_admin_user(user_id)
 
     try:
         # Build WHERE clause
@@ -435,7 +451,7 @@ def get_metrics():
     logger.info(f"GET /api/jobs/metrics - Request received: user_id={user_id}")
 
     # Admin-only check
-    is_admin = session.get('is_admin', False)
+    is_admin = is_admin_user(user_id)
     if not is_admin:
         logger.warning(f"GET /api/jobs/metrics - Access denied: user_id={user_id} is not admin")
         return jsonify({"error": "Admin access required"}), 403
@@ -520,7 +536,7 @@ def get_job_status(job_id):
 
     # Ownership check: must be job owner or admin
     job_user_id = job[1]
-    is_admin = session.get('is_admin', False)
+    is_admin = is_admin_user(user_id)
     if job_user_id != user_id and not is_admin:
         return jsonify({"error": "Access denied"}), 403
 
@@ -582,7 +598,7 @@ def get_job_result(job_id):
 
     # Ownership check: must be job owner or admin
     job_user_id = job[1]
-    is_admin = session.get('is_admin', False)
+    is_admin = is_admin_user(user_id)
     if job_user_id != user_id and not is_admin:
         return jsonify({"error": "Access denied"}), 403
 
@@ -701,7 +717,7 @@ def cancel_job(job_id):
 
     # Ownership check: must be job owner or admin
     job_user_id = job[1]
-    is_admin = session.get('is_admin', False)
+    is_admin = is_admin_user(user_id)
     if job_user_id != user_id and not is_admin:
         return jsonify({"error": "Access denied"}), 403
 

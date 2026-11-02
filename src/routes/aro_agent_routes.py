@@ -12,6 +12,7 @@ Exposes ``aro_agent_bp`` under ``/api/v1/agents``:
 * POST   /{id}/release     - release a QUARANTINED agent to READY (admin role)
 * GET    /{id}/status      - current status
 * GET    /{id}/logs        - recent logs (adapter-dependent)
+* GET    /skills           - list standard skill profiles attachable to a new agent
 
 Lifecycle operations run through :class:`LifecycleService`, which validates the
 transition graph and emits events. The real adapter + launcher are wired here;
@@ -162,3 +163,53 @@ def agent_status(agent_id):
     if agent is None:
         return jsonify({"error": get_text("not_found")}), 404
     return jsonify({"id": agent["id"], "status": agent["status"]}), 200
+
+
+def _list_skill_profiles():
+    """Discover the available standard skill profiles.
+
+    A "skill profile" in this platform is a ``{NAME}_context.md`` file in the
+    skills folder (``agentic-ai-plateform--skills/`` with a legacy ``shared/``
+    fallback). Reuses the resolver in :mod:`src.routes.genai_routes` so the UI
+    offers exactly the context files the prompt builders can load. Returns a
+    sorted list of dicts ``{id, name, source}`` (deduplicated by id). Never
+    raises: a missing/unreadable folder yields an empty list.
+    """
+    import os
+    try:
+        from .genai_routes import _skills_base_dirs, SKILLS_DIR_CANDIDATES
+    except Exception:  # pragma: no cover - genai module import guard
+        return []
+    seen = {}
+    for base in _skills_base_dirs():
+        for skills_dir in SKILLS_DIR_CANDIDATES:
+            folder = os.path.join(base, skills_dir)
+            try:
+                entries = os.listdir(folder)
+            except (OSError, TypeError):
+                continue
+            for fname in entries:
+                if not fname.endswith("_context.md"):
+                    continue
+                skill_id = fname[: -len("_context.md")]
+                if not skill_id or skill_id in seen:
+                    continue
+                seen[skill_id] = {
+                    "id": skill_id,
+                    "name": skill_id.replace("_", " ").title(),
+                    "source": skills_dir,
+                }
+    return [seen[k] for k in sorted(seen)]
+
+
+@aro_agent_bp.route("/skills", methods=["GET"])
+@tenant_scoped
+def list_skill_profiles():
+    """List the standard skill profiles that can be attached to a new agent.
+
+    These are the ``{NAME}_context.md`` skill files shipped in the skills
+    folder. The New Agent form offers them as the "standard profile skill"
+    choice; a user may instead supply a custom profile skill (free-form name),
+    which the UI stores under the agent's ``configuration.custom_skill``.
+    """
+    return jsonify({"skills": _list_skill_profiles()}), 200
