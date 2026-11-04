@@ -601,6 +601,20 @@ def init_db():
                 conn.rollback()
                 print(f"[INFO] Runtime monitor migration check: {e}")
 
+            # Apply instance remediation migration (reconciliation remediation
+            # state machine columns + needs-attention index on instances)
+            try:
+                migration_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'migration', 'add_instance_remediation.sql')
+                if os.path.exists(migration_path):
+                    with open(migration_path, 'r') as f:
+                        migration_sql = f.read()
+                    cursor.execute(migration_sql)
+                    conn.commit()
+            except Exception as e:
+                # Migration may already be applied, ignore errors
+                conn.rollback()
+                print(f"[INFO] Instance remediation migration check: {e}")
+
             # Apply ARO/ZAF migrations in dependency order. Each is idempotent
             # (IF NOT EXISTS / ON CONFLICT) and wrapped so a re-run is harmless.
             for _aro_migration in (

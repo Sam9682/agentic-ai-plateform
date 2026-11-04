@@ -32,6 +32,41 @@ def _get_sso_mac_key():
     return key.encode('utf-8')
 
 
+def require_sso_mac_key():
+    """Fail closed at startup when the SSO MAC key is not configured (R2.2).
+
+    This is an *eager* startup-validation helper: it invokes the same
+    fail-closed check as :func:`_get_sso_mac_key` so a missing ``SSO_MAC_KEY``
+    is surfaced at boot with a clear, actionable error that names the missing
+    variable, rather than being deferred to the first login/token operation.
+
+    It does NOT weaken the request-time guard: :func:`_get_sso_mac_key` keeps
+    raising ``RuntimeError`` when the key is unset. This check is an additional,
+    earlier signal, not a replacement.
+
+    Raises:
+        RuntimeError: when ``SSO_MAC_KEY`` is not set in the process
+            environment. The message names ``SSO_MAC_KEY`` and points at the
+            configuration remedy (export it in the deployment environment / the
+            ``.env`` loaded at startup).
+    """
+    if not os.environ.get(_SSO_MAC_KEY_ENV):
+        raise RuntimeError(
+            f"{_SSO_MAC_KEY_ENV} is not set; refusing to start. Set the "
+            f"{_SSO_MAC_KEY_ENV} environment variable (e.g. export it in the "
+            "deployment environment or the .env file loaded at startup) before "
+            "serving requests, otherwise SSO token issuance/verification will "
+            "fail on every login."
+        )
+    # Validate it is usable as a key (mirrors _get_sso_mac_key's encoding).
+    _get_sso_mac_key()
+
+
+# Backwards-compatible alias: either name may be used to invoke the eager
+# startup validation (see design.md Change 1).
+validate_startup_config = require_sso_mac_key
+
+
 def _compute_token_mac(token_hash):
     """Compute the keyed HMAC-SHA256 over the stored token hash (R7.1).
 

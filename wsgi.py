@@ -12,6 +12,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
 from src.ControlPlanFlaskApp_postgres import create_app
 from src.database_postgres import init_db
+from src.auth import require_sso_mac_key
+
+# Fail closed at startup if required secrets are missing (surfaces a missing
+# SSO_MAC_KEY as an actionable boot error instead of deferring it to the first
+# login request). Runs before serving traffic.
+require_sso_mac_key()
 
 # Initialize database on startup
 init_db()
