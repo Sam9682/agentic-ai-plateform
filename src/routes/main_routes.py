@@ -4,7 +4,7 @@ import os
 
 # Use PostgreSQL by default
 from ..database_postgres import db_manager
-from ..config_postgres import DOMAIN, PLTF_NAME, APP_VERSION
+from ..config_postgres import DOMAIN, PLTF_NAME, APP_VERSION, LINUX_USER_INSTALLATION
 
 main_bp = Blueprint('main', __name__)
 
@@ -75,7 +75,7 @@ def dashboard():
     # Get SSO token for the user
     sso_token = session.get('sso_token', '')
     
-    return render_template('dashboard.html', applications=applications, username=username, sso_token=sso_token, user_id=session['user_id'], DOMAIN=DOMAIN, PLTF_NAME=PLTF_NAME, APP_VERSION=APP_VERSION)
+    return render_template('dashboard.html', applications=applications, username=username, sso_token=sso_token, user_id=session['user_id'], DOMAIN=DOMAIN, PLTF_NAME=PLTF_NAME, APP_VERSION=APP_VERSION, LINUX_USER=LINUX_USER_INSTALLATION)
 
 @main_bp.route('/set_language/<language>')
 def set_language(language):

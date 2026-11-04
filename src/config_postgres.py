@@ -145,6 +145,34 @@ def get_linux_user():
     return 'psmc'
 
 
+DEFAULT_SKILLS_URL = 'https://github.com/Sam9682/agentic-ai-plateform--skills.git'
+
+
+def get_skills_submodule_url():
+    """Get the skills/context repository URL (SUBMODULE_URL) from deploy.ini"""
+    try:
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        config_path = os.path.join(base_dir, 'conf', 'deploy.ini')
+        with open(config_path, 'r') as f:
+            for line in f:
+                if line.strip().startswith('SUBMODULE_URL'):
+                    value = line.split('=', 1)[1].strip().strip("'\"")
+                    if value:
+                        return value
+    except Exception as e:
+        logger.error(f'Failed to read SUBMODULE_URL from deploy.ini: {e}')
+    return DEFAULT_SKILLS_URL
+
+
+def get_skills_folder_name(url=None):
+    """Skills folder name = repository name of SUBMODULE_URL (e.g. agentic-ai-plateform--skills)"""
+    url = (url or get_skills_submodule_url()).rstrip('/')
+    name = url.rsplit('/', 1)[-1].rsplit(':', 1)[-1]
+    if name.endswith('.git'):
+        name = name[:-4]
+    return name or 'agentic-ai-plateform--skills'
+
+
 PLTF_NAME = get_platform_name()
 PLTF_FOLDER = get_platform_folder()
 DOMAIN = get_domain_name()
