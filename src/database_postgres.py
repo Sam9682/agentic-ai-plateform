@@ -659,7 +659,7 @@ def init_db():
                     cursor.execute('SELECT id FROM user_applications WHERE user_id = %s AND application_id = %s', (uid, serverless_app_id))
                     if not cursor.fetchone():
                         app_ports = calculate_app_ports(uid, serverless_app_id)
-                        url = f'https://www.{DOMAIN}:{app_ports[1]}'
+                        url = f'https://{DOMAIN}:{app_ports[1]}'
                         cursor.execute(f'''
                             INSERT INTO user_applications (user_id, application_id, url, {APP_PORT_COLUMNS_SQL})
                             VALUES (%s, %s, %s, {APP_PORT_PLACEHOLDERS_SQL})
@@ -779,7 +779,7 @@ def init_db():
                     # Calculate URL using the same logic as deployControlPlan.sh
                     app_ports = calculate_app_ports(admin_id, app_id)
 
-                    url = f'https://www.{DOMAIN}:{app_ports[1]}'
+                    url = f'https://{DOMAIN}:{app_ports[1]}'
                     cursor.execute(f'''
                         INSERT INTO user_applications (user_id, application_id, url, {APP_PORT_COLUMNS_SQL})
                         VALUES (%s, %s, %s, {APP_PORT_PLACEHOLDERS_SQL})
@@ -840,7 +840,7 @@ def assign_default_apps_to_user(user_id):
                 app_ports = calculate_app_ports(user_id, app_id)
 
                 # Compose URL
-                url = f'https://www.{DOMAIN}:{app_ports[1]}'
+                url = f'https://{DOMAIN}:{app_ports[1]}'
                 cursor.execute(f'''
                     INSERT INTO user_applications (user_id, application_id, url, {APP_PORT_COLUMNS_SQL})
                     VALUES (%s, %s, %s, {APP_PORT_PLACEHOLDERS_SQL})
@@ -864,7 +864,7 @@ def assign_app_to_all_users(app_id, app_name):
                 # Calculate URL using the same logic as deployControlPlan.sh
                 app_ports = calculate_app_ports(uid, app_id)
 
-                url = f'https://www.{DOMAIN}:{app_ports[1]}'
+                url = f'https://{DOMAIN}:{app_ports[1]}'
                 cursor.execute(f'''
                     INSERT INTO user_applications (user_id, application_id, url, {APP_PORT_COLUMNS_SQL})
                     VALUES (%s, %s, %s, {APP_PORT_PLACEHOLDERS_SQL})

@@ -10,7 +10,7 @@
 <body>
     <nav class="navbar">
         <div class="nav-container">
-            <a href="https://www.{{ DOMAIN|default('softfluid.fr') }}" class="nav-title">{{ PLTF_NAME }} <span style="font-size: 10px; color: #aaa;">v{{ APP_VERSION }}</span></a>
+            <a href="https://{{ DOMAIN|default('softfluid.fr') }}" class="nav-title">{{ PLTF_NAME }} <span style="font-size: 10px; color: #aaa;">v{{ APP_VERSION }}</span></a>
             <div class="nav-center">
                 <div class="nav-links">
                     {% if session.user_id %}

@@ -1508,10 +1508,10 @@ PATH = /home/${LINUX_USER_INSTALLATION}/admin/db/gitea.db
 ROOT = /home/${LINUX_USER_INSTALLATION}/admin/data/gitea-repositories
 
 [server]
-DOMAIN = www.${S3_BUCKET_NAME}.com
+DOMAIN = ${S3_BUCKET_NAME}.com
 HTTP_ADDR = 0.0.0.0
 HTTP_PORT = 3000
-ROOT_URL = https://www.${S3_BUCKET_NAME}.com/gitea/
+ROOT_URL = https://${S3_BUCKET_NAME}.com/gitea/
 
 [mailer]
 ENABLED = false
@@ -1588,7 +1588,7 @@ create_gitea_admin_user() {
     echo "  🔑 Gitea Admin Credentials:"
     echo "      Username: gitadmin"
     echo "      Password: password"
-    echo "      URL: http://www.${S3_BUCKET_NAME}.com/gitea"
+    echo "      URL: http://${S3_BUCKET_NAME}.com/gitea"
 
     # Try to generate API token with timeout
     setup_api_token
@@ -2448,8 +2448,8 @@ help() {
     echo "  • Docker Containers (optional)"
     echo ""
     echo "ACCESS URLS:"
-    echo "  • Main App: https://www.agentic-ai-plateform.com"
-    echo "  • Gitea:    https://www.agentic-ai-plateform.com/gitea"
+    echo "  • Main App: https://agentic-ai-plateform.com"
+    echo "  • Gitea:    https://agentic-ai-plateform.com/gitea"
     echo "  • Local:    https://localhost (with SSL certificates)"
 }
 

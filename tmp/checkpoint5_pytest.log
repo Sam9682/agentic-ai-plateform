@@ -1,0 +1,529 @@
+/home/slepetre/.local/lib/python3.12/site-packages/pytest_asyncio/plugin.py:208: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+....F................................................................... [ 10%]
+........................................................................ [ 21%]
+........................................................................ [ 32%]
+......................................................................F. [ 43%]
+.....EE................................................................. [ 54%]
+..............s...................................................s..... [ 65%]
+...............................................s........................ [ 76%]
+................................s....................................... [ 87%]
+.....FFF...sss.......................................................... [ 98%]
+............                                                             [100%]
+==================================== ERRORS ====================================
+_____________ ERROR at setup of test_wsgi_application_is_flask_app _____________
+
+    @pytest.fixture(scope="module")
+    def wsgi_module():
+        """Import ``wsgi`` for real with DB/background side effects neutralised.
+    
+        ``wsgi.py`` does ``from src.database_postgres import init_db`` and calls it at
+        import time, then ``create_app()`` starts the orchestrator/replication
+        workers inside an app context. All require a live PostgreSQL irrelevant to
+        the ``application`` object's identity. We patch ``init_db`` on the source
+        module (so the ``from ... import`` binding picks up the no-op) and the
+        orchestrator/replication workers, then import ``wsgi`` fresh so its
+        module-level ``init_db()`` / ``create_app()`` run hermetically.
+        """
+        # Ensure a clean import so the patched symbols take effect on first load.
+        sys.modules.pop("wsgi", None)
+    
+        import src.database_postgres as db_mod
+        from src import orchestrator as orch_mod
+        from src import replication_manager as repl_mod
+    
+        with mock.patch.object(db_mod, "init_db", lambda *a, **k: None), \
+             mock.patch.object(orch_mod.orchestrator, "init_orchestrator_tables",
+                               lambda *a, **k: None), \
+             mock.patch.object(orch_mod.orchestrator, "start_reconciliation_loop",
+                               lambda *a, **k: None), \
+             mock.patch.object(repl_mod.ReplicationManager, "start_worker",
+                               lambda *a, **k: None):
+>           wsgi = importlib.import_module("wsgi")
+
+tests/test_entry_point_consolidation.py:119: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+<frozen importlib._bootstrap>:1387: in _gcd_import
+    ???
+<frozen importlib._bootstrap>:1360: in _find_and_load
+    ???
+<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
+    ???
+<frozen importlib._bootstrap>:935: in _load_unlocked
+    ???
+<frozen importlib._bootstrap_external>:995: in exec_module
+    ???
+<frozen importlib._bootstrap>:488: in _call_with_frames_removed
+    ???
+wsgi.py:20: in <module>
+    application = create_app()
+src/ControlPlanFlaskApp_postgres.py:71: in create_app
+    init_db()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def init_db():
+        """Initialize database with required tables"""
+>       with db_manager.get_db_connection() as conn:
+E       AttributeError: 'FakeDbManager' object has no attribute 'get_db_connection'
+
+src/database_postgres.py:483: AttributeError
+________ ERROR at setup of test_wsgi_builds_application_via_create_app _________
+
+    @pytest.fixture(scope="module")
+    def wsgi_module():
+        """Import ``wsgi`` for real with DB/background side effects neutralised.
+    
+        ``wsgi.py`` does ``from src.database_postgres import init_db`` and calls it at
+        import time, then ``create_app()`` starts the orchestrator/replication
+        workers inside an app context. All require a live PostgreSQL irrelevant to
+        the ``application`` object's identity. We patch ``init_db`` on the source
+        module (so the ``from ... import`` binding picks up the no-op) and the
+        orchestrator/replication workers, then import ``wsgi`` fresh so its
+        module-level ``init_db()`` / ``create_app()`` run hermetically.
+        """
+        # Ensure a clean import so the patched symbols take effect on first load.
+        sys.modules.pop("wsgi", None)
+    
+        import src.database_postgres as db_mod
+        from src import orchestrator as orch_mod
+        from src import replication_manager as repl_mod
+    
+        with mock.patch.object(db_mod, "init_db", lambda *a, **k: None), \
+             mock.patch.object(orch_mod.orchestrator, "init_orchestrator_tables",
+                               lambda *a, **k: None), \
+             mock.patch.object(orch_mod.orchestrator, "start_reconciliation_loop",
+                               lambda *a, **k: None), \
+             mock.patch.object(repl_mod.ReplicationManager, "start_worker",
+                               lambda *a, **k: None):
+>           wsgi = importlib.import_module("wsgi")
+
+tests/test_entry_point_consolidation.py:119: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+<frozen importlib._bootstrap>:1387: in _gcd_import
+    ???
+<frozen importlib._bootstrap>:1360: in _find_and_load
+    ???
+<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked
+    ???
+<frozen importlib._bootstrap>:935: in _load_unlocked
+    ???
+<frozen importlib._bootstrap_external>:995: in exec_module
+    ???
+<frozen importlib._bootstrap>:488: in _call_with_frames_removed
+    ???
+wsgi.py:20: in <module>
+    application = create_app()
+src/ControlPlanFlaskApp_postgres.py:71: in create_app
+    init_db()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def init_db():
+        """Initialize database with required tables"""
+>       with db_manager.get_db_connection() as conn:
+E       AttributeError: 'FakeDbManager' object has no attribute 'get_db_connection'
+
+src/database_postgres.py:483: AttributeError
+=================================== FAILURES ===================================
+______________________________ test_orchestrator _______________________________
+
+self = <src.database_postgres.PostgreSQLManager object at 0x7eaf423a7da0>
+
+    def _initialize_pool(self):
+        """Initialize PostgreSQL connection pool"""
+        try:
+>           self._pool = psycopg2.pool.ThreadedConnectionPool(
+                minconn=self._config['min_connections'],
+                maxconn=self._config['max_connections'],
+                host=self._config['host'],
+                port=self._config['port'],
+                database=self._config['database'],
+                user=self._config['user'],
+                password=self._config['password'],
+                sslmode=self._config.get('sslmode', 'prefer'),
+                connect_timeout=self._config.get('connect_timeout', 10)
+            )
+
+src/database_postgres.py:250: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../../../.local/lib/python3.12/site-packages/psycopg2/pool.py:161: in __init__
+    AbstractConnectionPool.__init__(
+../../../.local/lib/python3.12/site-packages/psycopg2/pool.py:59: in __init__
+    self._connect()
+../../../.local/lib/python3.12/site-packages/psycopg2/pool.py:63: in _connect
+    conn = psycopg2.connect(*self._args, **self._kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+dsn = 'host=localhost port=5432 user=swautomorph password=swautomorph_password sslmode=prefer connect_timeout=10 dbname=ai_swautomorph'
+connection_factory = None, cursor_factory = None
+kwargs = {'connect_timeout': 10, 'database': 'ai_swautomorph', 'host': 'localhost', 'password': 'swautomorph_password', ...}
+kwasync = {}
+
+    def connect(dsn=None, connection_factory=None, cursor_factory=None, **kwargs):
+        """
+        Create a new database connection.
+    
+        The connection parameters can be specified as a string:
+    
+            conn = psycopg2.connect("dbname=test user=postgres password=secret")
+    
+        or using a set of keyword arguments:
+    
+            conn = psycopg2.connect(database="test", user="postgres", password="secret")
+    
+        Or as a mix of both. The basic connection parameters are:
+    
+        - *dbname*: the database name
+        - *database*: the database name (only as keyword argument)
+        - *user*: user name used to authenticate
+        - *password*: password used to authenticate
+        - *host*: database host address (defaults to UNIX socket if not provided)
+        - *port*: connection port number (defaults to 5432 if not provided)
+    
+        Using the *connection_factory* parameter a different class or connections
+        factory can be specified. It should be a callable object taking a dsn
+        argument.
+    
+        Using the *cursor_factory* parameter, a new default cursor factory will be
+        used by cursor().
+    
+        Using *async*=True an asynchronous connection will be created. *async_* is
+        a valid alias (for Python versions where ``async`` is a keyword).
+    
+        Any other keyword parameter will be passed to the underlying client
+        library: the list of supported parameters depends on the library version.
+    
+        """
+        kwasync = {}
+        if 'async' in kwargs:
+            kwasync['async'] = kwargs.pop('async')
+        if 'async_' in kwargs:
+            kwasync['async_'] = kwargs.pop('async_')
+    
+        dsn = _ext.make_dsn(dsn, **kwargs)
+>       conn = _connect(dsn, connection_factory=connection_factory, **kwasync)
+E       psycopg2.OperationalError: connection to server at "localhost" (127.0.0.1), port 5432 failed: Connection refused
+E       	Is the server running on that host and accepting TCP/IP connections?
+
+../../../.local/lib/python3.12/site-packages/psycopg2/__init__.py:122: OperationalError
+
+During handling of the above exception, another exception occurred:
+
+    def test_orchestrator():
+        """Test orchestrator functionality"""
+        print("🎯 Testing App Orchestrator")
+        print("=" * 50)
+    
+        # Create Flask app context
+>       app = create_app()
+
+scripts/test_orchestrator.py:19: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/ControlPlanFlaskApp_postgres.py:71: in create_app
+    init_db()
+src/database_postgres.py:483: in init_db
+    with db_manager.get_db_connection() as conn:
+/usr/lib/python3.12/contextlib.py:137: in __enter__
+    return next(self.gen)
+src/database_postgres.py:285: in get_db_connection
+    self._ensure_initialized()
+src/database_postgres.py:236: in _ensure_initialized
+    self._initialize_pool()
+src/database_postgres.py:266: in _initialize_pool
+    self._pool = psycopg2.pool.ThreadedConnectionPool(
+../../../.local/lib/python3.12/site-packages/psycopg2/pool.py:161: in __init__
+    AbstractConnectionPool.__init__(
+../../../.local/lib/python3.12/site-packages/psycopg2/pool.py:59: in __init__
+    self._connect()
+../../../.local/lib/python3.12/site-packages/psycopg2/pool.py:63: in _connect
+    conn = psycopg2.connect(*self._args, **self._kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+dsn = 'host=localhost port=5432 user=swautomorph password=swautomorph_password sslmode=prefer connect_timeout=10 dbname=ai_swautomorph'
+connection_factory = None, cursor_factory = None
+kwargs = {'connect_timeout': 10, 'database': 'ai_swautomorph', 'host': 'localhost', 'password': 'swautomorph_password', ...}
+kwasync = {}
+
+    def connect(dsn=None, connection_factory=None, cursor_factory=None, **kwargs):
+        """
+        Create a new database connection.
+    
+        The connection parameters can be specified as a string:
+    
+            conn = psycopg2.connect("dbname=test user=postgres password=secret")
+    
+        or using a set of keyword arguments:
+    
+            conn = psycopg2.connect(database="test", user="postgres", password="secret")
+    
+        Or as a mix of both. The basic connection parameters are:
+    
+        - *dbname*: the database name
+        - *database*: the database name (only as keyword argument)
+        - *user*: user name used to authenticate
+        - *password*: password used to authenticate
+        - *host*: database host address (defaults to UNIX socket if not provided)
+        - *port*: connection port number (defaults to 5432 if not provided)
+    
+        Using the *connection_factory* parameter a different class or connections
+        factory can be specified. It should be a callable object taking a dsn
+        argument.
+    
+        Using the *cursor_factory* parameter, a new default cursor factory will be
+        used by cursor().
+    
+        Using *async*=True an asynchronous connection will be created. *async_* is
+        a valid alias (for Python versions where ``async`` is a keyword).
+    
+        Any other keyword parameter will be passed to the underlying client
+        library: the list of supported parameters depends on the library version.
+    
+        """
+        kwasync = {}
+        if 'async' in kwargs:
+            kwasync['async'] = kwargs.pop('async')
+        if 'async_' in kwargs:
+            kwasync['async_'] = kwargs.pop('async_')
+    
+        dsn = _ext.make_dsn(dsn, **kwargs)
+>       conn = _connect(dsn, connection_factory=connection_factory, **kwasync)
+E       psycopg2.OperationalError: connection to server at "localhost" (127.0.0.1), port 5432 failed: Connection refused
+E       	Is the server running on that host and accepting TCP/IP connections?
+
+../../../.local/lib/python3.12/site-packages/psycopg2/__init__.py:122: OperationalError
+----------------------------- Captured stdout call -----------------------------
+🎯 Testing App Orchestrator
+==================================================
+Failed to initialize PostgreSQL connection pool: connection to server at "localhost" (127.0.0.1), port 5432 failed: Connection refused
+	Is the server running on that host and accepting TCP/IP connections?
+
+Failed to initialize PostgreSQL connection pool even with defaults: connection to server at "localhost" (127.0.0.1), port 5432 failed: Connection refused
+	Is the server running on that host and accepting TCP/IP connections?
+
+__________ test_dev_returns_set_value_over_fallback_and_never_raises ___________
+
+    @settings(max_examples=200)
+>   @given(
+        name=_secret_names,
+        dev_fallback=_fallbacks,
+        # OS environment values cannot contain null bytes (os.environ rejects them
+        # with ValueError), so exclude \x00 from the generated set value -- it is a
+        # constraint of the input space, not of the unit under test.
+        set_value=st.text(
+            alphabet=st.characters(blacklist_characters="\x00"), min_size=0, max_size=40
+        ),
+    )
+
+tests/test_development_secret_fallback.py:78: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_development_secret_fallback.py:95: in test_dev_returns_set_value_over_fallback_and_never_raises
+    with mock.patch.dict(
+/usr/lib/python3.12/unittest/mock.py:1875: in __enter__
+    self._patch_dict()
+/usr/lib/python3.12/unittest/mock.py:1900: in _patch_dict
+    in_dict.update(values)
+<frozen _collections_abc>:982: in update
+    ???
+<frozen os>:690: in __setitem__
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = '\ud800'
+
+>   ???
+E   UnicodeEncodeError: 'utf-8' codec can't encode character '\ud800' in position 0: surrogates not allowed
+E   Falsifying example: test_dev_returns_set_value_over_fallback_and_never_raises(
+E       name='POSTGRES_PASSWORD',
+E       dev_fallback='dev-secret-key-change-in-production',
+E       set_value='\ud800',
+E   )
+
+<frozen os>:765: UnicodeEncodeError
+___ test_property1_expected_behavior_on_unfixed_configs[docker-mode-no-pin] ____
+
+startup = <test_traefik_docker_api_version.Startup object at 0x7eaf3fd99130>
+
+    @pytest.mark.parametrize("startup", UNFIXED_CONFIGS)
+    def test_property1_expected_behavior_on_unfixed_configs(startup):
+        """Property 1 / Fix Checking - encodes expected behavior.
+    
+        Against the UNFIXED launch paths this MUST FAIL (AssertionError), which is
+        the counterexample proving the bug exists. After the fix the same assertion
+        passes (task 3.2).
+    
+        **Validates: Requirements 1.1, 1.2, 1.3, 1.4**
+        """
+>       assert_expected_behavior(startup)
+
+tests/test_traefik_docker_api_version.py:265: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+startup = <test_traefik_docker_api_version.Startup object at 0x7eaf3fd99130>
+
+    def assert_expected_behavior(startup):
+        """Assert Property 1 / Fix Checking expected behavior for a startup.
+    
+        This is the behavior the FIX must satisfy. Running it against an UNFIXED
+        (pin-removed / sudo-stripped) startup is expected to raise AssertionError -
+        that is the counterexample demonstrating the bug.
+        """
+        result = start_docker_provider(startup)
+    
+>       assert _version_tuple(result["negotiatedApiVersion"]) >= _version_tuple(
+            startup.daemon_min_api
+        ), (
+            f"[{startup.mode} mode] negotiated API "
+            f"{result['negotiatedApiVersion']} is below the daemon minimum "
+            f"{startup.daemon_min_api} - the daemon rejects the connection"
+        )
+E       AssertionError: [docker mode] negotiated API 1.24 is below the daemon minimum 1.40 - the daemon rejects the connection
+E       assert (1, 24) >= (1, 40)
+E        +  where (1, 24) = _version_tuple('1.24')
+E        +  and   (1, 40) = _version_tuple('1.40')
+E        +    where '1.40' = <test_traefik_docker_api_version.Startup object at 0x7eaf3fd99130>.daemon_min_api
+
+tests/test_traefik_docker_api_version.py:187: AssertionError
+_ test_property1_expected_behavior_on_unfixed_configs[locally-mode-plain-export] _
+
+startup = <test_traefik_docker_api_version.Startup object at 0x7eaf3f645d60>
+
+    @pytest.mark.parametrize("startup", UNFIXED_CONFIGS)
+    def test_property1_expected_behavior_on_unfixed_configs(startup):
+        """Property 1 / Fix Checking - encodes expected behavior.
+    
+        Against the UNFIXED launch paths this MUST FAIL (AssertionError), which is
+        the counterexample proving the bug exists. After the fix the same assertion
+        passes (task 3.2).
+    
+        **Validates: Requirements 1.1, 1.2, 1.3, 1.4**
+        """
+>       assert_expected_behavior(startup)
+
+tests/test_traefik_docker_api_version.py:265: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+startup = <test_traefik_docker_api_version.Startup object at 0x7eaf3f645d60>
+
+    def assert_expected_behavior(startup):
+        """Assert Property 1 / Fix Checking expected behavior for a startup.
+    
+        This is the behavior the FIX must satisfy. Running it against an UNFIXED
+        (pin-removed / sudo-stripped) startup is expected to raise AssertionError -
+        that is the counterexample demonstrating the bug.
+        """
+        result = start_docker_provider(startup)
+    
+>       assert _version_tuple(result["negotiatedApiVersion"]) >= _version_tuple(
+            startup.daemon_min_api
+        ), (
+            f"[{startup.mode} mode] negotiated API "
+            f"{result['negotiatedApiVersion']} is below the daemon minimum "
+            f"{startup.daemon_min_api} - the daemon rejects the connection"
+        )
+E       AssertionError: [locally mode] negotiated API 1.24 is below the daemon minimum 1.40 - the daemon rejects the connection
+E       assert (1, 24) >= (1, 40)
+E        +  where (1, 24) = _version_tuple('1.24')
+E        +  and   (1, 40) = _version_tuple('1.40')
+E        +    where '1.40' = <test_traefik_docker_api_version.Startup object at 0x7eaf3f645d60>.daemon_min_api
+
+tests/test_traefik_docker_api_version.py:187: AssertionError
+___ test_property1_expected_behavior_on_unfixed_configs[locally-mode-no-pin] ___
+
+startup = <test_traefik_docker_api_version.Startup object at 0x7eaf3f646660>
+
+    @pytest.mark.parametrize("startup", UNFIXED_CONFIGS)
+    def test_property1_expected_behavior_on_unfixed_configs(startup):
+        """Property 1 / Fix Checking - encodes expected behavior.
+    
+        Against the UNFIXED launch paths this MUST FAIL (AssertionError), which is
+        the counterexample proving the bug exists. After the fix the same assertion
+        passes (task 3.2).
+    
+        **Validates: Requirements 1.1, 1.2, 1.3, 1.4**
+        """
+>       assert_expected_behavior(startup)
+
+tests/test_traefik_docker_api_version.py:265: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+startup = <test_traefik_docker_api_version.Startup object at 0x7eaf3f646660>
+
+    def assert_expected_behavior(startup):
+        """Assert Property 1 / Fix Checking expected behavior for a startup.
+    
+        This is the behavior the FIX must satisfy. Running it against an UNFIXED
+        (pin-removed / sudo-stripped) startup is expected to raise AssertionError -
+        that is the counterexample demonstrating the bug.
+        """
+        result = start_docker_provider(startup)
+    
+>       assert _version_tuple(result["negotiatedApiVersion"]) >= _version_tuple(
+            startup.daemon_min_api
+        ), (
+            f"[{startup.mode} mode] negotiated API "
+            f"{result['negotiatedApiVersion']} is below the daemon minimum "
+            f"{startup.daemon_min_api} - the daemon rejects the connection"
+        )
+E       AssertionError: [locally mode] negotiated API 1.24 is below the daemon minimum 1.40 - the daemon rejects the connection
+E       assert (1, 24) >= (1, 40)
+E        +  where (1, 24) = _version_tuple('1.24')
+E        +  and   (1, 40) = _version_tuple('1.40')
+E        +    where '1.40' = <test_traefik_docker_api_version.Startup object at 0x7eaf3f646660>.daemon_min_api
+
+tests/test_traefik_docker_api_version.py:187: AssertionError
+=============================== warnings summary ===============================
+scripts/test_platform.py:51
+  /home/slepetre/workspace/github/agentic-ai-plateform/scripts/test_platform.py:51: PytestCollectionWarning: cannot collect test class 'TestResult' because it has a __init__ constructor (from: scripts/test_platform.py)
+    @dataclass
+
+scripts/test_platform.py:70
+  /home/slepetre/workspace/github/agentic-ai-plateform/scripts/test_platform.py:70: PytestCollectionWarning: cannot collect test class 'TestResults' because it has a __init__ constructor (from: scripts/test_platform.py)
+    @dataclass
+
+scripts/test_platform.py:108
+  /home/slepetre/workspace/github/agentic-ai-plateform/scripts/test_platform.py:108: PytestCollectionWarning: cannot collect test class 'TestSummary' because it has a __init__ constructor (from: scripts/test_platform.py)
+    @dataclass
+
+scripts/test_platform.py:156
+  /home/slepetre/workspace/github/agentic-ai-plateform/scripts/test_platform.py:156: PytestCollectionWarning: cannot collect test class 'TestConfig' because it has a __init__ constructor (from: scripts/test_platform.py)
+    @dataclass
+
+scripts/test_platform.py:719
+  /home/slepetre/workspace/github/agentic-ai-plateform/scripts/test_platform.py:719: PytestCollectionWarning: cannot collect test class 'TestRunner' because it has a __init__ constructor (from: scripts/test_platform.py)
+    class TestRunner:
+
+scripts/test_backups_history.py::test_backups_history
+  /home/slepetre/.local/lib/python3.12/site-packages/_pytest/python.py:163: PytestReturnNotNoneWarning: Expected None, but scripts/test_backups_history.py::test_backups_history returned False, which will be an error in a future version of pytest.  Did you mean to use `assert` instead of `return`?
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+============================= slowest 15 durations =============================
+238.51s call     tests/test_phase4_digest_pin_and_pull_retry.py::test_transient_pull_failure_retried_up_to_bound
+87.40s call     tests/test_phase4_digest_pin_and_pull_retry.py::test_transient_then_success_within_bound
+10.47s call     tests/test_aro_adapter_stalled_reads.py::test_property_mcp_stalled_read_raises_within_deadline
+9.60s call     tests/test_aro_adapter_stalled_reads.py::test_property_acp_stalled_read_raises_within_deadline
+9.26s call     tests/test_logs_handler_response_equivalence.py::test_logs_handler_response_equivalence
+7.93s call     tests/test_zaf_credential_vault.py::test_encrypt_decrypt_roundtrip
+6.94s call     tests/test_traefik_sync.py::test_sync_reconciles_to_db_and_is_idempotent
+4.24s call     tests/test_traefik_secondary_domains.py::test_parse_then_build_preserves_the_mapping
+4.13s call     tests/test_orchestrator_idempotent_reconcile.py::test_converged_reconcile_is_idempotent_with_no_side_effects
+4.09s call     tests/test_traefik_secondary_domains.py::test_each_entry_maps_to_exactly_one_router_and_service
+4.04s call     tests/test_aro_acp_cancel_force_close.py::test_acp_cancel_force_closes_on_ack_timeout
+3.95s call     tests/test_traefik_no_nginx_writes.py::test_proxy_operations_never_write_nginx_files
+2.37s call     tests/test_aro_mcp_protocol.py::test_property_mcp_framing_round_trips
+2.24s call     tests/test_no_secret_value_in_messages.py::test_config_message_names_key_and_hides_arbitrary_value
+1.83s call     tests/test_phase5_allowlist_exclusion.py::test_allowlisted_op_never_flagged_regardless_of_repetition
+=========================== short test summary info ============================
+FAILED scripts/test_orchestrator.py::test_orchestrator - psycopg2.Operational...
+FAILED tests/test_development_secret_fallback.py::test_dev_returns_set_value_over_fallback_and_never_raises
+FAILED tests/test_traefik_docker_api_version.py::test_property1_expected_behavior_on_unfixed_configs[docker-mode-no-pin]
+FAILED tests/test_traefik_docker_api_version.py::test_property1_expected_behavior_on_unfixed_configs[locally-mode-plain-export]
+FAILED tests/test_traefik_docker_api_version.py::test_property1_expected_behavior_on_unfixed_configs[locally-mode-no-pin]
+ERROR tests/test_entry_point_consolidation.py::test_wsgi_application_is_flask_app
+ERROR tests/test_entry_point_consolidation.py::test_wsgi_builds_application_via_create_app
+5 failed, 646 passed, 7 skipped, 6 warnings, 2 errors in 469.09s (0:07:49)

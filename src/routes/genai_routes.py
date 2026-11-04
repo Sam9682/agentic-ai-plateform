@@ -6,6 +6,8 @@ import logging
 from datetime import datetime
 from ..config_postgres import TIMEOUT_SUBPROCESS_RUN, TIMEOUT_request_dev_ai_for_app_RUN, TIMEOUT_CLEAN_SHUTDOWN, TIMEOUT_QCHAT_OPERATOR_RUN, AI_ENGINE, PLTF_FOLDER, LINUX_USER_INSTALLATION
 from ..gitea_auth import gitea_clone_url
+from ..authz import login_required
+from ..process_registry import process_registry, force_terminate
 
 # Path configuration functions
 def get_install_root():
@@ -416,6 +418,10 @@ def api_request_dev_ai_for_app():
                 yield f"data: {json.dumps({'error': f'Failed to start Agentic AI process: {str(e)}'})}\n\n"
                 return
 
+            # Register the launched process so the stop endpoint (running on a
+            # different request thread) can find and terminate it (R3.1).
+            entry = process_registry.register(user_id, process)
+
             ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
 
             import signal
@@ -432,6 +438,12 @@ def api_request_dev_ai_for_app():
                         if clean_line and 'Thinking...' not in clean_line:
                             yield f"data: {json.dumps({'chunk': clean_line})}\n\n"
 
+                    # External stop requested (via the stop endpoint): emit a
+                    # final chunk and end the SSE stream promptly (R2.4).
+                    if entry.stop_requested.is_set():
+                        yield f"data: {json.dumps({'chunk': 'Process stopped by user.'})}\n\n"
+                        break
+
                     # Check timeout
                     if time.time() - start_time > timeout_seconds:
                         yield f"data: {json.dumps({'chunk': 'WARNING: Agentic AI operation timeout reached (30 minutes), terminating...'})}\n\n"
@@ -447,6 +459,10 @@ def api_request_dev_ai_for_app():
                 yield f"data: {json.dumps({'chunk': 'Agentic AI process cleanup timeout, forcing termination...'})}\n\n"
                 os.killpg(os.getpgid(process.pid), signal.SIGKILL)
                 process.returncode = -1
+            finally:
+                # Guarantee registry cleanup on every exit path of the read loop:
+                # normal completion, timeout, user stop, and exceptions (R2.5/R3.4).
+                process_registry.unregister(user_id)
 
             # After MODIFY_CODE completion, create Gitea branch and update database
             if process.returncode == 0 and detected_action == 'MODIFY_CODE' and application_name:
@@ -491,6 +507,37 @@ def api_request_dev_ai_for_app():
 
     return Response(stream_with_context(generate()), mimetype='text/event-stream',
                    headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
+
+@genai_bp.route('/stop_dev_ai_for_app', methods=['POST'])
+@login_required
+def api_stop_dev_ai_for_app():
+    """Force-terminate the requesting user's currently running Agentic_Process.
+
+    Looks up the caller's entry in the Process_Registry (scoped by session
+    ``user_id``) and reuses the SIGTERM->SIGKILL teardown. A missing ``user_id``
+    is rejected with 401 by ``@login_required`` before this body runs.
+
+    Requirements: 2.1, 2.5, 3.2, 3.3, 4.1, 4.2, 4.3
+    """
+    user_id = session['user_id']               # guaranteed present by login_required
+
+    # Scoped lookup: sets the cooperative stop flag and returns the entry (or
+    # None) for this user's run in one locked operation (R2.1/R3.2).
+    entry = process_registry.request_stop(user_id)
+
+    if entry is None:                           # R3.3: no active run, no signals sent
+        return jsonify({'status': 'no_active_run'}), 200
+
+    try:
+        force_terminate(entry)                  # R2.2 SIGTERM, R2.3 SIGKILL
+    except ProcessLookupError:
+        pass                                    # already gone == success
+    except OSError as e:                        # R4.2: termination failed
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+    finally:
+        process_registry.unregister(user_id)    # R2.5/R4.2: never leak an entry
+
+    return jsonify({'status': 'stopped'}), 200  # R4.3: success
 
 @genai_bp.route('/request_ops_ai_for_app', methods=['POST'])
 def api_request_ops_ai_for_app():

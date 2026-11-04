@@ -608,7 +608,7 @@ def multi_user_deploy():
                 
                 if not existing_assignment:
                     app_ports = calculate_app_ports(replica_user_id, application_id)
-                    url = f"https://www.{DOMAIN}/{replica_username}/{app_name}"
+                    url = f"https://{DOMAIN}/{replica_username}/{app_name}"
                     
                     db_manager.execute_query(
                         f'''INSERT INTO user_applications (user_id, application_id, url, {APP_PORT_COLUMNS_SQL})

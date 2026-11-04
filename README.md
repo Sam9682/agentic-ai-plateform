@@ -137,7 +137,7 @@ FLASK_ENV="production"
 vim ./conf/deploy.ini
 
 # Key settings:
-DOMAIN="www.agentic-ai-plateform.com"
+DOMAIN="agentic-ai-plateform.com"
 EMAIL="admin@agentic-ai-plateform.com"
 GITEA_VERSION="1.21.3"
 # SECONDARY_DOMAINS: comma-separated "domain:server_names:proxy_pass" entries
@@ -167,7 +167,7 @@ python3 ./scripts/controller_cli.py db-health
 
 ### User Registration
 ```bash
-curl -X POST https://www.agentic-ai-plateform.com/register \
+curl -X POST https://agentic-ai-plateform.com/register \
   -H "Content-Type: application/json" \
   -d '{"username":"agent","email":"agent@example.com","password":"secure_pass","first_name":"AI","last_name":"Agent"}'
 ```
@@ -175,22 +175,22 @@ curl -X POST https://www.agentic-ai-plateform.com/register \
 ### Application Management
 ```bash
 # List applications
-curl https://www.agentic-ai-plateform.com/api/applications
+curl https://agentic-ai-plateform.com/api/applications
 
 # Add application (admin required)
-curl -X POST https://www.agentic-ai-plateform.com/api/applications \
+curl -X POST https://agentic-ai-plateform.com/api/applications \
   -H "Content-Type: application/json" \
   -H "Cookie: session=your-session-cookie" \
   -d '{"name":"MyApp","description":"My Application","git_url":"https://github.com/user/myapp.git"}'
 
 # Deploy application with streaming
-curl -X POST https://www.agentic-ai-plateform.com/api/deployments \
+curl -X POST https://agentic-ai-plateform.com/api/deployments \
   -H "Content-Type: application/json" \
   -H "Cookie: session=your-session-cookie" \
   -d '{"application_name":"MyApp","action":"clone","git_url":"https://github.com/user/myapp.git","server_id":1,"stream":true}'
 
 # Application lifecycle management
-curl -X POST https://www.agentic-ai-plateform.com/api/deployments \
+curl -X POST https://agentic-ai-plateform.com/api/deployments \
   -H "Content-Type: application/json" \
   -H "Cookie: session=your-session-cookie" \
   -d '{"application_name":"MyApp","action":"start"}'

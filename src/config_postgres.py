@@ -153,7 +153,7 @@ LINUX_USER_INSTALLATION = get_linux_user()
 
 # CORS configuration
 CORS_ORIGINS = [
-    f'https://wwww.{DOMAIN}', 
+    f'https://{DOMAIN}', 
     f'https://*.{DOMAIN}',
 ]
 
@@ -273,6 +273,7 @@ TRANSLATIONS = {
         'qchat_title': 'AI Chat - GenAI Assistant to modify the code of the selected Application',
         'auto_approve': 'Auto-approve updates/writes',
         'send': 'Send',
+        'stop': 'Stop',
         'qchat_placeholder': 'Type your message to AI Chat...',
         'cancel': 'Cancel',
         'edit': 'Edit',
@@ -628,6 +629,7 @@ TRANSLATIONS = {
         'qchat_title': 'AI Chat - Assistant GenAI pour modifier le code du logiciel sélectionnée',
         'auto_approve': 'Approuver automatiquement les mises à jour/écritures',
         'send': 'Envoyer',
+        'stop': 'Arrêter',
         'qchat_placeholder': 'Tapez votre message à AI Chat...',
         'cancel': 'Annuler',
         'edit': 'Modifier',
