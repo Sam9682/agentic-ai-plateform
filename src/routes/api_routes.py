@@ -7,11 +7,12 @@ import requests
 import json
 import subprocess
 import shutil
+import shlex
 import socket
 import logging
 from datetime import datetime
 from .. import config_postgres
-from ..config_postgres import DOMAIN, TIMEOUT_GITEA_HTTP_POST, TIMEOUT_SUBPROCESS_RUN, LINUX_USER_INSTALLATION, ssh_target, chown_arg, deployments_prefix, is_under_deployments
+from ..config_postgres import DOMAIN, TIMEOUT_GITEA_HTTP_POST, TIMEOUT_SUBPROCESS_RUN, LINUX_USER_INSTALLATION, get_skills_submodule_url, get_skills_folder_name, ssh_target, chown_arg, deployments_prefix, is_under_deployments
 from ..gitea_auth import redact_credential_url
 
 # Configure logging for API activities
@@ -1312,6 +1313,38 @@ def api_database_record(table_name, record_id):
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 
+def _skills_setup_script(deployment_path):
+    """Shell script installing the skills/context repo into a cloned application.
+
+    The skills repository is the one configured as SUBMODULE_URL in the
+    platform's conf/deploy.ini (agentic-ai-plateform--skills). It is cloned into
+    ``<app>/<skills folder>`` and ``deployApp.sh`` is (re)linked to it, instead
+    of using the legacy ``shared`` submodule declared by the application repo
+    (which is skipped at clone time).
+    """
+    url = get_skills_submodule_url()
+    folder = get_skills_folder_name(url)
+    q_path, q_url, q_dir = shlex.quote(deployment_path), shlex.quote(url), shlex.quote(folder)
+    q_link = shlex.quote(f'./{folder}/deployApp.sh')
+    return (
+        f"cd {q_path} && "
+        f"{{ [ -d {q_dir}/.git ] || git clone {q_url} {q_dir}; }} && "
+        f"{{ [ ! -e deployApp.sh ] || [ -L deployApp.sh ]; }} && "
+        f"ln -sfn {q_link} deployApp.sh"
+    )
+
+
+def _install_skills(deployment_path, is_local_server, target_server_ip, git_env):
+    """Run the skills setup locally or over SSH. Returns the CompletedProcess."""
+    script = _skills_setup_script(deployment_path)
+    if is_local_server:
+        return subprocess.run(['sh', '-c', script], capture_output=True, text=True,
+                              timeout=TIMEOUT_SUBPROCESS_RUN, env=git_env)
+    ssh_command = f"ssh -o StrictHostKeyChecking=no {ssh_target(LINUX_USER_INSTALLATION, target_server_ip)} {shlex.quote(script)}"
+    return subprocess.run(ssh_command, shell=True, capture_output=True, text=True,
+                          timeout=TIMEOUT_SUBPROCESS_RUN)
+
+
 def _handle_clone_action(user_id, app_name, git_url, server_id, deployment_path, data):
     """Handle clone deployment action"""
     if not git_url:
@@ -1365,9 +1398,9 @@ def _handle_clone_action(user_id, app_name, git_url, server_id, deployment_path,
             if os.path.exists(deployment_path):
                 shutil.rmtree(deployment_path)
             os.makedirs(deployment_path, exist_ok=True)
-            result = subprocess.run(['git', 'clone', '--recurse-submodules', git_url, deployment_path], 
+            result = subprocess.run(['git', '-c', 'submodule.shared.update=none', 'clone', '--recurse-submodules', git_url, deployment_path], 
                                   capture_output=True, text=True, timeout=TIMEOUT_SUBPROCESS_RUN, env=git_env)
-            logger.info(f"[DEPLOYMENT API] CLONE - GitHub: git clone --recurse-submodules {git_url} {deployment_path}")
+            logger.info(f"[DEPLOYMENT API] CLONE - GitHub: git -c submodule.shared.update=none clone --recurse-submodules {git_url} {deployment_path}")
         else:
             # Gitea/localhost: Use fetch and switch
             if os.path.exists(deployment_path):
@@ -1384,7 +1417,7 @@ def _handle_clone_action(user_id, app_name, git_url, server_id, deployment_path,
                         logger.info(f"[DEPLOYMENT API] GIT SWITCH - Gitea/localhost: git checkout -B main origin/main")
             else:
                 os.makedirs(deployment_path, exist_ok=True)
-                result = subprocess.run(['git', 'clone', '--recurse-submodules', git_url, deployment_path], 
+                result = subprocess.run(['git', '-c', 'submodule.shared.update=none', 'clone', '--recurse-submodules', git_url, deployment_path], 
                                       capture_output=True, text=True, timeout=TIMEOUT_SUBPROCESS_RUN, env=git_env)
                 logger.info(f"[DEPLOYMENT API] GIT CLONE - Gitea/localhost: Initial git clone {git_url} {deployment_path}")
     else:
@@ -1393,14 +1426,14 @@ def _handle_clone_action(user_id, app_name, git_url, server_id, deployment_path,
             ssh_commands = [
                 f"rm -rf {deployment_path}",
                 f"mkdir -p {deployment_path}",
-                f"cd {os.path.dirname(deployment_path)} && git clone --recurse-submodules {git_url} {os.path.basename(deployment_path)}"
+                f"cd {os.path.dirname(deployment_path)} && git -c submodule.shared.update=none clone --recurse-submodules {git_url} {os.path.basename(deployment_path)}"
             ]
             ssh_command = f"ssh -o StrictHostKeyChecking=no {ssh_target(LINUX_USER_INSTALLATION, target_server_ip)} '{'; '.join(ssh_commands)}'"
             result = subprocess.run(ssh_command, shell=True, capture_output=True, text=True, timeout=TIMEOUT_SUBPROCESS_RUN)
-            logger.info(f"[DEPLOYMENT API] CLONE - GitHub remote: git clone --recurse-submodules {git_url} {deployment_path}")
+            logger.info(f"[DEPLOYMENT API] CLONE - GitHub remote: git -c submodule.shared.update=none clone --recurse-submodules {git_url} {deployment_path}")
         else:
             # Gitea/localhost: Use fetch and switch
-            ssh_command = f"ssh -o StrictHostKeyChecking=no {ssh_target(LINUX_USER_INSTALLATION, target_server_ip)} 'if [ -d {deployment_path} ]; then cd {deployment_path} && git fetch --all && git remote set-url origin {git_url} && git checkout -B main origin/main; else mkdir -p {deployment_path} && git clone --recurse-submodules {git_url} {deployment_path}; fi'"
+            ssh_command = f"ssh -o StrictHostKeyChecking=no {ssh_target(LINUX_USER_INSTALLATION, target_server_ip)} 'if [ -d {deployment_path} ]; then cd {deployment_path} && git fetch --all && git remote set-url origin {git_url} && git checkout -B main origin/main; else mkdir -p {deployment_path} && git -c submodule.shared.update=none clone --recurse-submodules {git_url} {deployment_path}; fi'"
             result = subprocess.run(ssh_command, shell=True, capture_output=True, text=True, timeout=TIMEOUT_SUBPROCESS_RUN)
             logger.info(f"[DEPLOYMENT API] CLONE - Gitea/localhost remote: git fetch and switch to {git_url}")
     
@@ -1413,6 +1446,13 @@ def _handle_clone_action(user_id, app_name, git_url, server_id, deployment_path,
     #command_output = "\n\n".join(output_parts) if output_parts else "No output"
     
     if result.returncode == 0:
+        # Install skills/context from the repo configured in conf/deploy.ini
+        # (instead of the legacy 'shared' submodule).
+        skills_result = _install_skills(deployment_path, is_local_server, target_server_ip, git_env)
+        if skills_result.returncode != 0:
+            error_msg = f'Skills setup failed: {skills_result.stderr}'
+            logger.error(f"[DEPLOYMENT API] CLONE - FAILED - {error_msg}")
+            return jsonify({'error': error_msg}), 400
         status = 'cloned'
         
         # Get username for the Traefik route prefix and swautomorph_url

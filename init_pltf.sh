@@ -172,7 +172,7 @@ resolve_platform_defaults() {
     DEFAULT_PLTF_FOLDER="$(_resolve_default  PLTF_FOLDER   PLTF_FOLDER   "agentic-ai-plateform")"
     DEFAULT_PLTF_NAME="$(_resolve_default    PLTF_NAME     PLTF_NAME     "agentic-ai-plateform")"
     DEFAULT_REPO_URL="$(_resolve_default     REPO_URL      REPO_URL      "https://github.com/Sam9682/agentic-ai-plateform.git")"
-    DEFAULT_SUBMODULE_URL="$(_resolve_default SUBMODULE_URL SUBMODULE_URL "git@github.com:Sam9682/agentic-ai-plateform--skills/.git")"
+    DEFAULT_SUBMODULE_URL="$(_resolve_default SUBMODULE_URL SUBMODULE_URL "https://github.com/Sam9682/agentic-ai-plateform--skills.git")"
     DEFAULT_INSTALL_DIR="$(_resolve_default  INSTALL_DIR   INSTALL_DIR   "../")"
 }
 
@@ -537,8 +537,30 @@ cd "${CLONE_DEST}"
 # their targets regardless of the current working directory later in the run.
 REPO_DIR="$(pwd)"
 export REPO_DIR
-git submodule add "${SUBMODULE_URL}" agentic-ai-plateform--skills
-git submodule update --init --recursive > /dev/null 2>&1
+# The skills submodule is already registered in the cloned repo's .gitmodules,
+# so `git submodule add` would fail ("already exists in the index") and leave
+# the folder empty. Register only when missing, point it at the chosen URL,
+# then initialise. Errors are surfaced, not discarded.
+SKILLS_DIR="agentic-ai-plateform--skills"
+if ! git config -f .gitmodules --get "submodule.${SKILLS_DIR}.path" > /dev/null 2>&1; then
+    git submodule add "${SUBMODULE_URL}" "${SKILLS_DIR}" || print_warning "git submodule add failed"
+else
+    git config -f .gitmodules "submodule.${SKILLS_DIR}.url" "${SUBMODULE_URL}"
+fi
+git submodule sync --recursive > /dev/null 2>&1
+if ! git submodule update --init --recursive; then
+    # SSH URLs fail without a GitHub key; retry over public HTTPS.
+    SKILLS_HTTPS_URL="https://github.com/Sam9682/agentic-ai-plateform--skills.git"
+    print_warning "Submodule init failed with ${SUBMODULE_URL}; retrying with ${SKILLS_HTTPS_URL}"
+    git config -f .gitmodules "submodule.${SKILLS_DIR}.url" "${SKILLS_HTTPS_URL}"
+    git submodule sync --recursive > /dev/null 2>&1
+    git submodule update --init --recursive || true
+fi
+if [ -z "$(ls -A "${SKILLS_DIR}" 2>/dev/null)" ]; then
+    print_error "${SKILLS_DIR}/ is empty: skills/contexts are required to operate applications."
+    print_error "Fix network/SSH access, then run: git submodule update --init --recursive"
+    exit 1
+fi
 print_success "Repository cloned into ${CLONE_DEST}"
 
 # Persist the collected platform identity into conf/deploy.ini so every

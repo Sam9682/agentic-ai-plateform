@@ -3224,7 +3224,7 @@ function sendUnifiedMessageWithText(message) {
     
     const username = '{{ username }}';
     const userId = '{{ session.user_id }}';
-    const appFolder = `/home/ubuntu/deployments/${username}/${selectedApp.toLowerCase().replace(/\s+/g, '-')}`;
+    const appFolder = `/home/{{ LINUX_USER }}/deployments/${username}/${selectedApp.toLowerCase().replace(/\s+/g, '-')}`;
     
     if (selectedAction === 'SPECIFY') {
         // Handle AI context specification
