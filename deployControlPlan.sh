@@ -2272,6 +2272,7 @@ generate_environment_file() {
     if [ ! -f .env ]; then
         echo "🔑 Generating environment configuration..."
         SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+        SSO_MAC_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))")
 
         # Load existing password from .env if it exists, otherwise use default
         if [ -f ".env" ] && grep -q "POSTGRES_PASSWORD=" .env; then
@@ -2295,6 +2296,9 @@ POSTGRES_TIMEOUT=10
 SECRET_KEY=${SECRET_KEY}
 FLASK_ENV=production
 
+# SSO MAC key (server-side secret for SSO token HMAC; required to start)
+SSO_MAC_KEY=${SSO_MAC_KEY}
+
 # Active/Active Configuration
 USE_POSTGRES=true
 HTTP_PORT_1=6000
@@ -2309,6 +2313,13 @@ EOF
         echo "  ✅ Environment file created (.env)"
     else
         echo "  ✅ Environment file already exists (.env)"
+        # Backfill SSO_MAC_KEY for pre-existing .env files that predate the
+        # fail-closed startup check; without it gunicorn refuses to start.
+        if ! grep -q "^SSO_MAC_KEY=" .env; then
+            echo "  🔑 Adding missing SSO_MAC_KEY to existing .env..."
+            SSO_MAC_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+            printf '\n# SSO MAC key (server-side secret for SSO token HMAC; required to start)\nSSO_MAC_KEY=%s\n' "$SSO_MAC_KEY" >> .env
+        fi
     fi
 }
 
