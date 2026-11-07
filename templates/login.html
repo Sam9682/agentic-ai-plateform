@@ -66,7 +66,13 @@
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(formData)
         })
-        .then(response => response.json())
+        .then(response => response.text().then(text => {
+            try {
+                return JSON.parse(text);
+            } catch (e) {
+                throw new Error('Server error (HTTP ' + response.status + '). Please try again or contact the administrator.');
+            }
+        }))
         .then(data => {
             if (data.error) {
                 alert(data.error);

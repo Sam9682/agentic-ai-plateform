@@ -2344,8 +2344,11 @@ generate_environment_file() {
     if [ ! -f .env ]; then
         echo "🔑 Generating environment configuration..."
         SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+<<<<<<< HEAD
         # Server-side SSO MAC key (R7.1). Required by wsgi.py's
         # require_sso_mac_key() boot check; the app refuses to start without it.
+=======
+>>>>>>> a4314a2b10a4ec50a105337d3565c2c01a6b867e
         SSO_MAC_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))")
 
         # Load existing password from .env if it exists, otherwise use default
@@ -2370,9 +2373,13 @@ POSTGRES_TIMEOUT=10
 SECRET_KEY=${SECRET_KEY}
 FLASK_ENV=production
 
+<<<<<<< HEAD
 # SSO Configuration
 # Server-side MAC key used to authenticate stored SSO token hashes (R7.1).
 # wsgi.py fails closed at boot if this is unset.
+=======
+# SSO MAC key (server-side secret for SSO token HMAC; required to start)
+>>>>>>> a4314a2b10a4ec50a105337d3565c2c01a6b867e
 SSO_MAC_KEY=${SSO_MAC_KEY}
 
 # Active/Active Configuration
@@ -2389,6 +2396,7 @@ EOF
         echo "  ✅ Environment file created (.env)"
     else
         echo "  ✅ Environment file already exists (.env)"
+<<<<<<< HEAD
         # Back-fill required keys that may be missing from an older .env.
         # SSO_MAC_KEY is required by wsgi.py's boot check (require_sso_mac_key);
         # without it Gunicorn's preloaded app import fails and, in daemon mode,
@@ -2398,6 +2406,14 @@ EOF
             SSO_MAC_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))")
             printf '\n# SSO Configuration (added automatically)\nSSO_MAC_KEY=%s\n' "$SSO_MAC_KEY" >> .env
             echo "  ✅ SSO_MAC_KEY added to .env"
+=======
+        # Backfill SSO_MAC_KEY for pre-existing .env files that predate the
+        # fail-closed startup check; without it gunicorn refuses to start.
+        if ! grep -q "^SSO_MAC_KEY=" .env; then
+            echo "  🔑 Adding missing SSO_MAC_KEY to existing .env..."
+            SSO_MAC_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+            printf '\n# SSO MAC key (server-side secret for SSO token HMAC; required to start)\nSSO_MAC_KEY=%s\n' "$SSO_MAC_KEY" >> .env
+>>>>>>> a4314a2b10a4ec50a105337d3565c2c01a6b867e
         fi
     fi
 }
