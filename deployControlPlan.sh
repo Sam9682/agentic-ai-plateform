@@ -94,6 +94,12 @@ TRAEFIK_BIN=${TRAEFIK_BIN:-"/usr/local/bin/traefik"}
 TRAEFIK_PID_FILE=${TRAEFIK_PID_FILE:-"./conf/traefik.pid"}
 TRAEFIK_STATIC_CONFIG=${TRAEFIK_STATIC_CONFIG:-"./conf/traefik.yml"}
 TRAEFIK_LOG_FILE=${TRAEFIK_LOG_FILE:-"./logs/traefik.log"}
+# Traefik entrypoint ports follow the control plane port range: web (HTTP) is
+# RANGE_START_CONTROLPLAN and websecure (HTTPS) is the next port (see
+# calculate_ports). Defaults to 80/443 only when the range starts at 80.
+TRAEFIK_HTTP_PORT=${TRAEFIK_HTTP_PORT:-${RANGE_START_CONTROLPLAN}}
+TRAEFIK_HTTPS_PORT=${TRAEFIK_HTTPS_PORT:-$((RANGE_START_CONTROLPLAN + 1))}
+export TRAEFIK_HTTP_PORT TRAEFIK_HTTPS_PORT
 
 # Global Parameters (command line args override config)
 COMMAND=${1:-help}
@@ -1857,12 +1863,12 @@ configure_traefik() {
 # take over. It intentionally only touches the *host* nginx service/binary; it
 # never stops the per-app nginx *containers* that front deployed applications.
 free_proxy_ports() {
-    echo "🧹 Freeing platform entrypoint ports (:80/:443) from stale host proxy..."
+    echo "🧹 Freeing platform entrypoint ports (:${TRAEFIK_HTTP_PORT}/:${TRAEFIK_HTTPS_PORT}) from stale host proxy..."
 
     # Stop and disable the host nginx systemd service if present and active.
     if systemctl list-unit-files 2>/dev/null | grep -q '^nginx\.service'; then
         if systemctl is-active --quiet nginx 2>/dev/null; then
-            echo "  ⚠️ Stale host nginx service is running - stopping it so Traefik can bind :80/:443"
+            echo "  ⚠️ Stale host nginx service is running - stopping it so Traefik can bind :${TRAEFIK_HTTP_PORT}/:${TRAEFIK_HTTPS_PORT}"
             sudo systemctl stop nginx 2>/dev/null || true
         fi
         # Disable so it does not reclaim the ports after a reboot.
@@ -1883,11 +1889,11 @@ free_proxy_ports() {
     fi
 
     # Report whether the ports are now free (informational; non-fatal).
-    if ss -tlnp 2>/dev/null | grep -qE ':80 |:443 '; then
-        echo "  ⚠️ Ports :80/:443 still appear occupied - Traefik may fail to bind:"
-        ss -tlnp 2>/dev/null | grep -E ':80 |:443 ' | sed 's/^/      /'
+    if ss -tlnp 2>/dev/null | grep -qE ":${TRAEFIK_HTTP_PORT} |:${TRAEFIK_HTTPS_PORT} "; then
+        echo "  ⚠️ Ports :${TRAEFIK_HTTP_PORT}/:${TRAEFIK_HTTPS_PORT} still appear occupied - Traefik may fail to bind:"
+        ss -tlnp 2>/dev/null | grep -E ":${TRAEFIK_HTTP_PORT} |:${TRAEFIK_HTTPS_PORT} " | sed 's/^/      /'
     else
-        echo "  ✅ Ports :80/:443 are free for Traefik"
+        echo "  ✅ Ports :${TRAEFIK_HTTP_PORT}/:${TRAEFIK_HTTPS_PORT} are free for Traefik"
     fi
 }
 
@@ -2002,9 +2008,9 @@ generate_traefik_static_config() {
 # Do not edit by hand; regenerated on each start.
 entryPoints:
   web:
-    address: ":80"
+    address: ":${TRAEFIK_HTTP_PORT}"
   websecure:
-    address: ":443"
+    address: ":${TRAEFIK_HTTPS_PORT}"
     transport:
       respondingTimeouts:
         readTimeout: 60s
@@ -2038,7 +2044,7 @@ start_traefik_process() {
         traefik_cmd="$(command -v traefik)"
     fi
 
-    # Free the host ports first so Traefik can bind :80/:443.
+    # Free the host ports first so Traefik can bind its entrypoint ports.
     free_proxy_ports
 
     # The shared network must exist so the Docker provider can resolve app
@@ -2056,7 +2062,7 @@ start_traefik_process() {
         old_pid=$(cat "$TRAEFIK_PID_FILE")
         if kill -0 "$old_pid" 2>/dev/null; then
             echo "  🛑 Stopping previous Traefik process (PID: $old_pid)"
-            kill "$old_pid" 2>/dev/null || true
+            kill "$old_pid" 2>/dev/null || sudo kill "$old_pid" 2>/dev/null || true
             sleep 1
         fi
         rm -f "$TRAEFIK_PID_FILE"
@@ -2070,11 +2076,11 @@ start_traefik_process() {
     # is not a usable workaround. The real fix is pinning TRAEFIK_VERSION to
     # >= v3.6.1, which negotiates the Docker API version with the daemon.
     local runner=""
-    if [ "$(id -u)" != "0" ]; then
+    if [ "$(id -u)" != "0" ] && { [ "$TRAEFIK_HTTP_PORT" -lt 1024 ] || [ "$TRAEFIK_HTTPS_PORT" -lt 1024 ]; }; then
         runner="sudo"
     fi
 
-    echo "  🚀 Launching Traefik (binding :80/:443)..."
+    echo "  🚀 Launching Traefik (binding :${TRAEFIK_HTTP_PORT}/:${TRAEFIK_HTTPS_PORT})..."
     $runner nohup "$traefik_cmd" --configfile "$TRAEFIK_STATIC_CONFIG" \
         >> "$TRAEFIK_LOG_FILE" 2>&1 &
     local launch_pid=$!
@@ -2087,7 +2093,7 @@ start_traefik_process() {
     echo "$traefik_pid" > "$TRAEFIK_PID_FILE"
 
     if kill -0 "$traefik_pid" 2>/dev/null; then
-        echo "  ✅ Traefik is running (host process, PID: $traefik_pid) on :80/:443"
+        echo "  ✅ Traefik is running (host process, PID: $traefik_pid) on :${TRAEFIK_HTTP_PORT}/:${TRAEFIK_HTTPS_PORT}"
     else
         echo "  ⚠️ Traefik did not stay running - check: $TRAEFIK_LOG_FILE"
         return 1
@@ -2115,7 +2121,7 @@ start_traefik_container() {
         return 1
     fi
 
-    # Free the host ports first so Traefik can bind :80/:443.
+    # Free the host ports first so Traefik can bind its entrypoint ports.
     free_proxy_ports
 
     # The shared network must exist before Traefik (configure_traefik creates
@@ -2128,7 +2134,7 @@ start_traefik_container() {
         sleep 2
         local traefik_container="${PLTF_FOLDER:-agentic-ai-plateform}-traefik"
         if docker ps --filter "name=${traefik_container}" --filter "status=running" --format '{{.Names}}' 2>/dev/null | grep -q "${traefik_container}"; then
-            echo "  ✅ Traefik is running (container ${traefik_container}) on :80/:443"
+            echo "  ✅ Traefik is running (container ${traefik_container}) on :${TRAEFIK_HTTP_PORT}/:${TRAEFIK_HTTPS_PORT}"
         else
             echo "  ⚠️ Traefik container did not stay running - check: docker logs ${traefik_container}"
             return 1

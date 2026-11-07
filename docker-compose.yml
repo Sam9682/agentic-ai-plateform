@@ -63,8 +63,8 @@ services:
     image: traefik:v3.6.13
     container_name: ${PLTF_FOLDER:-agentic-ai-plateform}-traefik
     command:
-      - --entryPoints.web.address=:80
-      - --entryPoints.websecure.address=:443
+      - --entryPoints.web.address=:${TRAEFIK_HTTP_PORT:-80}
+      - --entryPoints.websecure.address=:${TRAEFIK_HTTPS_PORT:-443}
       - --providers.docker=true
       - --providers.docker.exposedByDefault=false
       - --providers.docker.network=swautomorph-shared
@@ -77,8 +77,8 @@ services:
     # "client version 1.24 is too old" rejection is pinning the image to
     # >= v3.6.1 (here v3.6.13), which negotiates the Docker API version.
     ports:
-      - "80:80"
-      - "443:443"
+      - "${TRAEFIK_HTTP_PORT:-80}:${TRAEFIK_HTTP_PORT:-80}"
+      - "${TRAEFIK_HTTPS_PORT:-443}:${TRAEFIK_HTTPS_PORT:-443}"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./ssl:/etc/traefik/ssl:ro
