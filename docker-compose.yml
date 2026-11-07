@@ -60,7 +60,7 @@ services:
 
   # Traefik reverse proxy (single entrypoint for :80/:443)
   traefik:
-    image: traefik:v3.1
+    image: traefik:v3.6.13
     container_name: ${PLTF_FOLDER:-agentic-ai-plateform}-traefik
     command:
       - --entryPoints.web.address=:80
@@ -72,13 +72,10 @@ services:
       - --providers.file.watch=true
       - --entryPoints.websecure.transport.respondingTimeouts.readTimeout=60s
       - --entryPoints.websecure.transport.respondingTimeouts.writeTimeout=60s
-    environment:
-      # Pin the Docker API version Traefik negotiates with the daemon.
-      # Without this, Traefik's Docker provider defaults to client API 1.24,
-      # which the daemon rejects ("client version 1.24 is too old. Minimum
-      # supported API version is 1.40"). 1.44 is within the daemon's supported
-      # range and compatible with Traefik v3.1's Docker provider.
-      - DOCKER_API_VERSION=1.44
+    # NOTE: No DOCKER_API_VERSION env var is set. Traefik's Docker provider
+    # ignores it in affected v3.x versions; the fix for the Docker Engine 29+
+    # "client version 1.24 is too old" rejection is pinning the image to
+    # >= v3.6.1 (here v3.6.13), which negotiates the Docker API version.
     ports:
       - "80:80"
       - "443:443"

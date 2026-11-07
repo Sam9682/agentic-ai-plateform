@@ -84,17 +84,16 @@ LINUX_USER_INSTALLATION=${LINUX_USER_INSTALLATION:-"ubuntu"}
 # Traefik host-process settings (used only in "locally" mode, where Traefik runs
 # as a native Linux process instead of a container). In "docker" mode Traefik
 # runs as the `traefik` service from docker-compose.yml and these are unused.
-TRAEFIK_VERSION=${TRAEFIK_VERSION:-"v3.1.4"}
+# Traefik >= v3.6.1 is required: earlier v3.x (e.g. v3.1.x) hardcode Docker
+# client API 1.24 in their Docker provider and IGNORE the DOCKER_API_VERSION
+# env var, so Docker Engine 29+ (minimum API 1.40/1.44) rejects them with
+# "client version 1.24 is too old" in an endless retry loop. v3.6.1 fixed this
+# by negotiating the Docker API version. Keep this pinned to a 3.6.x patch.
+TRAEFIK_VERSION=${TRAEFIK_VERSION:-"v3.6.13"}
 TRAEFIK_BIN=${TRAEFIK_BIN:-"/usr/local/bin/traefik"}
 TRAEFIK_PID_FILE=${TRAEFIK_PID_FILE:-"./conf/traefik.pid"}
 TRAEFIK_STATIC_CONFIG=${TRAEFIK_STATIC_CONFIG:-"./conf/traefik.yml"}
 TRAEFIK_LOG_FILE=${TRAEFIK_LOG_FILE:-"./logs/traefik.log"}
-# Docker API version Traefik's Docker provider negotiates with the daemon.
-# Without this, the provider defaults to client API 1.24, which modern daemons
-# reject ("client version 1.24 is too old. Minimum supported API version is
-# 1.40"). 1.44 is within the daemon's supported range and compatible with
-# Traefik v3.1. Mirrors DOCKER_API_VERSION on the compose `traefik` service.
-TRAEFIK_DOCKER_API_VERSION=${TRAEFIK_DOCKER_API_VERSION:-"1.44"}
 
 # Global Parameters (command line args override config)
 COMMAND=${1:-help}
@@ -1701,6 +1700,16 @@ start_flask_application() {
     # Initialize database if PostgreSQL is enabled
     if [ "${USE_POSTGRES:-true}" = "true" ]; then
         echo "  💾 Initializing PostgreSQL database..."
+        # Load .env so credentials (POSTGRES_PASSWORD, SSO_MAC_KEY, ...) match
+        # what wsgi.py will load via python-dotenv. Without this the init step
+        # could run against the insecure default password while the app boots
+        # with the real one (or vice versa).
+        if [ -f ".env" ]; then
+            set -a
+            # shellcheck disable=SC1091
+            . ./.env
+            set +a
+        fi
         export POSTGRES_HOST=${POSTGRES_HOST:-localhost}
         export POSTGRES_DB=${POSTGRES_DB:-ai_swautomorph}
         export POSTGRES_USER=${POSTGRES_USER:-swautomorph}
@@ -1717,6 +1726,43 @@ start_flask_application() {
 
     # Start Gunicorn with production configuration
     echo "  🚀 Starting Gunicorn server..."
+
+    # Ensure .env (loaded by wsgi.py via python-dotenv) is also present in this
+    # shell's environment so required secrets like SSO_MAC_KEY are available to
+    # the preflight check below and to any child that reads the environment
+    # directly rather than through python-dotenv.
+    if [ -f ".env" ]; then
+        set -a
+        # shellcheck disable=SC1091
+        . ./.env
+        set +a
+    fi
+
+    # Preflight: import the WSGI app in the FOREGROUND first.
+    #
+    # gunicorn.conf.py sets preload_app = True and the host deploy runs in
+    # daemon mode. When the app import fails at boot (e.g. a missing
+    # SSO_MAC_KEY, which wsgi.py rejects via require_sso_mac_key()), the
+    # daemonized master dies before logging is wired up: the launch command
+    # still returns exit 0, no PID file is written, and logs/gunicorn_error.log
+    # stays empty. That produced the misleading "Gunicorn PID file not created"
+    # with no root cause. Importing wsgi:application here surfaces the real
+    # error on stderr and lets us fail fast with an actionable message.
+    echo "  🔎 Preflight: validating application boot configuration..."
+    # Prefer the venv interpreter so the app's dependencies (python-dotenv, etc.)
+    # resolve the same way they will under Gunicorn.
+    PREFLIGHT_PYTHON="python3"
+    if [ -x ".venv/bin/python" ]; then
+        PREFLIGHT_PYTHON=".venv/bin/python"
+    fi
+    PREFLIGHT_OUTPUT=$("$PREFLIGHT_PYTHON" -c "import wsgi" 2>&1)
+    PREFLIGHT_RC=$?
+    if [ "$PREFLIGHT_RC" -ne 0 ]; then
+        echo "  ❌ Application failed to boot — not starting Gunicorn:"
+        echo "$PREFLIGHT_OUTPUT" | sed 's/^/      /'
+        return 1
+    fi
+    echo "  ✅ Preflight passed"
 
     # Find gunicorn executable
     GUNICORN_CMD=""
@@ -1865,8 +1911,27 @@ start_traefik() {
 # the pinned release to TRAEFIK_BIN if it is missing. Returns non-zero if the
 # binary could not be made available.
 install_traefik_binary() {
-    if [ -x "$TRAEFIK_BIN" ] || command -v traefik >/dev/null 2>&1; then
-        return 0
+    # Resolve the effective binary path (explicit TRAEFIK_BIN or one on PATH).
+    local existing_bin=""
+    if [ -x "$TRAEFIK_BIN" ]; then
+        existing_bin="$TRAEFIK_BIN"
+    elif command -v traefik >/dev/null 2>&1; then
+        existing_bin="$(command -v traefik)"
+    fi
+
+    # The required version without the leading "v" (binary reports e.g. "3.6.13").
+    local want="${TRAEFIK_VERSION#v}"
+
+    # If a binary is already present, only keep it when it matches the pinned
+    # version. Older v3.x (e.g. 3.1.4) are affected by the Docker API 1.24
+    # rejection bug, so a mismatch must trigger a re-install/upgrade.
+    if [ -n "$existing_bin" ]; then
+        local have
+        have="$("$existing_bin" version 2>/dev/null | awk '/^Version:/ {print $2; exit}')"
+        if [ "$have" = "$want" ]; then
+            return 0
+        fi
+        echo "  ♻ Traefik ${have:-unknown} found at $existing_bin; upgrading to ${TRAEFIK_VERSION}..."
     fi
 
     echo "  📦 Installing Traefik ${TRAEFIK_VERSION} host binary..."
@@ -1906,12 +1971,19 @@ install_traefik_binary() {
 
     rm -rf "$workdir"
 
-    if [ -x "$TRAEFIK_BIN" ] || command -v traefik >/dev/null 2>&1; then
+    # Verify the freshly installed binary actually reports the pinned version,
+    # so a silent partial/stale install (or a different traefik earlier on PATH)
+    # is treated as a failure rather than a false success.
+    local installed=""
+    if [ -x "$TRAEFIK_BIN" ]; then
+        installed="$("$TRAEFIK_BIN" version 2>/dev/null | awk '/^Version:/ {print $2; exit}')"
+    fi
+    if [ "$installed" = "$want" ]; then
         echo "  ✅ Traefik ${TRAEFIK_VERSION} installed"
         return 0
     fi
 
-    echo "  ❌ Traefik installation failed"
+    echo "  ❌ Traefik installation failed (expected ${want}, got ${installed:-none})"
     return 1
 }
 
@@ -1991,19 +2063,19 @@ start_traefik_process() {
     fi
 
     # Binding :80/:443 requires privilege. Use sudo when not already root; the
-    # process must be able to read the host Docker socket too. Pass
-    # DOCKER_API_VERSION via `env` so it survives the sudo boundary (plain
-    # exported vars are stripped by sudo's default env reset) and reaches the
-    # Docker provider; otherwise it defaults to API 1.24 which the daemon
-    # rejects.
+    # process must also be able to read the host Docker socket.
+    #
+    # NOTE: We intentionally do NOT set DOCKER_API_VERSION here. Traefik's
+    # Docker provider ignores that env var in the affected v3.x versions, so it
+    # is not a usable workaround. The real fix is pinning TRAEFIK_VERSION to
+    # >= v3.6.1, which negotiates the Docker API version with the daemon.
     local runner=""
     if [ "$(id -u)" != "0" ]; then
         runner="sudo"
     fi
 
     echo "  🚀 Launching Traefik (binding :80/:443)..."
-    $runner env DOCKER_API_VERSION="$TRAEFIK_DOCKER_API_VERSION" \
-        nohup "$traefik_cmd" --configfile "$TRAEFIK_STATIC_CONFIG" \
+    $runner nohup "$traefik_cmd" --configfile "$TRAEFIK_STATIC_CONFIG" \
         >> "$TRAEFIK_LOG_FILE" 2>&1 &
     local launch_pid=$!
 
@@ -2272,6 +2344,9 @@ generate_environment_file() {
     if [ ! -f .env ]; then
         echo "🔑 Generating environment configuration..."
         SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+        # Server-side SSO MAC key (R7.1). Required by wsgi.py's
+        # require_sso_mac_key() boot check; the app refuses to start without it.
+        SSO_MAC_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))")
 
         # Load existing password from .env if it exists, otherwise use default
         if [ -f ".env" ] && grep -q "POSTGRES_PASSWORD=" .env; then
@@ -2295,6 +2370,11 @@ POSTGRES_TIMEOUT=10
 SECRET_KEY=${SECRET_KEY}
 FLASK_ENV=production
 
+# SSO Configuration
+# Server-side MAC key used to authenticate stored SSO token hashes (R7.1).
+# wsgi.py fails closed at boot if this is unset.
+SSO_MAC_KEY=${SSO_MAC_KEY}
+
 # Active/Active Configuration
 USE_POSTGRES=true
 HTTP_PORT_1=6000
@@ -2309,6 +2389,16 @@ EOF
         echo "  ✅ Environment file created (.env)"
     else
         echo "  ✅ Environment file already exists (.env)"
+        # Back-fill required keys that may be missing from an older .env.
+        # SSO_MAC_KEY is required by wsgi.py's boot check (require_sso_mac_key);
+        # without it Gunicorn's preloaded app import fails and, in daemon mode,
+        # dies silently with no PID file and an empty error log.
+        if ! grep -q "^SSO_MAC_KEY=" .env; then
+            echo "  🔑 Adding missing SSO_MAC_KEY to existing .env..."
+            SSO_MAC_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+            printf '\n# SSO Configuration (added automatically)\nSSO_MAC_KEY=%s\n' "$SSO_MAC_KEY" >> .env
+            echo "  ✅ SSO_MAC_KEY added to .env"
+        fi
     fi
 }
 
