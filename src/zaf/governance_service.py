@@ -13,6 +13,7 @@ import hashlib
 import json
 from typing import Any, Dict, Optional
 
+from . import baseline_policy
 from . import policy_engine as engine
 from . import policy_repository as repo
 from ..aro import event_service as es
@@ -47,12 +48,20 @@ def decide(
         from ..aro import events_repository as _er
         events_repo = _er
 
-    rules = repo.effective_rules(tenant_id) if service_available else []
-    permissions = (
-        repo.agent_permissions(tenant_id, agent_db_id)
-        if (service_available and agent_db_id is not None) else []
-    )
     ctx = dict(context or {})
+    # agent_status is control-plane state: never accept it from the caller.
+    ctx.pop("agent_status", None)
+    rules = []
+    permissions = []
+    if service_available:
+        try:
+            rules = list(repo.effective_rules(tenant_id)) + baseline_policy.rules()
+            if agent_db_id is not None:
+                permissions = repo.agent_permissions(tenant_id, agent_db_id)
+                ctx["agent_status"] = repo.agent_status(tenant_id, agent_db_id) or "UNKNOWN"
+        except Exception:  # noqa: BLE001 - policy store unreachable -> fail closed
+            service_available = False
+            rules, permissions = [], []
     if resource is not None:
         ctx.setdefault("resource", resource)
 
@@ -62,7 +71,8 @@ def decide(
     )
 
     phash = params_hash(action, params)
-    repo.record_decision(
+    _safe_record = repo.record_decision if service_available else _record_best_effort
+    _safe_record(
         tenant_id,
         agent_identity=agent_identity,
         action=action,
@@ -73,17 +83,35 @@ def decide(
         reason=decision.reason,
         params_hash=phash,
     )
-    es.emit(
-        events_repo, tenant_id, "governance.decision", "zaf-pdp",
-        agent_id=agent_identity,
-        action={"action": action, "resource": resource, "params": params or {}},
-        decision=decision.decision,
-        risk_score=decision.risk_score,
-        severity=_severity_for(decision.decision),
-    )
+    try:
+        es.emit(
+            events_repo, tenant_id, "governance.decision", "zaf-pdp",
+            agent_id=agent_identity,
+            action={"action": action, "resource": resource, "params": params or {},
+                    "reason": decision.reason,
+                    "abf_rules": ctx.get("abf_rules") or None},
+            decision=decision.decision,
+            risk_score=decision.risk_score,
+            severity=_severity_for(decision.decision),
+        )
+    except Exception:  # noqa: BLE001
+        # On the allow path an unauditable decision must not proceed (fail
+        # closed by raising); a deny stands even when the audit store is down.
+        if decision.decision == engine.ALLOW:
+            raise
     result = decision.as_dict()
     result["params_hash"] = phash
+    result["baseline_version"] = baseline_policy.VERSION if baseline_policy.enabled() else None
+    result["service_available"] = service_available
     return result
+
+
+def _record_best_effort(*args, **kwargs):
+    """Record a fail-closed decision without letting a dead store mask the deny."""
+    try:
+        return repo.record_decision(*args, **kwargs)
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def _severity_for(decision: str) -> str:

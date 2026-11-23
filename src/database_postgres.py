@@ -632,6 +632,12 @@ def init_db():
                 'add_incidents.sql',
                 'add_agent_cost_records.sql',
                 'add_supervisor.sql',
+                # Previously a manual go-live step although task_repository
+                # already reads its lease columns (finding F8). Idempotent.
+                'add_aro_phase2.sql',
+                'add_event_foundation.sql',
+                'add_abf.sql',
+                'add_audit_chain.sql',
             ):
                 try:
                     migration_path = os.path.join(

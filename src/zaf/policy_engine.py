@@ -24,6 +24,10 @@ A rule is a dict::
 ``action`` supports ``*`` glob matching. ``condition`` keys supported:
   risk_level (min threshold), resource_prefix, not_before/not_after (HH:MM UTC),
   min_risk_score / max_risk_score.
+
+Context key ``agent_status`` (resolved by the service layer from the agents
+table, never from the agent): QUARANTINED yields QUARANTINE and TERMINATED
+yields DENY, unless an explicit DENY rule already matched.
 """
 
 from __future__ import annotations
@@ -134,11 +138,23 @@ def evaluate(
         and _condition_matches(r.get("condition") or {}, context)
     ]
 
-    if matched:
+    deny = next((r for r in matched if r["decision"] == DENY), None)
+    if deny is not None:
         # Deny precedence: any matching DENY wins outright.
-        deny = next((r for r in matched if r["decision"] == DENY), None)
-        if deny is not None:
-            return Decision(DENY, "explicit deny rule matched", deny, risk_score)
+        return Decision(DENY, "explicit deny rule matched", deny, risk_score)
+
+    # Agent containment status (control-plane held, never agent-reported). A
+    # quarantined agent is contained whatever its rules or permissions say; a
+    # terminated agent can do nothing.
+    agent_status = str(context.get("agent_status") or "").upper()
+    if agent_status == "QUARANTINED":
+        return Decision(QUARANTINE, "agent is quarantined", None, risk_score)
+    if agent_status == "TERMINATED":
+        return Decision(DENY, "agent is terminated", None, risk_score)
+    if agent_status == "UNKNOWN":
+        return Decision(DENY, "agent not found in tenant", None, risk_score)
+
+    if matched:
         best = max(matched, key=lambda r: _PRECEDENCE[r["decision"]])
         return Decision(best["decision"], "matched policy rule", best, risk_score)
 

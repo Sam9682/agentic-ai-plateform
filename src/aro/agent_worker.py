@@ -199,9 +199,12 @@ def execute_claimed_task(
         }
 
     corr = f"task-{task['task_ref']}"
+    # Correlation keys for the execution trace (ABF/AET event foundation): the
+    # task ref is the task id and the task correlation id is its trace id.
+    trace_kw = {"task_id": task["task_ref"], "trace_id": corr}
     es.emit(events_repo, tenant_id, "task.received", "worker",
             agent_id=agent["identity"], execution_id=task["task_ref"],
-            action={"operation": task["operation"]}, correlation_id=corr)
+            action={"operation": task["operation"]}, correlation_id=corr, **trace_kw)
 
     cancel_probe = cancel_probe or repo.is_cancel_requested
     if cancel_probe(task_id):
@@ -209,7 +212,7 @@ def execute_claimed_task(
         # re-enqueued.
         repo.complete(tenant_id, task_id, "cancelled", {"error": "cancelled before start"})
         es.emit(events_repo, tenant_id, "task.cancelled", "worker",
-                agent_id=agent["identity"], execution_id=task["task_ref"], correlation_id=corr)
+                agent_id=agent["identity"], execution_id=task["task_ref"], correlation_id=corr, **trace_kw)
         return {"status": "cancelled"}
 
     repo.mark_running(tenant_id, task_id)
@@ -269,7 +272,7 @@ def execute_claimed_task(
         es.emit(events_repo, tenant_id, "task.denied", "zaf-exec",
                 agent_id=agent["identity"], execution_id=task["task_ref"],
                 action={"operation": task["operation"], "reason": exc.reason},
-                decision=exc.decision, severity="HIGH", correlation_id=corr)
+                decision=exc.decision, severity="HIGH", correlation_id=corr, **trace_kw)
         return {"status": "denied", "reason": exc.reason}
 
     # Wall-clock deadline measured from the start of streamed execution
@@ -345,7 +348,7 @@ def execute_claimed_task(
     if outcome.status is OutcomeStatus.CANCELLED:
         repo.complete(tenant_id, task_id, "cancelled", {"output": "".join(collected)})
         es.emit(events_repo, tenant_id, "task.cancelled", "worker",
-                agent_id=agent["identity"], execution_id=task["task_ref"], correlation_id=corr)
+                agent_id=agent["identity"], execution_id=task["task_ref"], correlation_id=corr, **trace_kw)
         return {"status": "cancelled", "output": "".join(collected)}
 
     if outcome.status is OutcomeStatus.TIMED_OUT:
@@ -356,7 +359,7 @@ def execute_claimed_task(
             reason="deadline exceeded")
         es.emit(events_repo, tenant_id, "task.timed_out", "worker",
                 agent_id=agent["identity"], execution_id=task["task_ref"],
-                severity="MEDIUM", correlation_id=corr)
+                severity="MEDIUM", correlation_id=corr, **trace_kw)
         return {"status": "timed_out", "output": "".join(collected), **extra}
 
     if outcome.status is OutcomeStatus.FAILED:
@@ -372,7 +375,7 @@ def execute_claimed_task(
             reason=f"{type(exc).__name__}: {exc}")
         es.emit(events_repo, tenant_id, "task.failed", "worker",
                 agent_id=agent["identity"], execution_id=task["task_ref"],
-                action={"error": str(exc)}, severity="MEDIUM", correlation_id=corr)
+                action={"error": str(exc)}, severity="MEDIUM", correlation_id=corr, **trace_kw)
         return {"status": "failed", "error": str(exc), **extra}
 
     result = outcome.value
@@ -384,7 +387,7 @@ def execute_claimed_task(
     es.emit(events_repo, tenant_id, f"task.{status}", "worker",
             agent_id=agent["identity"], execution_id=task["task_ref"],
             action={"returncode": result.returncode},
-            severity="INFO" if result.success else "MEDIUM", correlation_id=corr)
+            severity="INFO" if result.success else "MEDIUM", correlation_id=corr, **trace_kw)
 
     # ZAF post-execution interposition (Req 5.1). On a COMPLETED (succeeded)
     # execution, consult the injected automated-response service so the
@@ -600,18 +603,19 @@ class AgentTaskWorker:
         task_ref = row.get("task_ref")
         agent_id = row.get("agent_id")
         corr = f"task-{task_ref}" if task_ref is not None else None
+        trace_kw = {"task_id": task_ref, "trace_id": corr} if task_ref is not None else {}
         if decided == "finalized":
             es.emit(self._events, row["tenant_id"], "task.failed", "reaper",
                     agent_id=agent_id, execution_id=task_ref,
                     action={"reason": "lease expired"},
-                    severity="MEDIUM", correlation_id=corr)
+                    severity="MEDIUM", correlation_id=corr, **trace_kw)
         else:
             # "reenqueued" (or an unknown/None outcome): the task was reclaimed
             # and will be attempted again — emit the reclaim lifecycle event.
             es.emit(self._events, row["tenant_id"], "task.reclaimed", "reaper",
                     agent_id=agent_id, execution_id=task_ref,
                     action={"reason": "lease expired"},
-                    severity="MEDIUM", correlation_id=corr)
+                    severity="MEDIUM", correlation_id=corr, **trace_kw)
 
     def _maybe_reap(self) -> None:
         """Run the reaper step when ``reap_interval`` has elapsed (guarded)."""

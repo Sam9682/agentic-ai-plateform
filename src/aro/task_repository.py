@@ -127,6 +127,20 @@ def get_task(tenant_id: int, task_id: int) -> Optional[Dict[str, Any]]:
     return _row(row) if row else None
 
 
+def get_task_agent_by_ref(tenant_id: int, task_ref: str) -> Optional[int]:
+    """Return the agent db id owning ``task_ref`` in the tenant, or None.
+
+    Used by telemetry ingestion to refuse events that claim a task belonging to
+    another agent (trace poisoning).
+    """
+    row = _get_db().execute_query(
+        "SELECT agent_id FROM agent_tasks WHERE tenant_id = %s AND task_ref = %s",
+        (tenant_id, task_ref),
+        fetch_one=True,
+    )
+    return int(row[0]) if row else None
+
+
 def list_tasks(tenant_id: int, agent_id: Optional[int] = None, limit: int = 100) -> List[Dict[str, Any]]:
     limit = max(1, min(int(limit), 1000))
     if agent_id is not None:

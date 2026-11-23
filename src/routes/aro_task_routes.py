@@ -31,7 +31,11 @@ logger = logging.getLogger(__name__)
 
 aro_task_bp = Blueprint("aro_task", __name__, url_prefix="/api/v1/agents")
 
-_TERMINAL_TASK_EVENTS = {"task.succeeded", "task.failed", "task.cancelled"}
+_TERMINAL_TASK_EVENTS = {"task.succeeded", "task.failed", "task.cancelled",
+                         "task.denied", "task.timed_out"}
+#: Agents in these states cannot receive work (finding F6). Containment is also
+#: enforced by the PDP at execution time; this rejects early and visibly.
+_NO_SUBMIT_STATUSES = {"QUARANTINED", "TERMINATED"}
 
 
 @aro_task_bp.route("/tasks", methods=["POST"])
@@ -44,6 +48,9 @@ def submit_task():
     agent = agent_repo.get_agent(g.tenant_id, int(agent_id))
     if agent is None:
         return jsonify({"error": "unknown agent_id"}), 400
+    if agent.get("status") in _NO_SUBMIT_STATUSES:
+        return jsonify({"error": f"agent is {agent['status'].lower()}: tasks cannot be submitted",
+                        "agent_status": agent["status"]}), 409
     task = repo.submit(
         g.tenant_id, int(agent_id),
         operation=body.get("operation", "prompt"),

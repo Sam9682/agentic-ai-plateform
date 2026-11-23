@@ -47,14 +47,17 @@ class StubDb:
     def execute_query(self, sql, params=None, fetch_one=False, fetch_all=False):
         s = " ".join(sql.split()).upper()
         if s.startswith("SELECT ID FROM APPROVAL_REQUESTS WHERE TENANT_ID = %S AND PARAMS_HASH"):
-            tenant_id, phash = params
+            # Phase 2 (F4): pending approvals are also bound to agent + session.
+            tenant_id, phash, agent, session = params
             for r in self.rows.values():
-                if r["tenant_id"] == tenant_id and r["params_hash"] == phash and r["status"] == "pending":
+                if (r["tenant_id"] == tenant_id and r["params_hash"] == phash
+                        and r["status"] == "pending" and r["agent_identity"] == agent
+                        and r["session_id"] == session):
                     return (r["id"],)
             return None
         if s.startswith("INSERT INTO APPROVAL_REQUESTS"):
             (tenant_id, agent_identity, action, resource, params_json, phash,
-             risk, policy, expires) = params
+             risk, policy, expires, session_id) = params
             rid = self._id
             self._id += 1
             import json as _j
@@ -63,6 +66,7 @@ class StubDb:
                 action=action, resource=resource, params=_j.loads(params_json),
                 params_hash=phash, risk_explanation=risk, triggering_policy=None,
                 status="pending", approver_user_id=None, decided_at=None, created_at=None,
+                expires_at=expires, session_id=session_id, consumed_at=None, consumed_by=None,
             )
             return (rid,)
         if s.startswith("SELECT ID, AGENT_IDENTITY, ACTION, RESOURCE, PARAMS, PARAMS_HASH"):
@@ -72,7 +76,8 @@ class StubDb:
                 return None
             return (r["id"], r["agent_identity"], r["action"], r["resource"], r["params"],
                     r["params_hash"], r["risk_explanation"], r["triggering_policy"],
-                    r["status"], r["approver_user_id"], r["decided_at"], r["created_at"])
+                    r["status"], r["approver_user_id"], r["decided_at"], r["created_at"],
+                    r["expires_at"], r["session_id"], r["consumed_at"], r["consumed_by"])
         if s.startswith("SELECT ID FROM APPROVAL_REQUESTS WHERE TENANT_ID = %S AND STATUS = 'PENDING'"):
             tenant_id, _limit = params
             return [(r["id"],) for r in self.rows.values()
@@ -85,10 +90,14 @@ class StubDb:
                 r["approver_user_id"] = approver
                 return 1
             return 0
+        if s.startswith("UPDATE APPROVAL_REQUESTS SET STATUS = 'EXPIRED'"):
+            return 0  # stub rows never expire
         if s.startswith("SELECT 1 FROM APPROVAL_REQUESTS"):
-            tenant_id, phash = params
+            tenant_id, phash = params[:2]
             for r in self.rows.values():
-                if r["tenant_id"] == tenant_id and r["params_hash"] == phash and r["status"] == "approved":
+                if (r["tenant_id"] == tenant_id and r["params_hash"] == phash
+                        and r["status"] == "approved" and r["consumed_at"] is None
+                        and (len(params) == 2 or r["agent_identity"] == params[2])):
                     return (1,)
             return None
         return None

@@ -156,13 +156,14 @@ def _inject_scoped_token(
 def build_enforcers(
     *,
     pdp: Callable[..., Dict[str, Any]] = governance_service.decide,
-    approvals: Callable[..., bool] = approval_service.is_authorized,
+    approvals: Optional[Callable[..., bool]] = None,
     audit: Callable[..., Any] = event_service.emit,
     events_repo: Any = None,
     authenticated_identity: Callable[
         [Dict[str, Any]], Tuple[Optional[str], Optional[int]]
     ] = _authenticated_identity,
     mint_scoped_token: Callable[..., Dict[str, Any]] = credential_vault.mint_scoped_token,
+    consume_approval: Callable[..., Optional[int]] = approval_service.consume_authorization,
 ) -> Dict[str, Callable[[Dict[str, Any]], None]]:
     """Build the three live seam enforcers once (the composition root).
 
@@ -187,6 +188,7 @@ def build_enforcers(
         audit=audit,
         events_repo=events_repo,
         authenticated_identity=authenticated_identity,
+        consume_approval=consume_approval,
     )
 
     base_egress = base["egress"]
@@ -253,3 +255,154 @@ def build_response_service(
         incident_repo=incident_repo,
         events_repo=events_repo,
     )
+
+
+# --------------------------------------------------------------------------- #
+# Live lifecycle enforcer (finding F1, ABF Phase 2)
+# --------------------------------------------------------------------------- #
+#: Transitions that contain, stop or merely record health are never gated by
+#: the PDP: blocking them would weaken containment (a tenant DENY rule, or a
+#: dead policy store, must never prevent a quarantine or a stop).
+UNGATED_TARGETS = frozenset({"QUARANTINED", "TERMINATED", "STOPPING", "STOPPED",
+                             "FAILED", "UNHEALTHY"})
+
+
+def is_gated_transition(from_state: Optional[str], to_state: Optional[str]) -> bool:
+    """True when a lifecycle transition must be authorized by the PDP.
+
+    Not gated: containment / stop / health targets, health recovery
+    (UNHEALTHY -> RUNNING) and the human release path (QUARANTINED -> READY),
+    which is authorized by the admin-only release route instead.
+    """
+    if to_state in UNGATED_TARGETS:
+        return False
+    if from_state == "UNHEALTHY" and to_state == "RUNNING":
+        return False
+    if from_state == "QUARANTINED" and to_state == "READY":
+        return False
+    return True
+
+
+def build_live_pre_transition(
+    *,
+    pdp: Callable[..., Dict[str, Any]] = governance_service.decide,
+    events_repo: Any = None,
+    consume_approval: Callable[..., Optional[int]] = approval_service.consume_authorization,
+) -> Callable[[Dict[str, Any]], None]:
+    """Return the ``zaf_pre_transition`` callable for the live LifecycleService.
+
+    The lifecycle ctx carries the agent's database id as ``agent_id``; it is
+    mapped to ``agent_db_id`` so the PDP loads the agent's permissions and its
+    control-plane status (QUARANTINED / TERMINATED are refused by the PDP).
+    """
+    base = build_enforcers(pdp=pdp, events_repo=events_repo,
+                           consume_approval=consume_approval)["pre_transition"]
+
+    def pre_transition(ctx: Dict[str, Any]) -> None:
+        if not is_gated_transition(ctx.get("from"), ctx.get("to")):
+            return
+        enriched = dict(ctx)
+        enriched.setdefault("agent_db_id", ctx.get("agent_id"))
+        base(enriched)
+
+    return pre_transition
+
+
+def quarantine_agent(
+    tenant_id: int,
+    agent_db_id: int,
+    *,
+    reason: str,
+    lifecycle_svc,
+    exec_mgr=None,
+    revoke_credentials: bool = False,
+    events_repo: Any = None,
+) -> Dict[str, Any]:
+    """Quarantine an agent and cut its acting credentials (finding F6).
+
+    Steps, all through existing services:
+      1. ``governance_service.quarantine`` — state -> QUARANTINED and runtime
+         stop/isolation when an execution manager is supplied; when
+         ``revoke_credentials`` is true, the agent-bound base credentials are
+         revoked too (irreversible: they must be rotated before release).
+      2. Revoke the agent's short-lived scoped tokens (vault).
+      3. Revoke the agent's MCP / firewall tokens; telemetry tokens are kept so
+         the contained runtime stays observable.
+    The PDP independently refuses every gated action of a QUARANTINED agent,
+    so containment does not depend on steps 2-3 succeeding.
+    """
+    from ..aro import agent_repository as agent_repo
+    from ..obs import ingest_tokens
+
+    agent = agent_repo.get_agent(tenant_id, agent_db_id)
+    if agent is None:
+        raise LookupError("agent not found")
+    identity = agent.get("identity")
+    credential_ids = []
+    if revoke_credentials:
+        rows = credential_vault._get_db().execute_query(
+            "SELECT id FROM agent_credentials WHERE tenant_id = %s AND agent_id = %s "
+            "AND status <> 'revoked'",
+            (tenant_id, identity), fetch_all=True,
+        ) or []
+        credential_ids = [int(r[0]) for r in rows]
+    result = governance_service.quarantine(
+        tenant_id, agent_db_id, identity, reason=reason,
+        credential_ids=credential_ids, lifecycle_svc=lifecycle_svc, exec_mgr=exec_mgr,
+    )
+    revoked = {"credentials": len(credential_ids), "scoped_tokens": 0, "agent_tokens": 0}
+    try:
+        revoked["scoped_tokens"] = credential_vault.revoke_agent_scoped_tokens(tenant_id, identity)
+    except Exception:  # noqa: BLE001 - PDP still refuses the quarantined agent
+        revoked["scoped_tokens"] = None
+    try:
+        revoked["agent_tokens"] = ingest_tokens.revoke_acting_scopes_for_agent(tenant_id, agent_db_id)
+    except Exception:  # noqa: BLE001
+        revoked["agent_tokens"] = None
+    if events_repo is None:
+        from ..aro import events_repository as events_repo
+    try:
+        event_service.emit(events_repo, tenant_id, "abf.enforcement", "abf",
+                           agent_id=identity,
+                           action={"enforcement": "QUARANTINE", "reason": reason,
+                                   "revoked": revoked},
+                           decision="QUARANTINE", severity="HIGH")
+    except Exception:  # noqa: BLE001
+        pass
+    out = dict(result) if isinstance(result, dict) else {"id": agent_db_id}
+    out["revoked"] = revoked
+    return out
+
+
+def build_live_exec(
+    *,
+    pdp: Callable[..., Dict[str, Any]] = governance_service.decide,
+    events_repo: Any = None,
+    get_agent: Optional[Callable[[int, int], Optional[Dict[str, Any]]]] = None,
+    consume_approval: Callable[..., Optional[int]] = approval_service.consume_authorization,
+) -> Callable[[Dict[str, Any]], None]:
+    """Return the zaf_exec callable for a live AgentTaskWorker (Phase 3 wiring).
+
+    The worker's seam ctx carries only the agent's database id (agent_id);
+    the authoritative identity is loaded from the agents table here, so the PDP
+    sees the agent's permissions and its quarantine status. An agent that no
+    longer exists in the tenant is denied (fail closed).
+    """
+    if get_agent is None:
+        from ..aro import agent_repository
+        get_agent = agent_repository.get_agent
+    base = build_enforcers(pdp=pdp, events_repo=events_repo,
+                           consume_approval=consume_approval)["exec"]
+
+    def exec_seam(ctx: Dict[str, Any]) -> None:
+        agent = get_agent(ctx.get("tenant_id"), ctx.get("agent_id"))
+        if agent is None:
+            raise enforcement.EnforcementError(
+                seam="exec", decision=policy_engine.DENY, reason="agent not found",
+                action=f"agent.exec.{ctx.get('operation')}", agent_identity=None)
+        enriched = dict(ctx)
+        enriched["agent_identity"] = agent.get("identity")
+        enriched["agent_db_id"] = ctx.get("agent_id")
+        base(enriched)
+
+    return exec_seam

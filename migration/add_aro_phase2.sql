@@ -13,6 +13,9 @@
 --     heartbeat_at) and a partial index over leased rows for the reaper.
 --   * agent_tasks_status_check is swapped to add the 'timed_out' terminal
 --     while retaining the legacy 'timeout' value for backward compatibility.
+--     'denied' (2026-11-21, ABF Phase 2 / finding F5) is the terminal the ZAF
+--     exec seam writes on a policy deny; without it the deny path raised a
+--     CHECK violation instead of recording a clean terminal state.
 --
 -- Idempotent: IF NOT EXISTS / DROP CONSTRAINT IF EXISTS. Running this script
 -- more than once is a no-op.
@@ -51,4 +54,5 @@ ALTER TABLE agent_tasks
 ALTER TABLE agent_tasks
     ADD CONSTRAINT agent_tasks_status_check
     CHECK (status IN ('pending', 'claimed', 'running', 'succeeded',
-                      'failed', 'cancelled', 'timeout', 'timed_out'));
+                      'failed', 'cancelled', 'timeout', 'timed_out',
+                      'denied'));

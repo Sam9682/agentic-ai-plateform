@@ -210,12 +210,13 @@ def _default_authenticated_identity(
 def build_enforcers(
     *,
     pdp: Callable[..., Dict[str, Any]] = governance_service.decide,
-    approvals: Callable[..., bool] = approval_service.is_authorized,
+    approvals: Optional[Callable[..., bool]] = None,
     audit: Callable[..., Any] = event_service.emit,
     events_repo: Any = None,
     authenticated_identity: Callable[
         [Dict[str, Any]], Tuple[Optional[str], Optional[int]]
     ] = _default_authenticated_identity,
+    consume_approval: Callable[..., Optional[int]] = approval_service.consume_authorization,
 ) -> Dict[str, Callable[[Dict[str, Any]], None]]:
     """Build the three seam callables, each closing over the same collaborators.
 
@@ -298,7 +299,19 @@ def build_enforcers(
             return  # proceed (R1.8)
 
         if verdict == policy_engine.REQUIRE_APPROVAL:
-            if approvals(req.tenant_id, req.action, req.params):
+            if approvals is not None:
+                # Legacy injected authorizer (read-only check).
+                authorized = bool(approvals(req.tenant_id, req.action, req.params))
+            else:
+                # Default: single-use approval bound to params, agent and session
+                # (finding F4). Consumed atomically, so it cannot be replayed.
+                authorized = consume_approval(
+                    req.tenant_id, req.action, req.params,
+                    agent_identity=req.agent_identity,
+                    session_id=ctx.get("session_id"),
+                    consumer=f"zaf-{seam}",
+                ) is not None
+            if authorized:
                 return  # bound approval exists (R1.7)
             _audit(seam, req, decision)
             raise EnforcementError(

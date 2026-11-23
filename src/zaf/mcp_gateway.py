@@ -99,8 +99,13 @@ class McpGateway:
         approval_authorizer: Optional[Callable[[int, str, Dict[str, Any]], bool]] = None,
         rate_limiter: Optional[RateLimiter] = None,
         events_repo=None,
+        approval_consumer: Optional[Callable[..., Optional[int]]] = None,
     ):
         self._resolve = tool_resolver
+        # Phase 2 (finding F4): when set, REQUIRE_APPROVAL is satisfied only by a
+        # single-use approval bound to the agent identity and session, consumed
+        # atomically. ``approval_authorizer`` remains for legacy callers.
+        self._consume = approval_consumer
         self._invoke = tool_invoker
         self._decide = decide
         self._authorized = approval_authorizer
@@ -152,16 +157,28 @@ class McpGateway:
             return self._run(tenant_id, agent_identity, server_name, tool_name, params, decision)
 
         if verdict == pe.REQUIRE_APPROVAL:
-            authorized = (
-                self._authorized(tenant_id, action, params)
-                if self._authorized is not None else False
-            )
+            if self._consume is not None:
+                authorized = self._consume(
+                    tenant_id, action, params, agent_identity=agent_identity,
+                    session_id=(context or {}).get("session_id"),
+                    consumer=f"mcp:{server_name}:{tool_name}",
+                ) is not None
+            else:
+                authorized = (
+                    self._authorized(tenant_id, action, params)
+                    if self._authorized is not None else False
+                )
             if authorized:
                 return self._run(tenant_id, agent_identity, server_name, tool_name, params, decision)
+            self._emit(tenant_id, agent_identity, server_name, tool_name,
+                       "REQUIRE_APPROVAL", "approval required", severity="MEDIUM")
             return GatewayResult(False, pe.REQUIRE_APPROVAL,
                                  "approval required and not yet granted", status_code=202)
 
         # DENY / QUARANTINE -> blocked.
+        self._emit(tenant_id, agent_identity, server_name, tool_name,
+                   verdict if verdict in pe.VALID_DECISIONS else pe.DENY,
+                   decision.get("reason", "blocked"), severity="HIGH")
         return GatewayResult(False, verdict, decision.get("reason", "blocked"), status_code=403)
 
     def _run(self, tenant_id, agent_identity, server_name, tool_name, params, decision) -> GatewayResult:

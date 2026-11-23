@@ -138,6 +138,16 @@ def agent_permissions(tenant_id: int, agent_id: int) -> List[str]:
     return [r[0] for r in (rows or [])]
 
 
+def agent_status(tenant_id: int, agent_id: int) -> Optional[str]:
+    """Return the agent's control-plane status, or None when not in the tenant."""
+    row = _get_db().execute_query(
+        "SELECT status FROM agents WHERE tenant_id = %s AND id = %s",
+        (tenant_id, agent_id),
+        fetch_one=True,
+    )
+    return row[0] if row else None
+
+
 def record_decision(
     tenant_id: int,
     *,

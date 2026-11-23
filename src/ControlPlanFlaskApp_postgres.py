@@ -35,6 +35,8 @@ from .routes.aro_agent_routes import aro_agent_bp
 from .routes.aro_task_routes import aro_task_bp
 from .routes.zaf_governance_routes import zaf_governance_bp
 from .routes.obs_routes import obs_bp
+from .routes.telemetry_routes import telemetry_bp
+from .routes.abf_routes import abf_bp
 
 # Redirect all print() statements to log files
 class PrintLogger:
@@ -130,5 +132,8 @@ def create_app():
     app.register_blueprint(aro_task_bp)
     app.register_blueprint(zaf_governance_bp)
     app.register_blueprint(obs_bp)
-    
+    # ABF/AET event foundation: authenticated runtime telemetry + behavior API.
+    app.register_blueprint(telemetry_bp)
+    app.register_blueprint(abf_bp)
+
     return app

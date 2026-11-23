@@ -29,6 +29,7 @@ from ..authz import role_required, tenant_scoped
 from ..aro import agent_repository as repo
 from ..aro import runtime_registry_repository as runtimes
 from ..aro.lifecycle_service import IllegalTransition, LifecycleService
+from ..zaf.enforcement import EnforcementError
 from .aro_common import get_text, json_body
 
 logger = logging.getLogger(__name__)
@@ -43,8 +44,14 @@ def _service() -> LifecycleService:
     not import heavy adapter/SSH dependencies. For now the launcher is a no-op
     placeholder returning no placement; Task 8/9 provide real adapters and the
     execution manager performs the real launch.
+
+    The ZAF pre-transition enforcer is wired here (finding F1): progress
+    transitions are authorized by the PDP (tenant rules, platform baseline,
+    agent quarantine status); containment, stop and health transitions are
+    never gated (see ``zaf.wiring.is_gated_transition``).
     """
-    return LifecycleService()
+    from ..zaf import wiring
+    return LifecycleService(zaf_pre_transition=wiring.build_live_pre_transition())
 
 
 @aro_agent_bp.route("/", methods=["GET"])
@@ -103,6 +110,9 @@ def _run_lifecycle(agent_id, op):
         result = op(svc, g.tenant_id, agent_id)
     except IllegalTransition as exc:
         return jsonify({"error": str(exc)}), 409
+    except EnforcementError as exc:
+        return jsonify({"error": "denied by policy", "decision": exc.decision,
+                        "reason": exc.reason, "action": exc.action}), 403
     except LookupError:
         return jsonify({"error": get_text("not_found")}), 404
     return jsonify(result), 200

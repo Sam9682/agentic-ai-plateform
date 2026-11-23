@@ -24,6 +24,64 @@ from typing import Any, Dict, Optional
 VALID_DECISIONS = (None, "ALLOW", "DENY", "REQUIRE_APPROVAL", "QUARANTINE")
 VALID_SEVERITIES = ("INFO", "LOW", "MEDIUM", "HIGH", "CRITICAL")
 
+# Normalized behavioral event taxonomy (ABF/AET event foundation). Mirrors the
+# CHECK constraint in migration/add_event_foundation.sql.
+VALID_CATEGORIES = (
+    "PROCESS", "SHELL", "FILESYSTEM", "NETWORK", "MCP", "LLM", "API",
+    "DATABASE", "RUNTIME", "SECURITY", "RESOURCE",
+)
+VALID_OUTCOMES = ("SUCCESS", "FAILURE", "DENIED", "UNKNOWN")
+
+# Event provenance. ``control_plane`` = observed by the platform itself;
+# ``runtime_reported`` = submitted by an agent runtime through authenticated
+# ingestion (untrusted: never allowed to improve a governance score alone).
+INGEST_CONTROL_PLANE = "control_plane"
+INGEST_RUNTIME_REPORTED = "runtime_reported"
+VALID_INGEST_SOURCES = (INGEST_CONTROL_PLANE, INGEST_RUNTIME_REPORTED)
+
+# Optional normalized/correlation fields. They are added to a built event only
+# when supplied, so the legacy canonical shape stays byte-for-byte stable for
+# existing emitters.
+EXTENDED_FIELDS = (
+    "trace_id", "session_id", "task_id", "parent_event_id", "category",
+    "normalized_action", "resource", "outcome", "duration_ms",
+    "ingest_source", "ingest_principal",
+)
+
+# Category of control-plane events, derived from the event_type prefix so that
+# legacy emitters are classified without changing their call sites.
+_EVENT_TYPE_CATEGORY_PREFIXES = (
+    ("governance.", "SECURITY"),
+    ("zaf.", "SECURITY"),
+    ("approval.", "SECURITY"),
+    ("security.", "SECURITY"),
+    ("abf.", "SECURITY"),
+    ("mcp.", "MCP"),
+    ("llm.", "LLM"),
+    ("agent.", "RUNTIME"),
+    ("task.", "RUNTIME"),
+    ("runtime.", "RUNTIME"),
+    ("session.", "RUNTIME"),
+    ("execution.", "RUNTIME"),
+    ("supervisor.", "RUNTIME"),
+)
+
+
+def category_for_event_type(event_type: Optional[str]) -> Optional[str]:
+    """Return the normalized category implied by a control-plane event_type.
+
+    ``telemetry.<category>`` (runtime-reported) maps to that category. Unknown
+    prefixes return ``None`` rather than guessing.
+    """
+    et = (event_type or "").lower()
+    if et.startswith("telemetry."):
+        cat = et.split(".", 2)[1].upper() if "." in et else ""
+        return cat if cat in VALID_CATEGORIES else None
+    for prefix, category in _EVENT_TYPE_CATEGORY_PREFIXES:
+        if et.startswith(prefix):
+            return category
+    return None
+
 # Keys whose name implies a secret value; their values are always masked.
 _SECRET_KEY_PATTERN = re.compile(
     r"(pass(word)?|secret|token|api[_-]?key|private[_-]?key|credential|"
@@ -42,6 +100,61 @@ _SECRET_VALUE_PATTERNS = (
 
 _REDACTED = "***REDACTED***"
 
+# Secrets embedded INSIDE a larger string (a shell command line, a URL, a log
+# line). Only the secret part is masked so the rest of the command stays useful
+# as evidence. Applied when no whole-value pattern above matched.
+_QUOTED_OR_BARE = r"(\"[^\"]*\"|'[^']*'|\S+)"
+_SECRET_ASSIGNMENT_KEY = re.compile(
+    r"PASS(?:WORD|WD)?|SECRET|TOKEN|API_?KEY|PRIVATE_?KEY|ACCESS_?KEY|CREDENTIAL",
+    re.IGNORECASE,
+)
+_INLINE_SECRET_PATTERNS = (
+    # URL userinfo: scheme://user:pass@host -> scheme://***@host
+    (re.compile(r"([a-z][a-z0-9+.\-]*://)[^\s/@:]+(?::[^\s/@]*)?@", re.IGNORECASE),
+     r"\1***@"),
+    # KEY=VALUE where KEY names a secret (env exports, inline assignments).
+    # The identifier is matched with a bounded quantifier and the keyword is
+    # checked in a callback, which keeps matching linear on adversarial input
+    # (agent-supplied strings reach this path). Purely numeric values (e.g.
+    # max_tokens=100) are not secrets.
+    (re.compile(
+        r"\b([A-Za-z0-9_]{1,128})(\s*=\s*)(?!\d+(?:\s|$))" + _QUOTED_OR_BARE),
+     lambda m: (m.group(1) + m.group(2) + _REDACTED)
+     if _SECRET_ASSIGNMENT_KEY.search(m.group(1)) else m.group(0)),
+    # CLI flags carrying a secret: --password=x, --token x, -password x
+    (re.compile(
+        r"((?:^|\s)--?(?:password|passwd|pass|pwd|token|secret|api[-_]?key|"
+        r"access[-_]?key|auth[-_]?token)(?:=|\s+))" + _QUOTED_OR_BARE,
+        re.IGNORECASE),
+     r"\1" + _REDACTED),
+    # HTTP Authorization header values (Basic/Bearer/raw).
+    (re.compile(
+        r"(authorization\s*[:=]\s*)(\"[^\"]*\"|'[^']*'|[^\s,;\"']+(?:\s+[^\s,;\"']+)?)",
+        re.IGNORECASE),
+     r"\1" + _REDACTED),
+)
+
+# Keys that match the secret-key pattern by name but carry plain usage counters
+# (LLM token accounting). Exempted ONLY when the value is numeric, so a string
+# value under one of these keys is still masked.
+_NUMERIC_NON_SECRET_KEYS = frozenset({
+    "input_tokens", "output_tokens", "total_tokens", "prompt_tokens",
+    "completion_tokens", "cached_tokens", "max_tokens", "tokens",
+    "token_count", "cache_read_input_tokens", "cache_creation_input_tokens",
+})
+
+
+def redact_text(value: str) -> str:
+    """Mask secrets in a free-form string (command line, URL, log line)."""
+    if not isinstance(value, str):
+        return value
+    for pat in _SECRET_VALUE_PATTERNS:
+        if pat.search(value):
+            return _REDACTED
+    for pat, repl in _INLINE_SECRET_PATTERNS:
+        value = pat.sub(repl, value)
+    return value
+
 
 def _redact_value(value: Any) -> Any:
     """Mask a scalar value that looks like a secret; recurse into containers."""
@@ -50,10 +163,7 @@ def _redact_value(value: Any) -> Any:
     if isinstance(value, list):
         return [_redact_value(v) for v in value]
     if isinstance(value, str):
-        for pat in _SECRET_VALUE_PATTERNS:
-            if pat.search(value):
-                return _REDACTED
-        return value
+        return redact_text(value)
     return value
 
 
@@ -71,7 +181,10 @@ def redact(payload: Any) -> Any:
         return _redact_value(payload)
     out: Dict[str, Any] = {}
     for key, value in payload.items():
-        if isinstance(key, str) and _SECRET_KEY_PATTERN.search(key):
+        if (isinstance(key, str) and key.lower() in _NUMERIC_NON_SECRET_KEYS
+                and isinstance(value, (int, float)) and not isinstance(value, bool)):
+            out[key] = value
+        elif isinstance(key, str) and _SECRET_KEY_PATTERN.search(key):
             out[key] = _REDACTED
         else:
             out[key] = _redact_value(value)
@@ -112,6 +225,17 @@ def build_event(
     correlation_id: Optional[str] = None,
     event_id: Optional[str] = None,
     occurred_at: Optional[datetime] = None,
+    trace_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+    task_id: Optional[str] = None,
+    parent_event_id: Optional[str] = None,
+    category: Optional[str] = None,
+    normalized_action: Optional[str] = None,
+    resource: Optional[str] = None,
+    outcome: Optional[str] = None,
+    duration_ms: Optional[int] = None,
+    ingest_source: Optional[str] = None,
+    ingest_principal: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Build a canonical, redacted, validated event dict (never raises on data).
 
@@ -127,7 +251,7 @@ def build_event(
     """
     eid = event_id or f"evt-{uuid.uuid4().hex}"
     ts = occurred_at or datetime.now(timezone.utc)
-    return {
+    event = {
         "event_id": eid,
         "tenant_id": tenant_id,
         "agent_id": agent_id,
@@ -141,6 +265,50 @@ def build_event(
         "correlation_id": correlation_id or eid,
         "occurred_at": ts,
     }
+    extended = _normalize_extended(
+        trace_id=trace_id, session_id=session_id, task_id=task_id,
+        parent_event_id=parent_event_id, category=category,
+        normalized_action=normalized_action, resource=resource,
+        outcome=outcome, duration_ms=duration_ms,
+        ingest_source=ingest_source, ingest_principal=ingest_principal,
+    )
+    event.update(extended)
+    return event
+
+
+def _normalize_extended(**fields: Any) -> Dict[str, Any]:
+    """Validate the optional normalized fields; drop the ones not supplied.
+
+    Invalid enum values are dropped (never raised) so a malformed caller can
+    never break the audit path. ``resource`` is free text and is redacted.
+    """
+    out: Dict[str, Any] = {}
+    for key in ("trace_id", "session_id", "task_id", "parent_event_id",
+                "normalized_action", "ingest_principal"):
+        value = fields.get(key)
+        if value is not None and str(value) != "":
+            out[key] = str(value)[:255]
+    resource = fields.get("resource")
+    if resource is not None and str(resource) != "":
+        out["resource"] = redact_text(str(resource))[:2048]
+    category = fields.get("category")
+    if category is not None and str(category).upper() in VALID_CATEGORIES:
+        out["category"] = str(category).upper()
+    outcome = fields.get("outcome")
+    if outcome is not None and str(outcome).upper() in VALID_OUTCOMES:
+        out["outcome"] = str(outcome).upper()
+    duration = fields.get("duration_ms")
+    if duration is not None:
+        try:
+            d = int(duration)
+            if d >= 0:
+                out["duration_ms"] = d
+        except (TypeError, ValueError):
+            pass
+    source = fields.get("ingest_source")
+    if source is not None and source in VALID_INGEST_SOURCES:
+        out["ingest_source"] = source
+    return out
 
 
 def emit(

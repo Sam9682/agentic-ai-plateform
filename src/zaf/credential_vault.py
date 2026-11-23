@@ -308,6 +308,21 @@ def revoke(tenant_id: int, credential_id: int) -> bool:
     return bool(rows)
 
 
+def revoke_agent_scoped_tokens(tenant_id: int, agent_identity: str) -> int:
+    """Revoke every active scoped token minted for an agent (quarantine).
+
+    Base credentials are left untouched (they may be shared and revocation is
+    irreversible); new scoped tokens can only be minted through the egress
+    enforcer, which the PDP refuses while the agent is quarantined.
+    """
+    rows = _get_db().execute_query(
+        "UPDATE agent_scoped_tokens SET revoked = TRUE "
+        "WHERE tenant_id = %s AND agent_id = %s AND revoked = FALSE",
+        (tenant_id, agent_identity),
+    )
+    return int(rows or 0)
+
+
 # --------------------------------------------------------------------------- #
 # Scoped token minting / verification
 # --------------------------------------------------------------------------- #

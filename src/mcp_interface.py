@@ -35,6 +35,10 @@ Design notes
   receives a well-formed tool result instead of a transport error.
 * The agent-control tool mirrors ``GET /api/agent-control/containers`` and is
   the native-tool equivalent of what ``AGENTS_CONTROL_AGENT`` polls over HTTP.
+* Governance (ABF Phase 2): every tool requires an agent token with scope
+  ``mcp:invoke`` in ``AGENTIC_MCP_TOKEN`` and is decided by the ZAF PDP; see
+  ``src/abf/mcp_governance.py``. Add ``"env": {"AGENTIC_MCP_TOKEN": "aig_..."}``
+  to the client registration above.
 """
 
 from __future__ import annotations
@@ -382,8 +386,7 @@ def _run_developer_action(
     return result.as_dict()
 
 
-@mcp.tool()
-def list_applications() -> List[Dict[str, Any]]:
+def _impl_list_applications() -> List[Dict[str, Any]]:
     """List all applications registered in the platform catalog.
 
     Returns a list of ``{id, name, url, description}`` objects (empty list when
@@ -404,8 +407,7 @@ def list_applications() -> List[Dict[str, Any]]:
         return [_err(exc)]
 
 
-@mcp.tool()
-def add_application(name: str, url: str, description: str = "") -> Dict[str, str]:
+def _impl_add_application(name: str, url: str, description: str = "") -> Dict[str, str]:
     """Register a new application in the platform catalog.
 
     Args:
@@ -425,16 +427,28 @@ def add_application(name: str, url: str, description: str = "") -> Dict[str, str
         return _err(exc)
 
 
-@mcp.tool()
-def list_users() -> List[Dict[str, Any]]:
-    """List all registered users (no sensitive fields: no passwords/secrets)."""
+def _impl_list_users(tenant_id: Optional[int] = None) -> List[Dict[str, Any]]:
+    """List registered users (no sensitive fields: no passwords/secrets).
+
+    With ``tenant_id`` (authenticated agent call) only members of that tenant
+    are returned. ``None`` is the legacy unauthenticated read (opt-in only).
+    """
     try:
         from src.database_postgres import db_manager
 
-        rows = db_manager.execute_query(
-            "SELECT id, username, email, first_name, last_name, created_at FROM users",
-            fetch_all=True,
-        )
+        if tenant_id is not None:
+            rows = db_manager.execute_query(
+                "SELECT u.id, u.username, u.email, u.first_name, u.last_name, u.created_at "
+                "FROM users u JOIN tenant_members tm ON tm.user_id = u.id "
+                "WHERE tm.tenant_id = %s ORDER BY u.id",
+                (tenant_id,),
+                fetch_all=True,
+            )
+        else:
+            rows = db_manager.execute_query(
+                "SELECT id, username, email, first_name, last_name, created_at FROM users",
+                fetch_all=True,
+            )
         return [
             {
                 "id": r[0],
@@ -450,8 +464,7 @@ def list_users() -> List[Dict[str, Any]]:
         return [_err(exc)]
 
 
-@mcp.tool()
-def deploy_template(
+def _impl_deploy_template(
     template_id: str, application_name: str, user_id: int
 ) -> Dict[str, Any]:
     """Deploy an application from a Deploy Template blueprint.
@@ -487,8 +500,7 @@ def deploy_template(
         return _err(exc, kind="error")
 
 
-@mcp.tool()
-def agent_control_containers(
+def _impl_agent_control_containers(
     live: bool = False,
     classification: Optional[str] = None,
     state: Optional[str] = None,
@@ -553,8 +565,7 @@ def agent_control_containers(
         return {"success": False, "containers": [], "errors": [], "error": f"{type(exc).__name__}: {exc}"}
 
 
-@mcp.tool()
-def start(application_name: str, user_id: int) -> Dict[str, Any]:
+def _impl_start(application_name: str, user_id: int) -> Dict[str, Any]:
     """Start an application's runtime via the platform operator agent."""
     try:
         return _run_operator_action("START", application_name, user_id)
@@ -562,8 +573,7 @@ def start(application_name: str, user_id: int) -> Dict[str, Any]:
         return _err(exc)
 
 
-@mcp.tool()
-def stop(application_name: str, user_id: int) -> Dict[str, Any]:
+def _impl_stop(application_name: str, user_id: int) -> Dict[str, Any]:
     """Stop an application's runtime via the platform operator agent."""
     try:
         return _run_operator_action("STOP", application_name, user_id)
@@ -571,8 +581,7 @@ def stop(application_name: str, user_id: int) -> Dict[str, Any]:
         return _err(exc)
 
 
-@mcp.tool()
-def ps(application_name: str, user_id: int) -> Dict[str, Any]:
+def _impl_ps(application_name: str, user_id: int) -> Dict[str, Any]:
     """List the running processes/containers for an application."""
     try:
         return _run_operator_action("PS", application_name, user_id)
@@ -580,8 +589,7 @@ def ps(application_name: str, user_id: int) -> Dict[str, Any]:
         return _err(exc)
 
 
-@mcp.tool()
-def logs(application_name: str, user_id: int) -> Dict[str, Any]:
+def _impl_logs(application_name: str, user_id: int) -> Dict[str, Any]:
     """Retrieve recent logs for an application."""
     try:
         return _run_operator_action("LOGS", application_name, user_id)
@@ -589,8 +597,7 @@ def logs(application_name: str, user_id: int) -> Dict[str, Any]:
         return _err(exc)
 
 
-@mcp.tool()
-def backup(application_name: str, user_id: int) -> Dict[str, Any]:
+def _impl_backup(application_name: str, user_id: int) -> Dict[str, Any]:
     """Back up an application's data via the BACKUP operator action."""
     try:
         return _run_operator_action("BACKUP", application_name, user_id)
@@ -598,8 +605,7 @@ def backup(application_name: str, user_id: int) -> Dict[str, Any]:
         return _err(exc)
 
 
-@mcp.tool()
-def restore(application_name: str, user_id: int) -> Dict[str, Any]:
+def _impl_restore(application_name: str, user_id: int) -> Dict[str, Any]:
     """Restore an application's database via the RESTORE_DATABASE operator action."""
     try:
         return _run_operator_action("RESTORE_DATABASE", application_name, user_id)
@@ -607,8 +613,7 @@ def restore(application_name: str, user_id: int) -> Dict[str, Any]:
         return _err(exc)
 
 
-@mcp.tool()
-def modify_code(application_name: str, user_id: int, instruction: str) -> Dict[str, Any]:
+def _impl_modify_code(application_name: str, user_id: int, instruction: str) -> Dict[str, Any]:
     """Modify an application's source code via the Developer agent path.
 
     On a clean engine exit, creates a Gitea branch name and records the change in
@@ -618,6 +623,117 @@ def modify_code(application_name: str, user_id: int, instruction: str) -> Dict[s
         return _run_developer_action(application_name, user_id, instruction)
     except Exception as exc:  # noqa: BLE001 — R8.1: never raise across the protocol
         return _err(exc)
+
+
+# --------------------------------------------------------------------------- #
+# Governed MCP tools (ABF Phase 2, finding F3)
+#
+# Every tool below is a thin wrapper that hands the call to
+# ``src.abf.mcp_governance``: agent-token authentication (AGENTIC_MCP_TOKEN,
+# scope mcp:invoke), tenant scoping of user_id, ABF rule assessment, ZAF PDP
+# decision through McpGateway, single-use approvals and audit. The ``_impl_*``
+# functions above are the unchanged implementations.
+# --------------------------------------------------------------------------- #
+def _governed(tool: str, params: Dict[str, Any], impl):
+    try:
+        from src.abf.mcp_governance import get_governance
+        return get_governance().call(tool, params, impl)
+    except Exception as exc:  # noqa: BLE001 - never raise across the protocol; fail closed
+        return {"error": f"governance unavailable (fail closed): {type(exc).__name__}",
+                "decision": "DENY"}
+
+
+@mcp.tool()
+def list_applications() -> List[Dict[str, Any]]:
+    """List all applications registered in the platform catalog."""
+    return _governed("list_applications", {}, lambda ctx: _impl_list_applications())
+
+
+@mcp.tool()
+def add_application(name: str, url: str, description: str = "") -> Dict[str, str]:
+    """Register a new application in the platform catalog (needs a policy grant)."""
+    params = {"name": name, "url": url, "description": description}
+    return _governed("add_application", params,
+                     lambda ctx: _impl_add_application(name, url, description))
+
+
+@mcp.tool()
+def list_users() -> List[Dict[str, Any]]:
+    """List the users of the calling agent's tenant (no sensitive fields)."""
+    return _governed("list_users", {},
+                     lambda ctx: _impl_list_users(ctx["tenant_id"] if ctx else None))
+
+
+@mcp.tool()
+def deploy_template(template_id: str, application_name: str, user_id: int) -> Dict[str, Any]:
+    """Deploy an application from a Deploy Template blueprint (governed)."""
+    params = {"template_id": template_id, "application_name": application_name,
+              "user_id": user_id}
+    return _governed("deploy_template", params,
+                     lambda ctx: _impl_deploy_template(template_id, application_name, user_id))
+
+
+@mcp.tool()
+def agent_control_containers(
+    live: bool = False,
+    classification: Optional[str] = None,
+    state: Optional[str] = None,
+    min_confidence: float = 0.0,
+) -> Dict[str, Any]:
+    """Retrieve discovered containers and their agent-classification scores (governed)."""
+    params = {"live": live, "classification": classification, "state": state,
+              "min_confidence": min_confidence}
+    return _governed("agent_control_containers", params,
+                     lambda ctx: _impl_agent_control_containers(
+                         live, classification, state, min_confidence))
+
+
+def _app_tool(tool: str, impl, application_name: str, user_id: int, **extra):
+    params = {"application_name": application_name, "user_id": user_id, **extra}
+    return _governed(tool, params, lambda ctx: impl(application_name, user_id, **extra))
+
+
+@mcp.tool()
+def start(application_name: str, user_id: int) -> Dict[str, Any]:
+    """Start an application's runtime via the platform operator agent (governed)."""
+    return _app_tool("start", _impl_start, application_name, user_id)
+
+
+@mcp.tool()
+def stop(application_name: str, user_id: int) -> Dict[str, Any]:
+    """Stop an application's runtime via the platform operator agent (governed)."""
+    return _app_tool("stop", _impl_stop, application_name, user_id)
+
+
+@mcp.tool()
+def ps(application_name: str, user_id: int) -> Dict[str, Any]:
+    """List the running processes/containers for an application (governed)."""
+    return _app_tool("ps", _impl_ps, application_name, user_id)
+
+
+@mcp.tool()
+def logs(application_name: str, user_id: int) -> Dict[str, Any]:
+    """Retrieve recent logs for an application (governed)."""
+    return _app_tool("logs", _impl_logs, application_name, user_id)
+
+
+@mcp.tool()
+def backup(application_name: str, user_id: int) -> Dict[str, Any]:
+    """Back up an application's data via the BACKUP operator action (governed)."""
+    return _app_tool("backup", _impl_backup, application_name, user_id)
+
+
+@mcp.tool()
+def restore(application_name: str, user_id: int) -> Dict[str, Any]:
+    """Restore an application's database (governed; typically requires approval)."""
+    return _app_tool("restore", _impl_restore, application_name, user_id)
+
+
+@mcp.tool()
+def modify_code(application_name: str, user_id: int, instruction: str) -> Dict[str, Any]:
+    """Modify an application's source code via the Developer agent path (governed)."""
+    return _app_tool("modify_code", _impl_modify_code, application_name, user_id,
+                     instruction=instruction)
 
 
 def main() -> None:
