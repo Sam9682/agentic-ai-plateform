@@ -94,11 +94,22 @@ TRAEFIK_BIN=${TRAEFIK_BIN:-"/usr/local/bin/traefik"}
 TRAEFIK_PID_FILE=${TRAEFIK_PID_FILE:-"./conf/traefik.pid"}
 TRAEFIK_STATIC_CONFIG=${TRAEFIK_STATIC_CONFIG:-"./conf/traefik.yml"}
 TRAEFIK_LOG_FILE=${TRAEFIK_LOG_FILE:-"./logs/traefik.log"}
-# Traefik entrypoint ports follow the control plane port range: web (HTTP) is
-# RANGE_START_CONTROLPLAN and websecure (HTTPS) is the next port (see
-# calculate_ports). Defaults to 80/443 only when the range starts at 80.
+# Traefik entrypoint ports:
+#   - Default (RANGE_START_CONTROLPLAN unset or 80, e.g. a plain
+#     "./deployControlPlan.sh start"): the standard web ports 80 (HTTP) and
+#     443 (HTTPS). Previously HTTPS was computed as 80 + 1 = 81, so Traefik
+#     never listened on 443.
+#   - Custom range (RANGE_START_CONTROLPLAN != 80): HTTP is
+#     RANGE_START_CONTROLPLAN and HTTPS is the next port (see calculate_ports).
+#   - TRAEFIK_HTTP_PORT / TRAEFIK_HTTPS_PORT (env or deploy.ini) override both.
+if [ "$RANGE_START_CONTROLPLAN" = "80" ]; then
+    _DEFAULT_TRAEFIK_HTTPS_PORT=443
+else
+    _DEFAULT_TRAEFIK_HTTPS_PORT=$((RANGE_START_CONTROLPLAN + 1))
+fi
 TRAEFIK_HTTP_PORT=${TRAEFIK_HTTP_PORT:-${RANGE_START_CONTROLPLAN}}
-TRAEFIK_HTTPS_PORT=${TRAEFIK_HTTPS_PORT:-$((RANGE_START_CONTROLPLAN + 1))}
+TRAEFIK_HTTPS_PORT=${TRAEFIK_HTTPS_PORT:-${_DEFAULT_TRAEFIK_HTTPS_PORT}}
+unset _DEFAULT_TRAEFIK_HTTPS_PORT
 export TRAEFIK_HTTP_PORT TRAEFIK_HTTPS_PORT
 
 # Option flags may appear anywhere on the command line. Collect them first and
@@ -952,8 +963,125 @@ stop_main_app_only() {
         if [ "$LOCAL_MODE" != "locally" ] && command -v docker-compose >/dev/null 2>&1; then
             docker-compose stop app 2>/dev/null || true
         fi
+        # Serve a static "stopped" page on the control-plane port so the main
+        # web page shows a clear message instead of a Traefik gateway error.
+        start_maintenance_page || true
     fi
     echo "  ℹ️ Traefik, user application routes and Gitea were left running"
+}
+
+# ---------------------------------------------------------------------------
+# "Controller stopped" placeholder page
+# ---------------------------------------------------------------------------
+# Traefik routes the bare domain to the control plane at
+# CONTROL_PLANE_HOST:CONTROL_PLANE_PORT (127.0.0.1:5000, the Gunicorn bind; see
+# traefik/dynamic/control-plane.yml). After "stop --app-only" nothing listens
+# there, so visitors got a gateway error. This tiny stdlib HTTP server takes
+# Gunicorn's place and answers every path with a static 503 page. No Traefik
+# change is needed. It is stopped automatically by stop_flask_service and
+# start_flask_application before Gunicorn starts again.
+MAINTENANCE_PID_FILE=${MAINTENANCE_PID_FILE:-"./conf/maintenance_page.pid"}
+MAINTENANCE_MARKER="agentic-controller-stopped-page"
+
+start_maintenance_page() {
+    local host=${CONTROL_PLANE_HOST:-127.0.0.1}
+    local port=${CONTROL_PLANE_PORT:-5000}
+
+    stop_maintenance_page
+    mkdir -p conf logs
+
+    echo "📄 Serving 'controller stopped' page on ${host}:${port}..."
+    nohup python3 -c '
+import sys
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+HOST, PORT = sys.argv[1], int(sys.argv[2])
+BODY = b"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agentic AI controller stopped</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; min-height: 100vh; display: flex; align-items: center;
+         justify-content: center; padding: 1.5rem; box-sizing: border-box;
+         font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+         background: #f5f6f8; color: #1f2933; }
+  main { max-width: 34rem; text-align: center; }
+  h1 { font-size: 1.6rem; margin: 0 0 .75rem; }
+  p { margin: 0; color: #52606d; line-height: 1.5; }
+  @media (prefers-color-scheme: dark) {
+    body { background: #14171a; color: #e4e7eb; }
+    p { color: #9aa5b1; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Agentic AI controller is currently stopped</h1>
+  <p>The control plane is temporarily unavailable. Deployed applications keep running. Please try again later.</p>
+</main>
+</body>
+</html>
+"""
+
+class Handler(BaseHTTPRequestHandler):
+    def _send(self, with_body=True):
+        self.send_response(503)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(BODY)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Retry-After", "300")
+        self.end_headers()
+        if with_body:
+            self.wfile.write(BODY)
+
+    def do_HEAD(self):
+        self._send(with_body=False)
+
+    def do_GET(self):
+        self._send()
+
+    do_POST = do_PUT = do_DELETE = do_PATCH = do_OPTIONS = do_GET
+
+    def log_message(self, fmt, *args):
+        pass
+
+ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
+' "$host" "$port" "$MAINTENANCE_MARKER" >> logs/maintenance_page.log 2>&1 &
+    local pid=$!
+    echo "$pid" > "$MAINTENANCE_PID_FILE"
+
+    sleep 1
+    if kill -0 "$pid" 2>/dev/null; then
+        echo -e "  $OK 'Agentic AI controller is currently stopped' page is live (PID: $pid)"
+        return 0
+    fi
+    rm -f "$MAINTENANCE_PID_FILE"
+    echo "  ⚠️ Could not start the 'controller stopped' page (is ${host}:${port} still in use? see logs/maintenance_page.log)"
+    return 1
+}
+
+stop_maintenance_page() {
+    local stopped=false
+    if [ -f "$MAINTENANCE_PID_FILE" ]; then
+        local pid
+        pid=$(cat "$MAINTENANCE_PID_FILE" 2>/dev/null)
+        if [ -n "$pid" ] && kill "$pid" 2>/dev/null; then
+            stopped=true
+        fi
+        rm -f "$MAINTENANCE_PID_FILE"
+    fi
+    # Catch a placeholder whose PID file was lost.
+    if pkill -f "$MAINTENANCE_MARKER" 2>/dev/null; then
+        stopped=true
+    fi
+    if [ "$stopped" = "true" ]; then
+        echo "  🧹 'Controller stopped' page removed"
+        sleep 1
+    fi
+    return 0
 }
 
 # Stop services
@@ -1085,6 +1213,9 @@ remove_gitea() {
 
 stop_flask_service() {
     local success=true
+
+    # Remove the "controller stopped" placeholder if it is running
+    stop_maintenance_page
 
     # Try to stop using Gunicorn PID file first
     if [ -f "./conf/gunicorn.pid" ]; then
@@ -1788,6 +1919,9 @@ start_flask_application() {
         source .venv/bin/activate
         echo "  ✅ Virtual environment activated"
     fi
+
+    # Free the control-plane port from the "controller stopped" placeholder
+    stop_maintenance_page
 
     # Stop any existing Flask/Gunicorn processes
     EXISTING_PIDS=$(pgrep -f "gunicorn.*wsgi:application" 2>/dev/null || true)
@@ -2526,6 +2660,9 @@ help() {
     echo "                  - Main application only: stops Flask/Gunicorn only"
     echo "                    (docker: 'docker-compose stop app'). Traefik, the"
     echo "                    /<user>/<application> routes and Gitea keep running."
+    echo "                    The main page then shows a static 'Agentic AI"
+    echo "                    controller is currently stopped' page (locally mode)"
+    echo "                    until the next start/restart."
     echo "                  - Everything: all the steps below"
     echo "                Esc or an invalid choice cancels the stop (nothing changes)."
     echo "                Skip the menu with --app-only or --stop-all (--all)."
