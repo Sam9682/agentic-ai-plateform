@@ -101,6 +101,26 @@ TRAEFIK_HTTP_PORT=${TRAEFIK_HTTP_PORT:-${RANGE_START_CONTROLPLAN}}
 TRAEFIK_HTTPS_PORT=${TRAEFIK_HTTPS_PORT:-$((RANGE_START_CONTROLPLAN + 1))}
 export TRAEFIK_HTTP_PORT TRAEFIK_HTTPS_PORT
 
+# Option flags may appear anywhere on the command line. Collect them first and
+# drop them from the positional arguments, so e.g. "stop locally --app-only"
+# does not end up in USER_ID.
+#   --keep-gitea-running   keep Gitea running during stop
+#   --app-only             stop: only the main application (skip the menu)
+#   --stop-all / --all     stop: everything (skip the menu)
+KEEP_GITEA_RUNNING=false
+STOP_SCOPE=""
+_POSITIONAL_ARGS=()
+for arg in "$@"; do
+    case "$arg" in
+        --keep-gitea-running) KEEP_GITEA_RUNNING=true ;;
+        --app-only)           STOP_SCOPE="app" ;;
+        --stop-all|--all)     STOP_SCOPE="all" ;;
+        *)                    _POSITIONAL_ARGS+=("$arg") ;;
+    esac
+done
+set -- ${_POSITIONAL_ARGS[@]+"${_POSITIONAL_ARGS[@]}"}
+unset _POSITIONAL_ARGS
+
 # Global Parameters (command line args override config)
 COMMAND=${1:-help}
 LOCAL_MODE=${2:-0}
@@ -127,15 +147,6 @@ case "$LOCAL_MODE" in
         LOCAL_MODE="docker"
         ;;
 esac
-
-# Check for --keep-gitea-running parameter
-KEEP_GITEA_RUNNING=false
-for arg in "$@"; do
-    if [ "$arg" = "--keep-gitea-running" ]; then
-        KEEP_GITEA_RUNNING=true
-        break
-    fi
-done
 
 # Interactive menu for deployment mode selection using Python simple-term-menu
 show_deployment_menu() {
@@ -871,9 +882,94 @@ EOF
     echo "  💡 Pre-recovery backup saved to: $PRERECOVERY_BACKUP_DIR"
 }
 
+# Decide what "stop" should stop. Prints "app", "all" or "cancel" on stdout
+# (prompts go to stderr / the terminal so command substitution only captures
+# the answer).
+#   - --app-only / --stop-all (or --all) on the command line skip the menu.
+#   - In a non-interactive shell with no option, stop everything (the
+#     historical behaviour) so existing automation is unchanged.
+select_stop_scope() {
+    if [ -n "$STOP_SCOPE" ]; then
+        echo "$STOP_SCOPE"
+        return
+    fi
+
+    if [ ! -t 0 ]; then
+        echo "all"
+        return
+    fi
+
+    if python3 -c "from simple_term_menu import TerminalMenu" 2>/dev/null; then
+        python3 << 'EOF'
+from simple_term_menu import TerminalMenu
+
+options = [
+    "Main application only (keep Traefik, user app routes and Gitea running)",
+    "Everything (main application, Traefik, Gitea question, Docker containers)",
+]
+terminal_menu = TerminalMenu(
+    options,
+    title="🛑 What do you want to stop?",
+    menu_cursor="▶ ",
+    menu_cursor_style=("fg_red", "bold"),
+    menu_highlight_style=("bg_red", "fg_yellow"),
+    cycle_cursor=True
+)
+
+menu_entry_index = terminal_menu.show()
+if menu_entry_index == 0:
+    print("app")
+elif menu_entry_index == 1:
+    print("all")
+else:
+    print("cancel")
+EOF
+    else
+        {
+            echo "What do you want to stop?"
+            echo "1) Main application only (keep Traefik, user app routes and Gitea running)"
+            echo "2) Everything (main application, Traefik, Gitea question, Docker containers)"
+        } >&2
+        local choice
+        read -r -p "Enter your choice (1-2): " choice
+        case "$choice" in
+            1) echo "app" ;;
+            2) echo "all" ;;
+            *) echo "cancel" ;;
+        esac
+    fi
+}
+
+# Stop only the main application (Flask/Gunicorn). Traefik, its dynamic route
+# files (which serve the /<user>/<application> entries) and Gitea keep running,
+# so deployed user applications stay reachable.
+stop_main_app_only() {
+    if [ "$LOCAL_MODE" = "docker" ]; then
+        echo "🐳 Stopping main application container only..."
+        docker-compose stop app
+    else
+        stop_flask_service || CLEANUP_NEEDED=true
+        if [ "$LOCAL_MODE" != "locally" ] && command -v docker-compose >/dev/null 2>&1; then
+            docker-compose stop app 2>/dev/null || true
+        fi
+    fi
+    echo "  ℹ️ Traefik, user application routes and Gitea were left running"
+}
+
 # Stop services
 stop_services() {
-    echo "🛑 Stopping $NAME_OF_APPLICATION services..."
+    local scope
+    scope=$(select_stop_scope)
+    if [ "$scope" != "app" ] && [ "$scope" != "all" ]; then
+        echo "  ⏭️ Stop cancelled - nothing was changed"
+        return 0
+    fi
+
+    if [ "$scope" = "app" ]; then
+        echo "🛑 Stopping $NAME_OF_APPLICATION main application only..."
+    else
+        echo "🛑 Stopping $NAME_OF_APPLICATION services..."
+    fi
 
     # Remove backup cron job
     remove_backup_cron
@@ -887,7 +983,9 @@ stop_services() {
 
     CLEANUP_NEEDED=false
 
-    if [ "$LOCAL_MODE" = "locally" ]; then
+    if [ "$scope" = "app" ]; then
+        stop_main_app_only
+    elif [ "$LOCAL_MODE" = "locally" ]; then
         stop_flask_service || CLEANUP_NEEDED=true
         stop_traefik
         confirm_gitea_stop
@@ -2421,9 +2519,17 @@ help() {
     echo "              • Creates deployment directories and logs"
     echo "              • Sets up hourly database backup cron job"
     echo ""
-    echo "  stop      - Stop all running services and clean up"
-    echo "  -o        - Stop all running services and clean up (alias for stop)"
-    echo "  --stop    - Stop all running services and clean up (alias for stop)"
+    echo "  stop      - Stop running services and clean up"
+    echo "  -o        - Stop running services and clean up (alias for stop)"
+    echo "  --stop    - Stop running services and clean up (alias for stop)"
+    echo "              • Asks what to stop (after the locally/docker menu):"
+    echo "                  - Main application only: stops Flask/Gunicorn only"
+    echo "                    (docker: 'docker-compose stop app'). Traefik, the"
+    echo "                    /<user>/<application> routes and Gitea keep running."
+    echo "                  - Everything: all the steps below"
+    echo "                Esc or an invalid choice cancels the stop (nothing changes)."
+    echo "                Skip the menu with --app-only or --stop-all (--all)."
+    echo "                Non-interactive shells with no option stop everything."
     echo "              • Removes hourly database backup cron job"
     echo "              • Creates final database backup in ./softfluid/db/backup/\$DATETIME/"
     echo "              • Stops Flask application and removes PID file"
@@ -2484,6 +2590,8 @@ help() {
     echo "OPTIONS:"
     echo "  --keep-gitea-running  - Automatically answer 'no' to Gitea stop question"
     echo "                          Keeps Gitea service running during stop operations"
+    echo "  --app-only            - stop: stop only the main application, skip the menu"
+    echo "  --stop-all, --all     - stop: stop everything, skip the menu"
     echo ""
     echo "MODES:"
     echo "  locally   - Deploy without Docker (direct system installation)"
@@ -2520,7 +2628,9 @@ help() {
     echo "  $0 start locally 123 john    # Deploy locally for user 'john' with ID '123'"
     echo "  $0 stop                      # Stop all services (interactive Gitea removal)"
     echo "  $0 stop --keep-gitea-running # Stop all services but keep Gitea running"
-    echo "  $0 stop locally              # Stop all services started "locally" (interactive Gitea removal)"
+    echo "  $0 stop locally              # Stop services started "locally" (asks what to stop)"
+    echo "  $0 stop locally --app-only   # Stop only the main app; Traefik, user apps and Gitea keep running"
+    echo "  $0 stop locally --stop-all   # Stop everything without the what-to-stop menu"
     echo "  $0 restart locally           # Restart local services"
     echo "  $0 upgrade                   # Upgrade application from git remote"
     echo "  $0 ps                        # Check status of all services"
