@@ -7,9 +7,14 @@ import os
 import sys
 
 # Add the parent directory to the path so we can import from src
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT_DIR)
 
-BASE_URL = 'http://agentic-ai-plateform.com:80'
+# Load DB credentials from the project's .env before the DB layer is imported
+from dotenv import load_dotenv
+load_dotenv(os.path.join(ROOT_DIR, '.env'))
+
+BASE_URL = 'http://www.opcp-psmc.com'
 
 def select_from_list(items, title="Select an option"):
     """Interactive selection using arrow keys"""
@@ -37,7 +42,7 @@ def select_from_list(items, title="Select an option"):
 
 @click.group()
 def cli():
-    """AI-SwAutoMorph CLI Tool"""
+    """OPCP-explorer CLI Tool"""
     pass
 
 @cli.command()
@@ -55,7 +60,7 @@ def register(username, email, password, first_name, last_name):
         'first_name': first_name or '',
         'last_name': last_name or ''
     }
-    
+
     try:
         response = requests.post(f'{BASE_URL}/register', json=data)
         if response.status_code == 201:
@@ -109,7 +114,7 @@ def add_app(name, url, description):
 def validate_token(token):
     """Validate an SSO token"""
     data = {'token': token}
-    
+
     try:
         response = requests.post(f'{BASE_URL}/sso/validate', json=data)
         if response.status_code == 200:
@@ -144,7 +149,7 @@ def db_health():
         from src.db_health import check_database_health, get_database_stats
         health = check_database_health()
         stats = get_database_stats()
-        
+
         click.echo('\n' + '='*60)
         click.echo('DATABASE HEALTH STATUS')
         click.echo('='*60)
@@ -154,7 +159,7 @@ def db_health():
             click.echo(f"Journal Mode: {health['journal_mode']}")
         else:
             click.echo(f"Error: {health.get('error', 'Unknown error')}")
-        
+
         if 'error' not in stats:
             click.echo('\n' + '='*60)
             click.echo('DATABASE STATISTICS')
@@ -170,7 +175,7 @@ def db_health():
                 size_mb = stats['database_size_bytes'] / (1024 * 1024)
                 click.echo(f"{'Database Size':<30} {size_mb:>9.2f} MB")
             click.echo('='*60)
-        
+
     except Exception as e:
         click.echo(f'Error checking database health: {str(e)}')
 
@@ -181,14 +186,14 @@ def db_health():
 def mount_s3fs(bucket_name, mount_point, passwd_file):
     """Mount OVH Cloud S3 storage using s3fs"""
     os.makedirs(mount_point, exist_ok=True)
-    
+
     cmd = [
         "s3fs", bucket_name, mount_point,
         "-o", f"passwd_file={passwd_file}",
         "-o", "url=https://s3.gra.cloud.ovh.net",
         "-o", "use_path_request_style"
     ]
-    
+
     try:
         subprocess.run(cmd, check=True)
         click.echo(f"Successfully mounted {bucket_name} to {mount_point}")
@@ -200,14 +205,14 @@ def mount_s3fs(bucket_name, mount_point, passwd_file):
 def db_status(show_env):
     """Show application status and configuration"""
     click.echo('Database Type: PostgreSQL')
-    
+
     if show_env:
         click.echo('\nEnvironment Variables:')
         click.echo(f'POSTGRES_HOST: {os.environ.get("POSTGRES_HOST", "localhost")}')
         click.echo(f'POSTGRES_DB: {os.environ.get("POSTGRES_DB", "ai_swautomorph")}')
         click.echo(f'POSTGRES_USER: {os.environ.get("POSTGRES_USER", "swautomorph")}')
         click.echo(f'POSTGRES_PASSWORD: {"***" if os.environ.get("POSTGRES_PASSWORD") else "not set"}')
-    
+
     try:
         from src.database_postgres import db_manager
         result = db_manager.execute_query("SELECT 1", fetch_one=True)
@@ -224,16 +229,16 @@ def delete_db():
     """Delete PostgreSQL database completely"""
     import shutil
     from src.database_postgres import db_manager
-    
+
     deleted = []
     errors = []
-    
+
     # Drop all tables in the database
     try:
         click.echo('Dropping all tables...')
         tables_query = "SELECT tablename FROM pg_tables WHERE schemaname = 'public'"
         tables = db_manager.execute_query(tables_query, fetch_all=True)
-        
+
         for (table_name,) in tables:
             try:
                 db_manager.execute_query(f'DROP TABLE IF EXISTS {table_name} CASCADE')
@@ -242,7 +247,7 @@ def delete_db():
                 errors.append(f'Table {table_name}: {str(e)}')
     except Exception as e:
         errors.append(f'Database operation: {str(e)}')
-    
+
     # PostgreSQL data directory (Docker)
     postgres_data = 'softfluid/postgres_data'
     if os.path.exists(postgres_data):
@@ -251,17 +256,17 @@ def delete_db():
             deleted.append(f'Directory: {postgres_data}')
         except Exception as e:
             errors.append(f'{postgres_data}: {str(e)}')
-    
+
     if deleted:
         click.echo('\n✅ Deleted:')
         for item in deleted:
             click.echo(f'  - {item}')
-    
+
     if errors:
         click.echo('\n❌ Errors:')
         for error in errors:
             click.echo(f'  - {error}')
-    
+
     if not deleted and not errors:
         click.echo('No PostgreSQL database or tables found.')
 
@@ -270,28 +275,28 @@ def list_tables():
     """List all tables with record counts"""
     try:
         from src.database_postgres import db_manager
-        
+
         tables_query = "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename"
         tables = db_manager.execute_query(tables_query, fetch_all=True)
-        
+
         if not tables:
             click.echo('No tables found in database.')
             return
-        
+
         click.echo('\n' + '='*60)
         click.echo('DATABASE TABLES')
         click.echo('='*60)
         click.echo(f"{'Table Name':<40} {'Records':>15}")
         click.echo('-'*60)
-        
+
         for (table_name,) in tables:
             count_query = f"SELECT COUNT(*) FROM {table_name}"
             result = db_manager.execute_query(count_query, fetch_one=True)
             count = result[0] if result else 0
             click.echo(f"{table_name:<40} {count:>15,}")
-        
+
         click.echo('='*60)
-        
+
     except Exception as e:
         click.echo(f'Error: {str(e)}')
 
@@ -302,10 +307,10 @@ def exec_sql_request(sql_query):
     """Execute SQL query on database"""
     try:
         from src.database_postgres import db_manager
-        
+
         result = db_manager.execute_query(sql_query)
         click.echo(f'✅ Query executed successfully. Rows affected: {result if result else 0}')
-        
+
     except Exception as e:
         click.echo(f'❌ Error: {str(e)}')
 
@@ -315,50 +320,50 @@ def describe_table(table_name):
     """Describe table structure"""
     try:
         from src.database_postgres import db_manager
-        
+
         # Get all tables if no table specified
         if not table_name:
             tables_query = "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename"
             tables = db_manager.execute_query(tables_query, fetch_all=True)
-            
+
             if not tables:
                 click.echo('No tables found in database.')
                 return
-            
+
             table_list = [tbl[0] for tbl in tables]
             table_name = select_from_list(table_list, "Select table to describe:")
-            
+
             if not table_name:
                 click.echo('No table selected.')
                 return
-        
+
         # Get table structure
         structure_query = """
-            SELECT column_name, data_type, character_maximum_length, 
+            SELECT column_name, data_type, character_maximum_length,
                    is_nullable, column_default
             FROM information_schema.columns
             WHERE table_name = %s
             ORDER BY ordinal_position
         """
         columns = db_manager.execute_query(structure_query, (table_name,), fetch_all=True)
-        
+
         if not columns:
             click.echo(f'Table "{table_name}" not found.')
             return
-        
+
         click.echo('\n' + '='*80)
         click.echo(f'TABLE: {table_name}')
         click.echo('='*80)
         click.echo(f"{'Column':<25} {'Type':<20} {'Nullable':<10} {'Default':<20}")
         click.echo('-'*80)
-        
+
         for col_name, data_type, max_len, nullable, default in columns:
             type_str = f"{data_type}({max_len})" if max_len else data_type
             default_str = str(default)[:18] if default else '-'
             click.echo(f"{col_name:<25} {type_str:<20} {nullable:<10} {default_str:<20}")
-        
+
         click.echo('='*80)
-        
+
     except Exception as e:
         click.echo(f'Error: {str(e)}')
 
@@ -369,64 +374,64 @@ def select_table(table_name, limit):
     """Display table content"""
     try:
         from src.database_postgres import db_manager
-        
+
         # Get all tables if no table specified
         if not table_name:
             tables_query = "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename"
             tables = db_manager.execute_query(tables_query, fetch_all=True)
-            
+
             if not tables:
                 click.echo('No tables found in database.')
                 return
-            
+
             table_list = [tbl[0] for tbl in tables]
             table_name = select_from_list(table_list, "Select table to view:")
-            
+
             if not table_name:
                 click.echo('No table selected.')
                 return
-        
+
         # Get column names
         columns_query = """
             SELECT column_name FROM information_schema.columns
             WHERE table_name = %s ORDER BY ordinal_position
         """
         columns = db_manager.execute_query(columns_query, (table_name,), fetch_all=True)
-        
+
         if not columns:
             click.echo(f'Table "{table_name}" not found.')
             return
-        
+
         col_names = [col[0] for col in columns]
-        
+
         # Get table data
         data_query = f"SELECT * FROM {table_name} LIMIT %s"
         rows = db_manager.execute_query(data_query, (limit,), fetch_all=True)
-        
+
         if not rows:
             click.echo(f'\nTable "{table_name}" is empty.')
             return
-        
+
         # Calculate column widths
         col_widths = [len(name) for name in col_names]
         for row in rows:
             for i, val in enumerate(row):
                 col_widths[i] = max(col_widths[i], len(str(val)) if val is not None else 4)
-        
+
         # Limit column width to 30 characters
         col_widths = [min(w, 30) for w in col_widths]
-        
+
         total_width = sum(col_widths) + len(col_widths) * 3 + 1
-        
+
         click.echo('\n' + '='*total_width)
         click.echo(f'TABLE: {table_name} (showing {len(rows)} of {len(rows)} rows)')
         click.echo('='*total_width)
-        
+
         # Print header
         header = ' | '.join(name[:w].ljust(w) for name, w in zip(col_names, col_widths))
         click.echo(header)
         click.echo('-'*total_width)
-        
+
         # Print rows
         for row in rows:
             row_str = ' | '.join(
@@ -434,25 +439,25 @@ def select_table(table_name, limit):
                 for val, w in zip(row, col_widths)
             )
             click.echo(row_str)
-        
+
         click.echo('='*total_width)
-        
+
     except Exception as e:
         click.echo(f'Error: {str(e)}')
 
 @cli.command()
 def update_nginx_locations():
-    """Sync Traefik routes from database"""
+    """Sync nginx locations from database"""
     try:
         from src.database_postgres import db_manager
-        from src.frontend_manager import sync_all_locations
-        
-        click.echo('Synchronizing Traefik routes from database...')
-        
+        from src.nginx_manager import sync_all_locations
+
+        click.echo('Synchronizing nginx locations from database...')
+
         if sync_all_locations(db_manager):
-            click.echo('✓ Traefik routes synced successfully')
+            click.echo('✓ Nginx locations synced successfully')
         else:
-            click.echo('✗ Failed to sync Traefik routes')
+            click.echo('✗ Failed to sync nginx locations')
             sys.exit(1)
     except Exception as e:
         click.echo(f'✗ Error: {str(e)}')
@@ -464,25 +469,25 @@ def platform_status():
     try:
         from src.platform_discovery import get_current_server_ip
         from src.database_postgres import db_manager
-        
+
         current_ip = get_current_server_ip()
         server = db_manager.execute_query(
             'SELECT server_type, server_name FROM servers WHERE server_ip = %s',
             (current_ip,), fetch_one=True
         )
-        
+
         if server:
             click.echo(f"Platform Role: {server[0]}")
             click.echo(f"Server Name: {server[1]}")
             click.echo(f"Server IP: {current_ip}")
         else:
             click.echo("Server not registered in database")
-        
+
         servers = db_manager.execute_query(
             'SELECT server_ip, server_name, server_type, server_status FROM servers ORDER BY id',
             fetch_all=True
         )
-        
+
         click.echo("\nAll Servers:")
         for s in servers:
             click.echo(f"  - {s[1]} ({s[0]}): {s[2]} [{s[3]}]")
@@ -492,32 +497,32 @@ def platform_status():
 @cli.command()
 @click.argument('remote_ip')
 def discover_server(remote_ip):
-    """Discover remote SwAutoMorph server"""
+    """Discover remote OPCP-explorer server"""
     try:
         from src.platform_discovery import get_current_server_ip, check_remote_platform, determine_role, update_server_role
         from src.database_postgres import db_manager
-        
-        click.echo(f"Checking {remote_ip} for SwAutoMorph...")
-        
+
+        click.echo(f"Checking {remote_ip} for OPCP-explorer...")
+
         remote_status = check_remote_platform(remote_ip)
-        
+
         if remote_status:
-            click.echo(f"✓ SwAutoMorph found!")
+            click.echo(f"✓ OPCP-explorer found!")
             click.echo(f"  Role: {remote_status.get('role')}")
             click.echo(f"  Version: {remote_status.get('version')}")
             click.echo(f"  Server: {remote_status.get('server_name')}")
-            
+
             current_ip = get_current_server_ip()
             our_role = determine_role(current_ip, remote_ip, remote_status, db_manager)
-            
+
             click.echo(f"\nRole determination:")
             click.echo(f"  Current server will be: {our_role}")
             click.echo(f"  Remote server is: {remote_status.get('role')}")
-            
+
             update_server_role(current_ip, our_role, db_manager)
             click.echo(f"\n✓ Local server role updated to {our_role}")
         else:
-            click.echo("✗ No SwAutoMorph detected at this IP")
+            click.echo("✗ No OPCP-explorer detected at this IP")
     except Exception as e:
         click.echo(f'Error: {str(e)}')
 
@@ -527,22 +532,22 @@ def replication_sync_status():
     try:
         from src.database_postgres import db_manager
         from src.replication_manager import REPLICATED_TABLES
-        
+
         click.echo('\n' + '='*60)
         click.echo('REPLICATION STATUS')
         click.echo('='*60)
-        
+
         servers = db_manager.execute_query(
             "SELECT server_ip, server_name, server_type, server_status FROM servers",
             fetch_all=True
         )
-        
+
         click.echo(f"\nPeer Servers: {len(servers)}")
         for server in servers:
             click.echo(f"  - {server[1]} ({server[0]}) [{server[2]}] - {server[3]}")
-        
+
         click.echo(f"\nReplicated Tables: {', '.join(REPLICATED_TABLES)}")
-        
+
         click.echo('\n' + '='*60)
         click.echo('RECORD COUNTS')
         click.echo('='*60)
@@ -568,35 +573,35 @@ def replication_sync_table(table, server_ip):
         import urllib3
         import time
         from datetime import datetime
-        
+
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-        
+
         if table not in REPLICATED_TABLES:
             click.echo(f"Error: Table '{table}' is not configured for replication")
             click.echo(f"Available tables: {', '.join(REPLICATED_TABLES)}")
             return
-        
+
         click.echo(f"\nManual Sync: {table} -> {server_ip}\n")
-        
+
         records = db_manager.execute_query(f"SELECT * FROM {table}", fetch_all=True)
         click.echo(f"Found {len(records)} records to sync")
-        
+
         columns = db_manager.execute_query(
             f"SELECT column_name FROM information_schema.columns WHERE table_name = '{table}' ORDER BY ordinal_position",
             fetch_all=True
         )
         col_names = [c[0] for c in columns]
-        
+
         sync_secret = os.environ.get('SYNC_SECRET', 'default-sync-secret-change-me')
         success_count = 0
-        
+
         # Detect protocol
         protocol = 'https'
         try:
             requests.get(f"https://{server_ip}/api/sync/health", timeout=2, verify=False)
         except:
             protocol = 'http'
-        
+
         with click.progressbar(records, label='Syncing') as bar:
             for record in bar:
                 data = dict(zip(col_names, record))
@@ -604,7 +609,7 @@ def replication_sync_table(table, server_ip):
                 for key, value in data.items():
                     if isinstance(value, datetime):
                         data[key] = value.isoformat()
-                
+
                 event = {
                     'event_id': f"manual-{table}-{time.time()}",
                     'timestamp': datetime.now().isoformat(),
@@ -614,7 +619,7 @@ def replication_sync_table(table, server_ip):
                     'primary_key': {'id': data.get('id')},
                     'version': int(time.time() * 1000)
                 }
-                
+
                 try:
                     response = requests.post(
                         f"{protocol}://{server_ip}/api/sync/replicate",
@@ -629,7 +634,7 @@ def replication_sync_table(table, server_ip):
                             success_count += 1
                 except Exception as e:
                     click.echo(f"\nError syncing record {data.get('id')}: {e}")
-        
+
         click.echo(f"\nSync complete: {success_count}/{len(records)} records synced successfully")
     except Exception as e:
         click.echo(f'Error: {str(e)}')
@@ -638,54 +643,54 @@ def replication_sync_table(table, server_ip):
 @click.argument('server_ip')
 def replication_sync_all_tables(server_ip):
     """Sync all replicated tables to remote server"""
-    tables = ['users', 'application_costs', 'payment_modes', 'applications', 
+    tables = ['users', 'application_costs', 'payment_modes', 'applications',
               'auth_tokens', 'user_applications', 'billing_activities']
-    
+
     click.echo(f"\nSyncing all tables to {server_ip}\n")
-    
+
     for table in tables:
         click.echo(f"\n{'='*60}")
         click.echo(f"Syncing table: {table}")
         click.echo('='*60)
-        
+
         try:
             from src.database_postgres import db_manager
             import requests
             import urllib3
             import time
             from datetime import datetime
-            
+
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-            
+
             records = db_manager.execute_query(f"SELECT * FROM {table}", fetch_all=True)
             click.echo(f"Found {len(records)} records")
-            
+
             if not records:
                 click.echo("No records to sync")
                 continue
-            
+
             columns = db_manager.execute_query(
                 f"SELECT column_name FROM information_schema.columns WHERE table_name = '{table}' ORDER BY ordinal_position",
                 fetch_all=True
             )
             col_names = [c[0] for c in columns]
-            
+
             sync_secret = os.environ.get('SYNC_SECRET', 'default-sync-secret-change-me')
             success_count = 0
-            
+
             protocol = 'https'
             try:
                 requests.get(f"https://{server_ip}/api/sync/health", timeout=2, verify=False)
             except:
                 protocol = 'http'
-            
+
             with click.progressbar(records, label='Syncing') as bar:
                 for record in bar:
                     data = dict(zip(col_names, record))
                     for key, value in data.items():
                         if isinstance(value, datetime):
                             data[key] = value.isoformat()
-                    
+
                     event = {
                         'event_id': f"manual-{table}-{time.time()}",
                         'timestamp': datetime.now().isoformat(),
@@ -695,7 +700,7 @@ def replication_sync_all_tables(server_ip):
                         'primary_key': {'id': data.get('id')},
                         'version': int(time.time() * 1000)
                     }
-                    
+
                     try:
                         response = requests.post(
                             f"{protocol}://{server_ip}/api/sync/replicate",
@@ -710,11 +715,11 @@ def replication_sync_all_tables(server_ip):
                                 success_count += 1
                     except Exception as e:
                         click.echo(f"\nError syncing record {data.get('id')}: {e}")
-            
+
             click.echo(f"Completed: {success_count}/{len(records)} records synced")
         except Exception as e:
             click.echo(f"Error syncing {table}: {str(e)}")
-    
+
     click.echo(f"\n{'='*60}")
     click.echo("All tables sync completed")
     click.echo('='*60)
@@ -727,16 +732,16 @@ def replication_test_sync(server_ip):
         import requests
         import urllib3
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-        
+
         click.echo(f"\nTesting Connectivity: {server_ip}\n")
-        
+
         for protocol in ['https', 'http']:
             try:
                 url = f"{protocol}://{server_ip}/api/sync/health"
                 click.echo(f"Trying {protocol.upper()}...")
-                
+
                 response = requests.get(url, timeout=5, verify=False)
-                
+
                 if response.status_code == 200:
                     data = response.json()
                     click.echo(f"✓ Server is reachable via {protocol.upper()}")
@@ -750,7 +755,7 @@ def replication_test_sync(server_ip):
                 click.echo(f"  Connection refused on {protocol.upper()}")
             except Exception as e:
                 click.echo(f"  Error: {e}")
-        
+
         click.echo(f"\n✗ Could not connect to {server_ip} on HTTPS or HTTP")
         click.echo(f"  Possible issues:")
         click.echo(f"  - Server is not running")
@@ -761,9 +766,9 @@ def replication_test_sync(server_ip):
 
 @cli.command()
 def install_as_systemctl_service():
-    """Install SWAutomorph as systemd service"""
+    """Install OPCP-explorer as systemd service"""
     import shutil
-    
+
     # Resolve install identity and render the unit via the shared helper so the
     # live install and the committed fallback artifact never diverge. User= and
     # the /home/<user>/<folder> paths come from LINUX_USER_INSTALLATION and
@@ -772,26 +777,26 @@ def install_as_systemctl_service():
     from controlplan_service import resolve_service_identity, render_controlplan_unit
 
     linux_user, pltf_folder = resolve_service_identity()
-    systemd_path = '/etc/systemd/system/swautomorph-controlplan.service'
+    systemd_path = '/etc/systemd/system/opcp-explorer-controlplan.service'
     service_content = render_controlplan_unit(linux_user, pltf_folder)
-    
+
     try:
         click.echo('Installing systemd service...')
         with open(systemd_path, 'w') as f:
             f.write(service_content)
         click.echo(f'✓ Generated service file at {systemd_path} (using PLTF_FOLDER={pltf_folder})')
-        
+
         subprocess.run(['systemctl', 'daemon-reload'], check=True)
         click.echo('✓ Reloaded systemd daemon')
-        
-        subprocess.run(['systemctl', 'enable', 'swautomorph-controlplan.service'], check=True)
-        click.echo('✓ Enabled swautomorph-controlplan service')
-        
+
+        subprocess.run(['systemctl', 'enable', 'opcp-explorer-controlplan.service'], check=True)
+        click.echo('✓ Enabled opcp-explorer-controlplan service')
+
         click.echo('\n✅ Service installed successfully!')
         click.echo('\nUsage:')
-        click.echo('  sudo systemctl start swautomorph-controlplan')
-        click.echo('  sudo systemctl stop swautomorph-controlplan')
-        click.echo('  sudo systemctl status swautomorph-controlplan')
+        click.echo('  sudo systemctl start opcp-explorer-controlplan')
+        click.echo('  sudo systemctl stop opcp-explorer-controlplan')
+        click.echo('  sudo systemctl status opcp-explorer-controlplan')
     except subprocess.CalledProcessError as e:
         click.echo(f'✗ Error: {e}')
         sys.exit(1)
@@ -978,6 +983,124 @@ def templates_deploy(template_id, app_name, user_id):
     except Exception as e:
         click.echo(f'Error: {str(e)}')
         sys.exit(1)
+
+
+# ---------------------------------------------------------------------------
+# Platform lifecycle commands (thin wrappers around deployControlPlan.sh)
+# ---------------------------------------------------------------------------
+
+DEPLOY_SCRIPT = os.path.join(ROOT_DIR, 'deployControlPlan.sh')
+DEPLOY_MODE = click.Choice(['locally', 'docker'])
+
+
+def _run_deploy(command, mode=None, extra_args=(), flags=()):
+    """Run deployControlPlan.sh from the repo root and exit with its status.
+
+    stdin/stdout are inherited so the script's interactive menus keep working.
+    The script reads positional args as COMMAND MODE USER_ID ...; when no mode
+    is given but later positionals are, '0' is passed (= ask interactively).
+    """
+    if not os.path.isfile(DEPLOY_SCRIPT):
+        click.echo(f'❌ Deployment script not found: {DEPLOY_SCRIPT}')
+        sys.exit(1)
+    positional = [command]
+    if mode or extra_args:
+        positional.append(mode or '0')
+    positional.extend(extra_args)
+    try:
+        rc = subprocess.call(['bash', DEPLOY_SCRIPT, *positional, *flags], cwd=ROOT_DIR)
+    except KeyboardInterrupt:
+        rc = 130
+    sys.exit(rc)
+
+
+def _mode_argument(f):
+    return click.argument('mode', type=DEPLOY_MODE, required=False)(f)
+
+
+@cli.command()
+@_mode_argument
+@click.option('--user-id', help='Admin user id (default: DEFAULT_USER_ID from conf/deploy.ini)')
+@click.option('--user-name', help='Admin user name')
+@click.option('--user-email', help='Admin user email')
+@click.option('--description', help='Admin user description')
+def start(mode, user_id, user_name, user_email, description):
+    """Deploy and start all services (Flask app, Nginx, Gitea)."""
+    # The script takes these positionally, so fill earlier gaps with its defaults.
+    values = [user_id, user_name, user_email, description]
+    last = max((i for i, v in enumerate(values) if v), default=-1)
+    extra = []
+    defaults = [os.environ.get('DEFAULT_USER_ID', '0'),
+                os.environ.get('DEFAULT_USER_NAME', 'admin'),
+                os.environ.get('DEFAULT_USER_EMAIL', 'admin@softfluid.fr'),
+                os.environ.get('DEFAULT_DESCRIPTION', 'Basic Admin user for Control Plan')]
+    for i in range(last + 1):
+        extra.append(values[i] or defaults[i])
+    _run_deploy('start', mode, extra)
+
+
+@cli.command()
+@_mode_argument
+@click.option('--app-only', is_flag=True, help='Stop only the main app web server; nginx and user apps stay up')
+@click.option('--stop-all', is_flag=True, help='Stop everything without asking the scope')
+@click.option('--keep-gitea-running', is_flag=True, help="Answer 'no' to the Gitea stop question")
+def stop(mode, app_only, stop_all, keep_gitea_running):
+    """Stop running services and clean up."""
+    if app_only and stop_all:
+        raise click.UsageError('--app-only and --stop-all are mutually exclusive')
+    flags = [name for name, on in (('--app-only', app_only),
+                                   ('--stop-all', stop_all),
+                                   ('--keep-gitea-running', keep_gitea_running)) if on]
+    _run_deploy('stop', mode, flags=flags)
+
+
+@cli.command()
+@_mode_argument
+def restart(mode):
+    """Restart all services without full redeployment."""
+    _run_deploy('restart', mode)
+
+
+@cli.command()
+def ps():
+    """Show status of Flask, Nginx, Gitea and Docker services."""
+    _run_deploy('ps')
+
+
+@cli.command()
+def logs():
+    """Show service logs."""
+    _run_deploy('logs')
+
+
+@cli.command()
+def upgrade():
+    """Upgrade the application from the git remote."""
+    _run_deploy('upgrade')
+
+
+@cli.command(name='backup-db')
+def backup_db():
+    """Back up the database."""
+    _run_deploy('backup_db')
+
+
+@cli.command(name='recover-db')
+def recover_db():
+    """Recover the database from a backup."""
+    _run_deploy('recover_db')
+
+
+@cli.command(name='migrate-db')
+def migrate_db():
+    """Run database migrations."""
+    _run_deploy('migrate_db')
+
+
+@cli.command()
+def version():
+    """Show platform version."""
+    _run_deploy('version')
 
 
 if __name__ == '__main__':
